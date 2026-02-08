@@ -87,6 +87,52 @@
 
 ---
 
+### 项目结构
+
+```
+AnkiNBT/
+├── src/                    # 共享核心代码 + NeoForge 主入口
+├── versions/               # NeoForge 各版本适配 (1.21 ~ 1.21.11)
+├── fabric/                 # Fabric 主版本 (1.21.1)
+├── fabric-versions/        # Fabric 各版本适配 (1.21 ~ 1.21.11)
+├── build.gradle            # NeoForge 根构建脚本
+├── gradle.properties       # NeoForge 构建参数
+└── README.md
+```
+
+分支说明：
+- `main` — 完整项目，包含 NeoForge 和 Fabric 全部代码
+- `neoforge` — 仅 NeoForge 相关代码
+- `fabric` — 仅 Fabric 相关代码
+
+---
+
+### 从源码编译
+
+环境要求：JDK 21
+
+NeoForge（以 1.21.1 为例）：
+
+```bash
+cd versions/1.21.1
+gradlew build
+```
+
+Fabric（以 1.21.1 为例）：
+
+```bash
+cd fabric
+gradlew build
+```
+
+其他版本同理，进入对应的 `versions/<版本号>` 或 `fabric-versions/<版本号>` 目录执行 `gradlew build` 即可。
+
+编译产物在各子目录的 `build/libs/` 下。
+
+注意：`gradle.properties` 中的代理配置（`proxyHost`/`proxyPort`）是开发环境的本地设置，编译前请根据自己的网络环境修改或删除。
+
+---
+
 ### 许可证
 
 MIT
