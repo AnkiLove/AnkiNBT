@@ -1,14 +1,25 @@
+<div align="center">
+
+<img src="src/main/resources/logo.png" alt="AnkiNBT" width="128">
+
 # AnkiNBT
 
-一个客户端侧的 Minecraft NBT 编辑器，同时支持 NeoForge 和 Fabric，兼容 1.21 ~ 1.21.11 全版本。
+客户端侧 Minecraft NBT 编辑器，支持 NeoForge 和 Fabric，兼容 1.21 ~ 1.21.11
 
-纯客户端运行，服务端无需安装任何内容。按 `N` 键即可打开编辑器，编辑完成后 `Ctrl+S` 保存。
+[![License](https://img.shields.io/github/license/AnkiLove/AnkiNBT?style=flat-square&color=blue)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/AnkiLove/AnkiNBT?style=flat-square&color=green)](https://github.com/AnkiLove/AnkiNBT/releases)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.21--1.21.11-brightgreen?style=flat-square)](https://minecraft.net)
+[![NeoForge](https://img.shields.io/badge/NeoForge-支持-orange?style=flat-square)](https://neoforged.net)
+[![Fabric](https://img.shields.io/badge/Fabric-支持-yellow?style=flat-square)](https://fabricmc.net)
+[![Java](https://img.shields.io/badge/Java-21-red?style=flat-square)](https://adoptium.net)
+
+</div>
 
 ---
 
 ### 功能概览
 
-- 纯客户端，不依赖服务端
+- 纯客户端运行，不依赖服务端
 - 提供简易模式（可视化）和高级模式（NBT 树）两种编辑方式
 - 中英双语，自动跟随游戏语言设置
 - 半透明暗色界面，风格简洁
@@ -44,7 +55,7 @@
 
 ---
 
-### 安装方法
+### 安装
 
 1. 安装对应 MC 版本的 NeoForge 或 Fabric（Fabric 需同时安装 Fabric API）
 2. 将 JAR 文件放入 `.minecraft/mods/` 目录
