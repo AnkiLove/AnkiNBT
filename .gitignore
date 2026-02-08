@@ -1,0 +1,44 @@
+# Gradle
+build/
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+*.iml
+.idea/
+out/
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+.vscode/
+
+# Minecraft dev
+run/
+logs/
+*.log
+
+# Build artifacts
+release/
+*.zip
+
+# Build logs
+build_log.txt
+build_errors.txt
+
+# Local build scripts (contain proxy/path config)
+build-all.bat
+build-all.ps1
+rebuild-fabric.ps1
+collect-jars.ps1
+check_jars.ps1
+do_build.ps1
+
+# Embedded bare repos and reference project
+/ankinbt/
+/ankinbt_ref/
+
+# OS
+Thumbs.db
+.DS_Store

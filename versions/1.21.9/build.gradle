@@ -1,0 +1,88 @@
+plugins {
+    id 'java'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.139'
+}
+
+version = project.mod_version
+group = project.mod_group
+
+base {
+    archivesName = "AnkiNBT-NeoForge-mc${project.minecraft_version}"
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+// Version-specific compat in src/main/java overrides shared compat
+sourceSets {
+    main {
+        java {
+            // Version-specific source (compat layer)
+            srcDir 'src/main/java'
+            // Shared source (everything except compat)
+        }
+        resources {
+            srcDirs = ['../../src/main/resources']
+        }
+    }
+}
+
+// Add shared source excluding compat package AND files with incompatible input APIs
+tasks.named('compileJava').configure {
+    source fileTree('../../src/main/java') {
+        exclude 'com/ankinbt/compat/**'
+        exclude 'com/ankinbt/gui/**'
+        exclude 'com/ankinbt/keybind/**'
+        exclude 'com/ankinbt/AnkiNBT.java'
+        exclude 'com/ankinbt/config/AnkiConfig.java'
+    }
+}
+
+repositories {
+    mavenLocal()
+}
+
+dependencies {
+}
+
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}

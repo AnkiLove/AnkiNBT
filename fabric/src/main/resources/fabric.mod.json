@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "ankinbt",
+  "version": "${version}",
+  "name": "AnkiNBT",
+  "description": "A modern client-side NBT editor with visual and tree-based editing modes. Supports viewing and modifying all item data components including enchantments, attributes, display properties, and raw NBT tags. Press N to open the editor.",
+  "authors": ["Ankiw"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/ankinbt/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.ankinbt.AnkiNBTFabric"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1"
+  }
+}
