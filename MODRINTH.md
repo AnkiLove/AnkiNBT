@@ -1,25 +1,27 @@
-# AnkiNBT
-
 A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, covering all versions from 1.21 to 1.21.11.
 
-一个现代化的 Minecraft 客户端 NBT 编辑器，支持 NeoForge 和 Fabric，覆盖 1.21 ~ 1.21.11 全版本。
+一个简单现代化的 Minecraft 客户端 NBT 编辑器，支持 NeoForge 和 Fabric，覆盖 1.21 ~ 1.21.11 全版本。
 
 ---
 
 ## Features / 特点
 
-- Pure client-side, no server installation needed
-  纯客户端运行，无需服务端安装
 - Two editing modes: Simple Mode (visual) + Advanced Mode (NBT tree)
   双编辑模式：简易模式（可视化编辑）+ 高级模式（NBT 树编辑）
-- Chinese / English bilingual, auto-follows game language
-  中文 / 英文双语，自动跟随游戏语言
 - Translucent dark UI, modern and clean
   半透明暗色 UI，现代简洁
 - Edit items from main hand or by hovering in inventory
   支持主手持物品或背包悬停物品编辑
 - Save changes in creative mode, view-only in other modes
   创造模式下可保存修改，非创造模式可查看
+- NBT export/import to file with configurable path
+  NBT 导出/导入文件，支持自定义路径
+- Unsaved changes confirmation dialog
+  未保存更改确认对话框
+- Lore multi-line text editor with move up/down and color palette
+  Lore 多行文本编辑器，支持上下移动和色板选择
+- Bilingual (English / Chinese), auto-follows game language
+  中英双语，自动跟随游戏语言设置
 
 ---
 
@@ -36,13 +38,11 @@ A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, coverin
 
 ## Usage / 使用方法
 
-1. Enter a creative mode world.
-   进入创造模式世界
-2. Hold an item and press `N` to open the editor, or open inventory and hover over an item then press `N`.
+1. Hold an item and press `N` to open the editor, or open inventory and hover over an item then press `N`.
    手持物品按 `N` 打开编辑器，或打开背包悬停物品按 `N`
-3. Press `Ctrl+S` to save.
+2. Press `Ctrl+S` to save.
    编辑完成后按 `Ctrl+S` 保存
-4. Press `Esc` to close.
+3. Press `Esc` to close.
    按 `Esc` 关闭编辑器
 
 ---
@@ -69,6 +69,8 @@ A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, coverin
 
 ## Simple Mode / 简易模式
 
+![Simplified enchantment editing interface](https://cdn.modrinth.com/data/cached_images/6c98e9b36cbce47236b42b00959c5e9a28a079df_0.webp)
+
 A visual editor with category sidebar on the left and property list on the right. Click to edit. No NBT knowledge needed.
 
 可视化编辑界面，左侧分类导航，右侧属性列表，点击即可编辑。无需了解 NBT。
@@ -79,8 +81,8 @@ A visual editor with category sidebar on the left and property list on the right
 **Enchantments / 附魔** - View, edit, add enchantments with searchable list, adjust levels, clear all
 查看/修改/添加附魔，支持中文搜索，可调整等级，一键清除
 
-**Lore / 描述** - Add, edit, remove lore lines. Color codes (&c red, &l bold, etc.), built-in palette picker, live preview
-添加/编辑/删除描述行，支持颜色代码（&c 红色、&l 粗体等），内置色板选择器，实时预览
+**Lore / 描述** - Add, edit, remove lore lines. Color codes (&c red, &l bold, etc.), built-in palette picker, live preview. Multi-line text editor with move up/down.
+添加/编辑/删除描述行，支持颜色代码（&c 红色、&l 粗体等），内置色板选择器，实时预览。多行文本编辑器，支持上下移动。
 
 **Attributes / 属性修饰** - Add modifiers (attack damage, armor, speed, etc.), 3 operations, slot selection, searchable list
 添加属性修饰（攻击力、护甲、速度等），三种运算模式，支持槽位选择，中文搜索
@@ -88,12 +90,14 @@ A visual editor with category sidebar on the left and property list on the right
 **Visual / 外观** - Custom model data, enchantment glint, hide tooltip, dye color, item name color
 自定义模型数据、附魔光效、隐藏提示框、染色颜色、物品名称颜色
 
-**Tools / 工具** - Copy NBT to clipboard, copy /give command, reset to original
-复制 NBT 到剪贴板、复制 Give 指令、重置为原始物品
+**Tools / 工具** - Copy NBT to clipboard, copy /give command, reset to original, export/import NBT to file
+复制 NBT 到剪贴板、复制 Give 指令、重置为原始物品、导出/导入 NBT 文件
 
 ---
 
 ## Advanced Mode / 高级模式
+
+![Advanced mode NBT editing interface](https://cdn.modrinth.com/data/cached_images/396fb5482afa86c8f77df3c997a0438df57ea720_0.webp)
 
 Full NBT tree editor for viewing and modifying all item data components.
 
@@ -109,20 +113,17 @@ Full NBT tree editor for viewing and modifying all item data components.
 
 ---
 
-## Screenshots / 截图
+## Development / 开发信息
 
-<!-- 将截图放入 img/ 文件夹，取消注释即可显示 -->
-<!-- Place screenshots in img/ folder, uncomment to display -->
+**NeoForge (Based on 1.21.1):**
+- Minecraft: 1.21.1
+- NeoForge: 21.1.172
+- Parchment Mappings: 2024.11.17
+- Java 21
 
-<!-- ![Simple Mode / 简易模式](img/simple_mode.png) -->
-<!-- ![Advanced Mode / 高级模式](img/advanced_mode.png) -->
-<!-- ![Enchantments / 附魔编辑](img/enchantments.png) -->
-<!-- ![Lore Editor / 描述编辑](img/lore.png) -->
-<!-- ![Attributes / 属性修饰](img/attributes.png) -->
-<!-- ![Color Picker / 颜色选择器](img/color_picker.png) -->
-
----
-
-## License / 许可证
-
-MIT
+**Fabric (Based on 1.21.1):**
+- Minecraft: 1.21.1
+- Fabric Loader: 0.16.9
+- Fabric API: 0.102.1+1.21.1
+- Parchment Mappings: 2024.11.17
+- Java 21
