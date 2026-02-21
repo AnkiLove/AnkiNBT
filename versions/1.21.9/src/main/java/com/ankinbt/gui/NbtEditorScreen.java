@@ -2,6 +2,7 @@ package com.ankinbt.gui;
 
 import com.ankinbt.compat.VersionCompat;
 import com.ankinbt.config.AnkiConfig;
+import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
 import net.minecraft.client.Minecraft;
@@ -41,6 +42,7 @@ public class NbtEditorScreen extends Screen {
     private final List<Btn> buttons = new ArrayList<>();
     private String statusMsg = null; private long statusTime = 0; private int statusColor = C3;
     private boolean dirty = false;
+    private boolean confirmClose = false;
 
     public NbtEditorScreen(ItemStack stack) {
         super(Component.translatable("ankinbt.title"));
@@ -86,7 +88,7 @@ public class NbtEditorScreen extends Screen {
     private void buildButtons() {
         buttons.clear();
         int bw = 22, gap = 3, by = py + 6, bx = px + pw - MARGIN - 2;
-        bx -= bw; buttons.add(new Btn(bx, by, bw, bw, "X", Component.translatable("ankinbt.btn.close"), this::onClose));
+        bx -= bw; buttons.add(new Btn(bx, by, bw, bw, "X", Component.translatable("ankinbt.btn.close"), this::tryClose));
         bx -= bw + gap; buttons.add(new Btn(bx, by, bw, bw, "-", Component.translatable("ankinbt.btn.collapse"), () -> { collapseAll(rootNode); rootNode.setExpanded(true); refreshVisible(); }));
         bx -= bw + gap; buttons.add(new Btn(bx, by, bw, bw, "+", Component.translatable("ankinbt.btn.expand"), () -> { expandAll(rootNode); refreshVisible(); }));
         bx -= bw + gap; buttons.add(new Btn(bx, by, bw, bw, "S", Component.translatable("ankinbt.btn.search"), () -> { searching = !searching; if (!searching) searchQ = ""; refreshVisible(); }));
@@ -95,6 +97,18 @@ public class NbtEditorScreen extends Screen {
         buttons.add(new Btn(bx, by, saveW, bw, Component.translatable("ankinbt.btn.save").getString(), Component.translatable("ankinbt.btn.save.tip"), this::saveToItem));
         int modeW = 50; bx -= modeW + gap + 4;
         buttons.add(new Btn(bx, by, modeW, bw, Component.translatable("ankinbt.btn.simple").getString(), Component.translatable("ankinbt.btn.switch_simple"), this::switchToSimple));
+
+        // Export button
+        int expW = 30;
+        bx -= expW + gap;
+        buttons.add(new Btn(bx, by, expW, bw, "Ex",
+                Component.translatable("ankinbt.simple.export_nbt"), this::exportNbt));
+
+        // Import button
+        int impW = 30;
+        bx -= impW + gap;
+        buttons.add(new Btn(bx, by, impW, bw, "Im",
+                Component.translatable("ankinbt.simple.import_nbt"), this::importNbt));
     }
 
     @Override
@@ -148,6 +162,46 @@ public class NbtEditorScreen extends Screen {
         }
         g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, BORDER);
         renderFooter(g);
+
+        // Confirm close dialog
+        if (confirmClose) {
+            renderConfirmClose(g, mx, my);
+        }
+    }
+
+    private void renderConfirmClose(GuiGraphics g, int mx, int my) {
+        g.fill(0, 0, width, height, 0x60000000);
+        int dw = 260, dh = 110;
+        int dx = (width - dw) / 2, dy = (height - dh) / 2;
+        g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
+        drawBorder(g, dx, dy, dw, dh, ERROR_C);
+
+        String title = Component.translatable("ankinbt.confirm.title").getString();
+        g.drawString(font, title, dx + 10, dy + 10, C1, false);
+        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, BORDER);
+        g.drawString(font, Component.translatable("ankinbt.confirm.unsaved").getString(), dx + 10, dy + 32, C2, false);
+        g.drawString(font, Component.translatable("ankinbt.confirm.discard_hint").getString(), dx + 10, dy + 46, C3, false);
+
+        int by = dy + dh - 32;
+        int bw2 = 70, bh2 = 22;
+
+        int saveX = dx + 10;
+        boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
+        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? ACCENT : 0xFF4F46E5);
+        String saveLabel = Component.translatable("ankinbt.confirm.save_close").getString();
+        g.drawString(font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, C1, false);
+
+        int discardX = dx + dw / 2 - bw2 / 2;
+        boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
+        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? 0x80EF4444 : 0x40EF4444);
+        String discardLabel = Component.translatable("ankinbt.confirm.discard").getString();
+        g.drawString(font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, C1, false);
+
+        int cancelX = dx + dw - bw2 - 10;
+        boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
+        g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? 0x50FFFFFF : 0x30FFFFFF);
+        String cancelLabel = Component.translatable("ankinbt.edit.cancel").getString();
+        g.drawString(font, cancelLabel, cancelX + (bw2 - font.width(cancelLabel)) / 2, by + 7, C2, false);
     }
 
     private void renderSidebar(GuiGraphics g) {
@@ -189,6 +243,29 @@ public class NbtEditorScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         double mx = event.x(); double my = event.y();
+
+        // Handle confirm close dialog
+        if (confirmClose) {
+            int dw = 260, dh = 110;
+            int dx = (width - dw) / 2, dy = (height - dh) / 2;
+            int by = dy + dh - 32;
+            int bw2 = 70, bh2 = 22;
+
+            int saveX = dx + 10;
+            if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+                saveToItem(); onClose(); return true;
+            }
+            int discardX = dx + dw / 2 - bw2 / 2;
+            if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
+                dirty = false; onClose(); return true;
+            }
+            int cancelX = dx + dw - bw2 - 10;
+            if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
+                confirmClose = false; return true;
+            }
+            return true;
+        }
+
         for (Btn b : buttons) if (b.isHover((int) mx, (int) my)) { b.action.run(); return true; }
         if (hoverIdx >= 0 && hoverIdx < visibleNodes.size()) {
             long now = System.currentTimeMillis();
@@ -208,11 +285,15 @@ public class NbtEditorScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key(); int mod = event.modifiers();
+        if (confirmClose) {
+            if (key == 256) { confirmClose = false; return true; }
+            return true;
+        }
         if (searching) {
             if (key == 259 && !searchQ.isEmpty()) { searchQ = searchQ.substring(0, searchQ.length() - 1); refreshVisible(); return true; }
             if (key == 256) { searching = false; searchQ = ""; refreshVisible(); return true; }
         }
-        if (key == 256) { onClose(); return true; }
+        if (key == 256) { tryClose(); return true; }
         if (key == 264 && selIdx < visibleNodes.size() - 1) { selIdx++; ensureVis(selIdx); return true; }
         if (key == 265 && selIdx > 0) { selIdx--; ensureVis(selIdx); return true; }
         if (!searching && selIdx >= 0 && selIdx < visibleNodes.size()) {
@@ -263,6 +344,42 @@ public class NbtEditorScreen extends Screen {
         dirty = false; setStatus(Component.translatable("ankinbt.status.saved").getString(), SUCCESS);
     }
     private void switchToSimple() { Minecraft.getInstance().setScreen(new SimpleEditorScreen(originalStack)); }
+
+    private void exportNbt() {
+        String itemId = originalStack.getItem().builtInRegistryHolder().key().location().getPath();
+        long ts = System.currentTimeMillis() / 1000;
+        String fileName = itemId + "_" + ts;
+        CompoundTag rebuilt = rootNode.toCompoundTag();
+        var path = NbtFileIO.exportNbt(rebuilt, fileName);
+        if (path != null) {
+            setStatus(Component.translatable("ankinbt.export.success").getString(), SUCCESS);
+        } else {
+            setStatus(Component.translatable("ankinbt.export.failed").getString(), ERROR_C);
+        }
+    }
+
+    private void importNbt() {
+        var files = NbtFileIO.listNbtFiles();
+        if (files.isEmpty()) {
+            setStatus(Component.translatable("ankinbt.import.no_files").getString(), ERROR_C);
+            return;
+        }
+        var latest = files.get(0);
+        CompoundTag tag = NbtFileIO.importNbt(latest.path());
+        if (tag != null) {
+            this.fullItemTag = tag;
+            rebuildTree();
+            dirty = true;
+            setStatus(Component.translatable("ankinbt.import.success").getString() + " (" + latest.name() + ")", SUCCESS);
+        } else {
+            setStatus(Component.translatable("ankinbt.import.load_failed").getString(), ERROR_C);
+        }
+    }
+
+    private void tryClose() {
+        if (dirty && com.ankinbt.config.AnkiConfig.isConfirmOnClose()) { confirmClose = true; } else { onClose(); }
+    }
+
     public void onNodeEdited() { dirty = true; refreshVisible(); setStatus(Component.translatable("ankinbt.status.edited").getString(), C2); }
     private void setStatus(String msg, int color) { statusMsg = msg; statusColor = color; statusTime = System.currentTimeMillis(); }
 

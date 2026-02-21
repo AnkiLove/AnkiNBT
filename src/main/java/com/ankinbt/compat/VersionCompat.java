@@ -11,6 +11,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,20 @@ public class VersionCompat {
 
     public static void setInstance(VersionCompat compat) {
         INSTANCE = compat;
+    }
+
+    // --- Platform paths (safe to call during mod init) ---
+
+    public Path getConfigDir() {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("config");
+    }
+
+    public Path getGameDir() {
+        return Minecraft.getInstance().gameDirectory.toPath();
+    }
+
+    public String getKeyDisplayName(int keyCode) {
+        return com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, -1).getDisplayName().getString();
     }
 
     // --- Registry access ---

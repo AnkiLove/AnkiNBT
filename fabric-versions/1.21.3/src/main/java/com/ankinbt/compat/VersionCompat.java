@@ -29,6 +29,17 @@ public class VersionCompat {
         return INSTANCE;
     }
 
+
+    // --- Platform paths ---
+    public java.nio.file.Path getConfigDir() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
+    }
+    public java.nio.file.Path getGameDir() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir();
+    }
+    public String getKeyDisplayName(int keyCode) {
+        return com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, -1).getDisplayName().getString();
+    }
     // --- Registry ---
     public List<String> getAllEnchantIds() {
         List<String> ids = new ArrayList<>();
