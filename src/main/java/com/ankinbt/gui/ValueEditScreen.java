@@ -1,6 +1,7 @@
 package com.ankinbt.gui;
 
 import com.ankinbt.compat.VersionCompat;
+import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
 import net.minecraft.client.Minecraft;
@@ -27,6 +28,7 @@ public class ValueEditScreen extends Screen {
     private String error = null;
     private int cursor;
     private int px, py;
+    private float openAnim = 0f;
 
     public ValueEditScreen(NbtEditorScreen parent, NbtTreeNode node) {
         super(Component.translatable("ankinbt.edit.title"));
@@ -45,27 +47,37 @@ public class ValueEditScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
-        g.fill(0, 0, width, height, 0x80000000);
-        g.fill(px, py, px + PW, py + PH, BG);
-        border(g, px, py, PW, PH, BORDER);
+        float speed = AnkiConfig.isUiAnimationEnabled() ? AnkiConfig.getUiAnimationSpeed() : 1.0f;
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
+
+        int scrim = fadeColor(0x80000000, openAnim);
+        int bg = fadeColor(BG, openAnim);
+        int border = fadeColor(BORDER, openAnim);
+        int accent = fadeColor(ACCENT, openAnim);
+        int inputBg = fadeColor(INPUT_BG, openAnim);
+        int err = fadeColor(ERR, openAnim);
+
+        g.fill(0, 0, width, height, scrim);
+        g.fill(px, py, px + PW, py + PH, bg);
+        border(g, px, py, PW, PH, border);
 
         // Header
-        g.drawString(font, Component.translatable("ankinbt.edit.editing", node.getKey()), px + 12, py + 10, C1, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.edit.editing", node.getKey()), px + 12, py + 10, C1, false);
         String type = node.getTypeName();
-        g.drawString(font, type, px + PW - font.width(type) - 12, py + 10, NbtHelper.getTagColor(node.getTag()), false);
-        g.fill(px + 1, py + 26, px + PW - 1, py + 27, BORDER);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, type, px + PW - font.width(type) - 12, py + 10, NbtHelper.getTagColor(node.getTag()), false);
+        g.fill(px + 1, py + 26, px + PW - 1, py + 27, border);
 
         // Input
         int ix = px + 12, iy = py + 36, iw = PW - 24, ih = 24;
-        g.fill(ix, iy, ix + iw, iy + ih, INPUT_BG);
-        border(g, ix, iy, iw, ih, ACCENT);
+        g.fill(ix, iy, ix + iw, iy + ih, inputBg);
+        border(g, ix, iy, iw, ih, accent);
 
         String disp = input;
         if (font.width(disp) > iw - 12) {
             int start = Math.max(0, cursor - 35);
             disp = ".." + input.substring(start);
         }
-        g.drawString(font, disp, ix + 4, iy + 8, C1, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, disp, ix + 4, iy + 8, C1, false);
 
         // Cursor
         if (System.currentTimeMillis() % 1000 < 500) {
@@ -76,7 +88,7 @@ public class ValueEditScreen extends Screen {
         }
 
         // Error
-        if (error != null) g.drawString(font, error, ix, iy + ih + 4, ERR, false);
+        if (error != null) com.ankinbt.compat.VersionCompat.get().drawString(g, font, error, ix, iy + ih + 4, err, false);
 
         // Buttons
         int by = py + PH - 36;
@@ -84,20 +96,26 @@ public class ValueEditScreen extends Screen {
 
         int cancelX = px + PW / 2 - bw - 8;
         boolean ch = mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh;
-        g.fill(cancelX, by, cancelX + bw, by + bh, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        border(g, cancelX, by, bw, bh, BORDER);
+        g.fill(cancelX, by, cancelX + bw, by + bh, fadeColor(ch ? 0x50FFFFFF : 0x30FFFFFF, openAnim));
+        border(g, cancelX, by, bw, bh, border);
         String cl = Component.translatable("ankinbt.edit.cancel").getString();
-        g.drawString(font, cl, cancelX + (bw - font.width(cl)) / 2, by + 7, C2, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, cl, cancelX + (bw - font.width(cl)) / 2, by + 7, C2, false);
 
         int okX = px + PW / 2 + 8;
         boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh;
-        g.fill(okX, by, okX + bw, by + bh, oh ? ACCENT : 0xFF4F46E5);
-        border(g, okX, by, bw, bh, ACCENT);
+        g.fill(okX, by, okX + bw, by + bh, fadeColor(oh ? ACCENT : 0xFF4F46E5, openAnim));
+        border(g, okX, by, bw, bh, accent);
         String ol = Component.translatable("ankinbt.edit.apply").getString();
-        g.drawString(font, ol, okX + (bw - font.width(ol)) / 2, by + 7, C1, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, ol, okX + (bw - font.width(ol)) / 2, by + 7, C1, false);
 
         // Hint
-        g.drawString(font, Component.translatable("ankinbt.edit.hint"), px + 12, py + PH - 12, C3, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.edit.hint"), px + 12, py + PH - 12, C3, false);
+    }
+
+    private int fadeColor(int color, float progress) {
+        int alpha = (color >>> 24) & 0xFF;
+        int faded = Math.max(0, Math.min(255, Math.round(alpha * progress)));
+        return (color & 0x00FFFFFF) | (faded << 24);
     }
 
     private void border(GuiGraphics g, int x, int y, int w, int h, int c) {

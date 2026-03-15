@@ -1,7 +1,9 @@
 package com.ankinbt.gui;
 
+import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtFileIO;
+import com.ankinbt.util.UiSound;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -15,6 +17,11 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.world.item.Item;
+import java.lang.reflect.Method;
+import java.nio.file.Path;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
@@ -198,6 +205,7 @@ public class SimpleEditorScreen extends Screen {
     private long statusTime = 0;
     private int statusColor = C3;
     private boolean dirty = false;
+    private float openAnim = 0f;
 
     // Sub-editor state
     private SubEditor activeSubEditor = null;
@@ -251,6 +259,12 @@ public class SimpleEditorScreen extends Screen {
                 Component.translatable("ankinbt.btn.save").getString(),
                 Component.translatable("ankinbt.btn.save.tip"), this::saveToItem));
 
+        int invW = 42;
+        bx -= invW + gap;
+        headerBtns.add(new Btn(bx, by, invW, bw,
+                Component.translatable("ankinbt.btn.inventory").getString(),
+                Component.translatable("ankinbt.btn.switch_inventory"), this::openInventorySwitch));
+
         int modeW = 50;
         bx -= modeW + gap + 4;
         headerBtns.add(new Btn(bx, by, modeW, bw,
@@ -262,13 +276,21 @@ public class SimpleEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
-        g.fill(0, 0, width, height, 0x70000000);
-        g.fill(px, py, px + pw, py + ph, BG);
-        drawBorder(g, px, py, pw, ph, BORDER);
+        float cfgSpeed = AnkiConfig.getUiAnimationSpeed();
+        float speed = Math.max(0.06f, Math.min(0.16f, cfgSpeed));
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
+        int scrimAlpha = Math.max(70, Math.min(130, Math.round(112f * openAnim)));
+        int panel = fadeColor(BG, openAnim);
+        int header = fadeColor(HEADER_BG, openAnim);
+        int border = fadeColor(BORDER, openAnim);
+
+        g.fill(0, 0, width, height, (scrimAlpha << 24));
+        g.fill(px, py, px + pw, py + ph, panel);
+        drawBorder(g, px, py, pw, ph, border);
 
         // Header
-        g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, HEADER_BG);
-        g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, BORDER);
+        g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
+        g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
         g.drawString(font, Component.translatable("ankinbt.simple.title"), px + 10, py + 12, C1, false);
         if (dirty) g.drawString(font, "*", px + 10 + font.width(Component.translatable("ankinbt.simple.title")), py + 12, ERROR_C, false);
 
@@ -276,7 +298,7 @@ public class SimpleEditorScreen extends Screen {
 
         // Sidebar
         renderSidebar(g, mx, my);
-        g.fill(px + SIDEBAR_W + 1, py + HEADER_H + 1, px + SIDEBAR_W + 2, py + ph - FOOTER_H, BORDER);
+        g.fill(px + SIDEBAR_W + 1, py + HEADER_H + 1, px + SIDEBAR_W + 2, py + ph - FOOTER_H, border);
 
         // Content
         if (activeSubEditor != null) {
@@ -286,8 +308,14 @@ public class SimpleEditorScreen extends Screen {
         }
 
         // Footer
-        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, BORDER);
+        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, border);
         renderFooter(g);
+    }
+
+    private int fadeColor(int color, float factor) {
+        int a = (color >>> 24) & 0xFF;
+        int alpha = Math.max(0, Math.min(255, Math.round(a * factor)));
+        return (alpha << 24) | (color & 0x00FFFFFF);
     }
 
     private void renderSidebar(GuiGraphics g, int mx, int my) {
@@ -410,10 +438,8 @@ public class SimpleEditorScreen extends Screen {
 
     // ==================== INPUT ====================
 
-    @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        double mx = event.x(); double my = event.y(); int btn = 0;
-        for (Btn b : headerBtns) if (b.isHover((int) mx, (int) my)) { b.action.run(); return true; }
+    private boolean handleMouseClicked(double mx, double my, int btn) {
+        for (Btn b : headerBtns) if (b.isHover((int) mx, (int) my)) { UiSound.playClick(); b.action.run(); return true; }
         if (activeSubEditor != null) return activeSubEditor.mouseClicked(mx, my, btn, contentX, contentY, contentW, contentH);
 
         int lx = sideX + 8;
@@ -425,6 +451,7 @@ public class SimpleEditorScreen extends Screen {
             int cw = sideW - 16;
             if (cy + CAT_H < catStartY || cy > catAreaBottom) continue;
             if (mx >= lx && mx < lx + cw && my >= cy && my < cy + CAT_H && my >= catStartY && my < catAreaBottom) {
+                UiSound.playClick();
                 activeCat = cats[i]; scrollOff = 0; return true;
             }
         }
@@ -432,7 +459,6 @@ public class SimpleEditorScreen extends Screen {
             List<ActionRow> rows = getRowsForCategory(activeCat);
             if (hoverRow < rows.size()) {
                 ActionRow row = rows.get(hoverRow);
-                // Check inline move button clicks
                 if (row.moveUp != null || row.moveDown != null) {
                     int ry = contentY + (hoverRow - scrollOff) * ROW_H;
                     int btnW = 16, btnH = 16, btnY = ry + (ROW_H - btnH) / 2;
@@ -440,22 +466,45 @@ public class SimpleEditorScreen extends Screen {
                     if (row.moveDown != null) {
                         rightX -= btnW + 2;
                         if (mx >= rightX && mx < rightX + btnW && my >= btnY && my < btnY + btnH) {
+                            UiSound.playClick();
                             row.moveDown.run(); return true;
                         }
                     }
                     if (row.moveUp != null) {
                         rightX -= btnW + 2;
                         if (mx >= rightX && mx < rightX + btnW && my >= btnY && my < btnY + btnH) {
+                            UiSound.playClick();
                             row.moveUp.run(); return true;
                         }
                     }
                 }
+                UiSound.playClick();
                 row.action.run(); return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
+        double mx = event.x();
+        double my = event.y();
+        int btn = event.button();
+        if (handleMouseClicked(mx, my, btn)) return true;
+
+        if (minecraft != null) {
+            double sw = minecraft.getWindow().getScreenWidth();
+            double sh = minecraft.getWindow().getScreenHeight();
+            if (sw > 0.0 && sh > 0.0) {
+                double sx = mx * width / sw;
+                double sy = my * height / sh;
+                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && handleMouseClicked(sx, sy, btn)) {
+                    return true;
+                }
             }
         }
         return super.mouseClicked(event, isDoubleClick);
     }
-
     @Override
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
         if (activeSubEditor != null) return activeSubEditor.mouseScrolled(sx, sy);
@@ -557,10 +606,30 @@ public class SimpleEditorScreen extends Screen {
         // Rarity
         var rarity = editStack.get(DataComponents.RARITY);
         if (rarity != null) {
-            rows.add(new ActionRow(tr("ankinbt.simple.rarity"), rarity.name(), () -> cycleRarity()));
+            rows.add(new ActionRow(tr("ankinbt.simple.rarity"), getRarityDisplayName(rarity), () -> cycleRarity()));
         }
 
         return rows;
+    }
+
+    private String getRarityDisplayName(net.minecraft.world.item.Rarity rarity) {
+        if (rarity == null) return "";
+        String lang = Minecraft.getInstance().options.languageCode;
+        boolean zh = lang != null && lang.startsWith("zh");
+        if (zh) {
+            return switch (rarity) {
+                case COMMON -> "\u666e\u901a";
+                case UNCOMMON -> "\u7f55\u89c1";
+                case RARE -> "\u7a00\u6709";
+                case EPIC -> "\u53f2\u8bd7";
+            };
+        }
+        return switch (rarity) {
+            case COMMON -> "Common";
+            case UNCOMMON -> "Uncommon";
+            case RARE -> "Rare";
+            case EPIC -> "Epic";
+        };
     }
 
     private List<ActionRow> getEnchantRows() {
@@ -660,14 +729,14 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private String getAttrDisplayName(String attrId) {
+        String translated = resolveAttributeDisplayName(attrId);
+        if (translated != null) return translated;
         String lang = Minecraft.getInstance().options.languageCode;
         if (lang != null && lang.startsWith("zh")) {
             String zh = ATTR_ZH.get(attrId);
             if (zh != null) return zh;
         }
-        // Fallback: strip namespace and format nicely
-        String name = attrId.contains(":") ? attrId.substring(attrId.indexOf(':') + 1) : attrId;
-        return name.replace("generic.", "").replace("_", " ");
+        return prettifyRegistryId(attrId);
     }
 
     private String getOpName(AttributeModifier.Operation op) {
@@ -763,8 +832,81 @@ public class SimpleEditorScreen extends Screen {
         rows.add(new ActionRow(tr("ankinbt.simple.copy_give_cmd"), null, this::copyGiveCommand));
         rows.add(new ActionRow(tr("ankinbt.simple.export_nbt"), null, () -> activeSubEditor = new NbtExportSubEditor(), ACCENT));
         rows.add(new ActionRow(tr("ankinbt.simple.import_nbt"), null, () -> activeSubEditor = new NbtImportSubEditor(), ACCENT));
+        if (supportsContainerPreview(editStack)) {
+            rows.add(new ActionRow(tr("ankinbt.simple.container_preview"), null, () -> activeSubEditor = new ContainerPreviewSubEditor(), ACCENT));
+        }
         rows.add(new ActionRow(tr("ankinbt.simple.reset"), null, this::resetItem, ERROR_C));
         return rows;
+    }
+
+    private boolean supportsContainerPreview(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+
+        String itemId = "";
+        try {
+            itemId = stack.getItem().builtInRegistryHolder().key().identifier().toString();
+        } catch (Throwable ignored) {}
+        if (isKnownContainerItem(itemId)) return true;
+
+        Optional<CompoundTag> fullOpt = NbtHelper.serializeItemStack(stack);
+        if (fullOpt.isEmpty()) return false;
+        CompoundTag full = fullOpt.get();
+        CompoundTag components = readCompoundTagCompat(full, "components");
+        if (hasListTagCompat(components, "minecraft:container")) return true;
+        if (hasListTagCompat(components, "minecraft:bundle_contents")) return true;
+        CompoundTag tag = readCompoundTagCompat(full, "tag");
+        CompoundTag block = readCompoundTagCompat(tag, "BlockEntityTag");
+        return hasListTagCompat(block, "Items");
+    }
+
+    private boolean isKnownContainerItem(String itemId) {
+        if (itemId == null || itemId.isBlank()) return false;
+        return itemId.endsWith(":bundle")
+                || itemId.contains("shulker_box")
+                || itemId.endsWith(":chest")
+                || itemId.endsWith(":trapped_chest")
+                || itemId.endsWith(":barrel")
+                || itemId.endsWith(":hopper")
+                || itemId.endsWith(":dispenser")
+                || itemId.endsWith(":dropper")
+                || itemId.endsWith(":furnace")
+                || itemId.endsWith(":blast_furnace")
+                || itemId.endsWith(":smoker")
+                || itemId.endsWith(":chiseled_bookshelf")
+                || itemId.endsWith(":crafter")
+                || itemId.endsWith(":brewing_stand");
+    }
+
+    private CompoundTag readCompoundTagCompat(CompoundTag parent, String key) {
+        if (parent == null || key == null || key.isBlank()) return null;
+        try {
+            Object out = parent.getClass().getMethod("getCompound", String.class).invoke(parent, key);
+            Object raw = unwrapOptionalCompat(out);
+            if (raw instanceof CompoundTag ct) return ct;
+        } catch (Throwable ignored) {}
+        Object raw = readTagCompat(parent, key);
+        return raw instanceof CompoundTag ct ? ct : null;
+    }
+
+    private boolean hasListTagCompat(CompoundTag parent, String key) {
+        Object raw = readTagCompat(parent, key);
+        return raw instanceof ListTag list && !list.isEmpty();
+    }
+
+    private Object readTagCompat(CompoundTag parent, String key) {
+        if (parent == null || key == null || key.isBlank()) return null;
+        try {
+            Object out = parent.getClass().getMethod("get", String.class).invoke(parent, key);
+            return unwrapOptionalCompat(out);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private Object unwrapOptionalCompat(Object value) {
+        Object out = value;
+        while (out instanceof Optional<?> opt) out = opt.orElse(null);
+        return out;
     }
 
     // ==================== ITEM OPERATIONS ====================
@@ -1006,13 +1148,65 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private String getEnchantDisplayName(String enchId) {
-        // Check if Chinese locale
+        String translated = resolveEnchantDisplayName(enchId);
+        if (translated != null) return translated;
         String lang = Minecraft.getInstance().options.languageCode;
         if (lang != null && lang.startsWith("zh")) {
             String zh = ENCHANT_ZH.get(enchId);
-            if (zh != null) return zh + " (" + enchId.replace("minecraft:", "") + ")";
+            if (zh != null) return zh;
         }
-        return enchId;
+        return prettifyRegistryId(enchId);
+    }
+
+    private String resolveAttributeDisplayName(String attrId) {
+        try {
+            Optional<Holder.Reference<Attribute>> holder = VersionCompat.get().getAttributeHolder(attrId);
+            if (holder.isEmpty()) return null;
+            Object attribute = holder.get().value();
+            for (String methodName : new String[] { "getDescriptionId", "descriptionId" }) {
+                try {
+                    Object out = attribute.getClass().getMethod(methodName).invoke(attribute);
+                    if (out instanceof String key && !key.isBlank()) {
+                        String translated = Component.translatable(key).getString();
+                        if (!translated.isBlank() && !translated.equals(key)) return translated;
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private String resolveEnchantDisplayName(String enchId) {
+        try {
+            Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
+            if (holder.isEmpty()) return null;
+            Component description = invokeComponent(holder.get().value(), "description", "getDescription");
+            if (description != null) {
+                String translated = description.getString();
+                if (!translated.isBlank()) return translated;
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private Component invokeComponent(Object target, String... methodNames) {
+        if (target == null || methodNames == null) return null;
+        for (String methodName : methodNames) {
+            try {
+                Object out = target.getClass().getMethod(methodName).invoke(target);
+                if (out instanceof Component component) return component;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private String prettifyRegistryId(String id) {
+        String name = id == null ? "" : id;
+        int idx = name.indexOf(':');
+        if (idx >= 0 && idx + 1 < name.length()) {
+            name = name.substring(idx + 1);
+        }
+        return name.replace("generic.", "").replace('_', ' ');
     }
 
     // ==================== INLINE EDITOR ====================
@@ -1129,7 +1323,11 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private void switchToAdvanced() {
-        Minecraft.getInstance().setScreen(new NbtEditorScreen(editStack));
+        Minecraft.getInstance().setScreen(new NbtEditorScreen(editStack, inventorySlot));
+    }
+
+    private void openInventorySwitch() {
+        activeSubEditor = new InventorySwitchSubEditor();
     }
 
     private void markDirty() { dirty = true; setStatus(tr("ankinbt.status.edited"), C2); }
@@ -1139,6 +1337,91 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private static String tr(String key) { return Component.translatable(key).getString(); }
+
+    private int currentEditedSlot() {
+        if (inventorySlot >= 0) return inventorySlot;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return -1;
+        return VersionCompat.get().getSelectedSlot(mc.player.getInventory());
+    }
+
+    private void switchToInventorySlot(int slot) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            setStatus(tr("ankinbt.message.no_item"), ERROR_C);
+            activeSubEditor = null;
+            return;
+        }
+        if (slot < 0) {
+            activeSubEditor = null;
+            return;
+        }
+        ItemStack stack = mc.player.getInventory().getItem(slot);
+        if (stack == null || stack.isEmpty()) {
+            setStatus(tr("ankinbt.simple.inventory_empty"), ERROR_C);
+            activeSubEditor = null;
+            return;
+        }
+        Minecraft.getInstance().setScreen(new SimpleEditorScreen(stack.copy(), slot));
+    }
+
+    private boolean hasTinyFd() {
+        try {
+            Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private String tinyFdSavePath(String defaultPath) {
+        return tinyFdDialog("tinyfd_saveFileDialog", defaultPath, false);
+    }
+
+    private String tinyFdOpenPath(String defaultPath) {
+        return tinyFdDialog("tinyfd_openFileDialog", defaultPath, true);
+    }
+
+    private String tinyFdDialog(String methodName, String defaultPath, boolean isOpen) {
+        try {
+            Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            for (Method m : clazz.getMethods()) {
+                if (!m.getName().equals(methodName)) continue;
+                Object out = m.invoke(null, tinyFdArgs(m.getParameterTypes(), defaultPath, isOpen));
+                if (out instanceof CharSequence cs) return cs.toString();
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private Object[] tinyFdArgs(Class<?>[] parameterTypes, String defaultPath, boolean isOpen) {
+        Object[] args = new Object[parameterTypes.length];
+        int stringIndex = 0;
+        for (int i = 0; i < parameterTypes.length; i++) {
+            Class<?> pt = parameterTypes[i];
+            if (CharSequence.class.isAssignableFrom(pt) || pt == String.class) {
+                if (stringIndex == 0) {
+                    args[i] = isOpen ? tr("ankinbt.simple.import_nbt") : tr("ankinbt.simple.export_nbt");
+                } else if (stringIndex == 1) {
+                    args[i] = defaultPath;
+                } else {
+                    args[i] = "NBT files (*.nbt)";
+                }
+                stringIndex++;
+            } else if (pt == String[].class) {
+                args[i] = new String[] { "*.nbt" };
+            } else if (pt == boolean.class || pt == Boolean.class) {
+                args[i] = false;
+            } else if (pt == int.class || pt == Integer.class) {
+                args[i] = 1;
+            } else if (pt.getName().equals("org.lwjgl.PointerBuffer")) {
+                args[i] = null;
+            } else {
+                args[i] = null;
+            }
+        }
+        return args;
+    }
 
     private void drawBorder(GuiGraphics g, int x, int y, int w, int h, int c) {
         g.fill(x, y, x + w, y + 1, c); g.fill(x, y + h - 1, x + w, y + h, c);
@@ -1410,7 +1693,15 @@ public class SimpleEditorScreen extends Screen {
             if (fileName.isEmpty()) { message = tr("ankinbt.export.empty_name"); msgColor = ERROR_C; return; }
             var opt = NbtHelper.serializeItemStack(editStack);
             if (opt.isEmpty()) { message = tr("ankinbt.export.failed"); msgColor = ERROR_C; return; }
-            var path = NbtFileIO.exportNbt(opt.get(), fileName, category.isBlank() ? null : category, alias.isBlank() ? null : alias);
+            var path = (Path) null;
+            if (hasTinyFd()) {
+                Path base = com.ankinbt.config.AnkiConfig.getExportPath(category.isBlank() ? null : category);
+                String picked = tinyFdSavePath(base.resolve(fileName + ".nbt").toString());
+                if (picked == null || picked.isBlank()) return;
+                path = NbtFileIO.exportNbtToPath(opt.get(), Path.of(picked), alias.isBlank() ? null : alias);
+            } else {
+                path = NbtFileIO.exportNbt(opt.get(), fileName, category.isBlank() ? null : category, alias.isBlank() ? null : alias);
+            }
             if (path != null) {
                 setStatus(tr("ankinbt.export.success"), SUCCESS);
                 activeSubEditor = null;
@@ -1431,6 +1722,7 @@ public class SimpleEditorScreen extends Screen {
         private int selectedIdx = -1;
         private net.minecraft.nbt.CompoundTag previewTag = null;
         private String previewInfo = null;
+        private final Map<String, ItemStack> iconCache = new HashMap<>();
 
         NbtImportSubEditor() {
             categories = com.ankinbt.config.AnkiConfig.listExportCategories();
@@ -1440,6 +1732,7 @@ public class SimpleEditorScreen extends Screen {
         private void refreshFiles() {
             files = NbtFileIO.listNbtFiles(currentCategory.isEmpty() ? null : currentCategory);
             selectedIdx = -1; previewTag = null; previewInfo = null; scrollOff = 0;
+            iconCache.clear();
         }
 
         @Override
@@ -1496,9 +1789,11 @@ public class SimpleEditorScreen extends Screen {
                     else if (hovered) g.fill(listX + 1, ry, listX + listW - 1, ry + rowH, HOVER);
 
                     var entry = files.get(i);
+                    ItemStack icon = iconFor(entry);
+                    if (!icon.isEmpty()) g.renderItem(icon, listX + 3, ry + 2);
                     String name = entry.displayName();
-                    if (font.width(name) > listW - 16) name = font.plainSubstrByWidth(name, listW - 22) + "..";
-                    g.drawString(font, name, listX + 4, ry + 6, sel ? C1 : C2, false);
+                    if (font.width(name) > listW - 34) name = font.plainSubstrByWidth(name, listW - 40) + "..";
+                    g.drawString(font, name, listX + 22, ry + 6, sel ? C1 : C2, false);
                 }
             }
 
@@ -1540,6 +1835,11 @@ public class SimpleEditorScreen extends Screen {
             boolean rh = mx >= refX && mx < refX + 50 && my >= by && my < by + bh2;
             g.fill(refX, by, refX + 50, by + bh2, rh ? BTN_HOVER : BTN_BG);
             g.drawString(font, tr("ankinbt.import.refresh"), refX + (50 - font.width(tr("ankinbt.import.refresh"))) / 2, by + 7, C2, false);
+            int openW = 76;
+            int openX = refX + 56;
+            boolean fh = mx >= openX && mx < openX + openW && my >= by && my < by + bh2;
+            g.fill(openX, by, openX + openW, by + bh2, fh ? BTN_HOVER : BTN_BG);
+            g.drawString(font, tr("ankinbt.import.open_file"), openX + (openW - font.width(tr("ankinbt.import.open_file"))) / 2, by + 7, C2, false);
 
             int cancelX = dx + dw / 2 - bw2 - 6;
             boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
@@ -1591,6 +1891,12 @@ public class SimpleEditorScreen extends Screen {
             if (mx >= refX && mx < refX + 50 && my >= by && my < by + bh2) {
                 categories = com.ankinbt.config.AnkiConfig.listExportCategories();
                 refreshFiles(); return true;
+            }
+            int openW = 76;
+            int openX = refX + 56;
+            if (mx >= openX && mx < openX + openW && my >= by && my < by + bh2) {
+                importFromDialog();
+                return true;
             }
 
             int cancelX = dx + dw / 2 - bw2 - 6;
@@ -1655,6 +1961,569 @@ public class SimpleEditorScreen extends Screen {
             setStatus(tr("ankinbt.import.success"), SUCCESS);
             activeSubEditor = null;
         }
+
+        private void importFromDialog() {
+            if (!hasTinyFd()) return;
+            String picked = tinyFdOpenPath(com.ankinbt.config.AnkiConfig.getExportPath().toString());
+            if (picked == null || picked.isBlank()) return;
+            CompoundTag tag = NbtFileIO.importNbt(Path.of(picked));
+            if (tag == null) {
+                setStatus(tr("ankinbt.import.load_failed"), ERROR_C);
+                return;
+            }
+            var opt = NbtHelper.deserializeItemStack(tag);
+            if (opt.isEmpty()) {
+                setStatus(tr("ankinbt.import.invalid_nbt"), ERROR_C);
+                return;
+            }
+            editStack = opt.get();
+            markDirty();
+            setStatus(tr("ankinbt.import.success"), SUCCESS);
+            activeSubEditor = null;
+        }
+
+        private ItemStack iconFor(NbtFileIO.NbtFileEntry entry) {
+            if (entry == null || entry.path() == null) return ItemStack.EMPTY;
+            String key = entry.path().toString();
+            ItemStack cached = iconCache.get(key);
+            if (cached != null) return cached;
+            ItemStack icon = ItemStack.EMPTY;
+            CompoundTag tag = NbtFileIO.importNbt(entry.path());
+            if (tag != null) {
+                var opt = NbtHelper.deserializeItemStack(tag);
+                if (opt.isPresent()) icon = opt.get();
+            }
+            iconCache.put(key, icon);
+            return icon;
+        }
+    }
+
+    class ContainerPreviewSubEditor implements SubEditor {
+        private static final int COLS = 9;
+        private static final int ROWS = 3;
+        private static final int PAGE_SIZE = COLS * ROWS;
+
+        private final List<CompoundTag> slotTags = new ArrayList<>();
+        private final List<ItemStack> slotStacks = new ArrayList<>();
+        private int selectedSlot = 0;
+        private int page = 0;
+        private StorageMode mode = StorageMode.CONTAINER;
+        private String message = "";
+        private int msgColor = C2;
+
+        ContainerPreviewSubEditor() {
+            loadFromItem();
+        }
+
+        @Override
+        public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
+            int dw = Math.min(w - 10, 470), dh = Math.min(h - 10, 300);
+            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
+            drawBorder(g, dx, dy, dw, dh, ACCENT);
+
+            g.drawString(font, tr("ankinbt.container.title"), dx + 10, dy + 8, C1, false);
+            g.drawString(font, tr("ankinbt.container.mode") + ": " + modeName(), dx + 190, dy + 8, C2, false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+
+            int gridX = dx + 14;
+            int gridY = dy + 36;
+            int cell = 20;
+            int gap = 4;
+
+            int start = page * PAGE_SIZE;
+            int hoveredGlobal = -1;
+            ItemStack hoveredStack = ItemStack.EMPTY;
+
+            for (int i = 0; i < PAGE_SIZE; i++) {
+                int col = i % COLS;
+                int row = i / COLS;
+                int sx = gridX + col * (cell + gap);
+                int sy = gridY + row * (cell + gap);
+                int global = start + i;
+                boolean sel = global == selectedSlot;
+                boolean hover = mx >= sx && mx < sx + cell && my >= sy && my < sy + cell;
+                if (hover) hoveredGlobal = global;
+
+                int bg = sel ? 0x805F3DC4 : hover ? 0x604F46E5 : 0x40212B43;
+                g.fill(sx, sy, sx + cell, sy + cell, bg);
+                drawBorder(g, sx, sy, cell, cell, sel ? ACCENT : BORDER);
+
+                ItemStack st = stackAt(global);
+                if (!st.isEmpty()) {
+                    g.renderItem(st, sx + 2, sy + 2);
+                    if (hover) hoveredStack = st;
+                }
+            }
+
+            String slotLabel = tr("ankinbt.container.slot") + " " + selectedSlot;
+            g.drawString(font, slotLabel, dx + 14, dy + 112, C2, false);
+            String pageText = (page + 1) + " / " + Math.max(1, (slotTags.size() + PAGE_SIZE - 1) / PAGE_SIZE);
+            g.drawString(font, pageText, dx + 14 + font.width(slotLabel) + 18, dy + 112, C3, false);
+
+            int by = dy + dh - 30;
+            int bw = 66;
+            int bh = 20;
+            int bx = dx + 10;
+
+            renderSmallBtn(g, font, mx, my, bx, by, 20, bh, "<");
+            bx += 24;
+            renderSmallBtn(g, font, mx, my, bx, by, 20, bh, ">");
+            bx += 28;
+            renderSmallBtn(g, font, mx, my, bx, by, bw, bh, tr("ankinbt.container.from_hand"));
+            bx += bw + 6;
+            renderSmallBtn(g, font, mx, my, bx, by, bw, bh, tr("ankinbt.container.pick_item"));
+            bx += bw + 6;
+            renderSmallBtn(g, font, mx, my, bx, by, bw, bh, tr("ankinbt.container.clear_slot"));
+            bx += bw + 6;
+            renderSmallBtn(g, font, mx, my, bx, by, 56, bh, modeName());
+            bx += 62;
+            renderSmallBtn(g, font, mx, my, bx, by, 58, bh, tr("ankinbt.edit.apply"));
+            bx += 64;
+            renderSmallBtn(g, font, mx, my, bx, by, 58, bh, tr("ankinbt.edit.cancel"));
+
+            if (!message.isEmpty()) {
+                g.drawString(font, message, dx + 10, by - 12, msgColor, false);
+            }
+
+            if (hoveredGlobal >= 0 && !hoveredStack.isEmpty()) {
+                VersionCompat.get().renderTooltip(g, font, hoveredStack.getHoverName(), mx, my);
+            }
+        }
+
+        @Override
+        public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            int dw = Math.min(w - 10, 470), dh = Math.min(h - 10, 300);
+            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+            int gridX = dx + 14;
+            int gridY = dy + 36;
+            int cell = 20;
+            int gap = 4;
+
+            for (int i = 0; i < PAGE_SIZE; i++) {
+                int col = i % COLS;
+                int row = i / COLS;
+                int sx = gridX + col * (cell + gap);
+                int sy = gridY + row * (cell + gap);
+                if (mx >= sx && mx < sx + cell && my >= sy && my < sy + cell) {
+                    selectedSlot = page * PAGE_SIZE + i;
+                    ensureSlots(selectedSlot + 1);
+                    return true;
+                }
+            }
+
+            int by = dy + dh - 30;
+            int bw = 66;
+            int bh = 20;
+            int bx = dx + 10;
+
+            if (hit(mx, my, bx, by, 20, bh)) { prevPage(); return true; }
+            bx += 24;
+            if (hit(mx, my, bx, by, 20, bh)) { nextPage(); return true; }
+            bx += 28;
+            if (hit(mx, my, bx, by, bw, bh)) { fillFromMainHand(); return true; }
+            bx += bw + 6;
+            if (hit(mx, my, bx, by, bw, bh)) { openPicker(); return true; }
+            bx += bw + 6;
+            if (hit(mx, my, bx, by, bw, bh)) { clearSelected(); return true; }
+            bx += bw + 6;
+            if (hit(mx, my, bx, by, 56, bh)) { cycleMode(); return true; }
+            bx += 62;
+            if (hit(mx, my, bx, by, 58, bh)) { applyToItem(); return true; }
+            bx += 64;
+            if (hit(mx, my, bx, by, 58, bh)) { activeSubEditor = null; return true; }
+            return true;
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mod) {
+            if (key == 256) { activeSubEditor = null; return true; }
+            if (key == 261) { clearSelected(); return true; }
+            if (key == 257 || key == 335) { applyToItem(); return true; }
+            return true;
+        }
+
+        @Override
+        public boolean charTyped(char c, int mod) {
+            return false;
+        }
+
+        @Override
+        public boolean mouseScrolled(double sx, double sy) {
+            if (sy > 0) prevPage();
+            if (sy < 0) nextPage();
+            return true;
+        }
+
+        private void prevPage() {
+            if (page > 0) page--;
+        }
+
+        private void nextPage() {
+            int maxPage = Math.max(0, (slotTags.size() - 1) / PAGE_SIZE);
+            if (page < maxPage) page++;
+        }
+
+        private void cycleMode() {
+            mode = switch (mode) {
+                case CONTAINER -> StorageMode.BUNDLE;
+                case BUNDLE -> StorageMode.LEGACY;
+                case LEGACY -> StorageMode.CONTAINER;
+            };
+            message = tr("ankinbt.container.mode") + ": " + modeName();
+            msgColor = C2;
+        }
+
+        private String modeName() {
+            return switch (mode) {
+                case BUNDLE -> tr("ankinbt.container.mode.bundle");
+                case LEGACY -> tr("ankinbt.container.mode.legacy");
+                default -> tr("ankinbt.container.mode.container");
+            };
+        }
+
+        private ItemStack stackAt(int global) {
+            if (global < 0 || global >= slotStacks.size()) return ItemStack.EMPTY;
+            ItemStack st = slotStacks.get(global);
+            return st == null ? ItemStack.EMPTY : st;
+        }
+
+        private void fillFromMainHand() {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) return;
+            ItemStack hand = mc.player.getMainHandItem();
+            if (hand == null || hand.isEmpty()) {
+                message = tr("ankinbt.container.empty_hand");
+                msgColor = ERROR_C;
+                return;
+            }
+            ensureSlots(selectedSlot + 1);
+            Optional<CompoundTag> tag = NbtHelper.serializeItemStack(hand);
+            if (tag.isEmpty()) {
+                message = tr("ankinbt.status.save_error");
+                msgColor = ERROR_C;
+                return;
+            }
+            slotTags.set(selectedSlot, copyTag(tag.get()));
+            slotStacks.set(selectedSlot, hand.copy());
+            message = tr("ankinbt.status.edited");
+            msgColor = C2;
+        }
+
+        private void openPicker() {
+            final int slot = selectedSlot;
+            Minecraft.getInstance().setScreen(new ItemPickerScreen(SimpleEditorScreen.this, id -> {
+                ensureSlots(slot + 1);
+                Item item = com.ankinbt.util.ItemRegistryHelper.resolveItem(id);
+                if (item == null) return;
+                ItemStack stack = new ItemStack(item, 1);
+                Optional<CompoundTag> tag = NbtHelper.serializeItemStack(stack);
+                if (tag.isPresent()) {
+                    slotTags.set(slot, copyTag(tag.get()));
+                    slotStacks.set(slot, stack.copy());
+                    message = tr("ankinbt.status.edited");
+                    msgColor = C2;
+                }
+            }));
+        }
+
+        private void clearSelected() {
+            ensureSlots(selectedSlot + 1);
+            slotTags.set(selectedSlot, null);
+            slotStacks.set(selectedSlot, ItemStack.EMPTY);
+            message = tr("ankinbt.status.deleted");
+            msgColor = C2;
+        }
+
+        private void loadFromItem() {
+            slotTags.clear();
+            slotStacks.clear();
+            selectedSlot = 0;
+            page = 0;
+            mode = StorageMode.CONTAINER;
+
+            Optional<CompoundTag> fullOpt = NbtHelper.serializeItemStack(editStack);
+            if (fullOpt.isEmpty()) {
+                ensureSlots(PAGE_SIZE);
+                return;
+            }
+            CompoundTag full = fullOpt.get();
+            CompoundTag components = getCompound(full, "components");
+            ListTag list = components == null ? null : getList(components, "minecraft:container");
+            if (list != null && !list.isEmpty()) {
+                mode = StorageMode.CONTAINER;
+                readContainerList(list);
+                return;
+            }
+
+            ListTag bundle = components == null ? null : getList(components, "minecraft:bundle_contents");
+            if (bundle != null && !bundle.isEmpty()) {
+                mode = StorageMode.BUNDLE;
+                readBundleList(bundle);
+                return;
+            }
+
+            CompoundTag tag = getCompound(full, "tag");
+            CompoundTag block = tag == null ? null : getCompound(tag, "BlockEntityTag");
+            ListTag legacy = block == null ? null : getList(block, "Items");
+            if (legacy != null && !legacy.isEmpty()) {
+                mode = StorageMode.LEGACY;
+                readLegacyList(legacy);
+                return;
+            }
+
+            ensureSlots(PAGE_SIZE);
+        }
+
+        private void readContainerList(ListTag list) {
+            int max = PAGE_SIZE;
+            for (int i = 0; i < list.size(); i++) {
+                Object entry = list.get(i);
+                if (!(entry instanceof CompoundTag ct)) continue;
+                max = Math.max(max, readInt(ct, "slot", 0) + 1);
+            }
+            ensureSlots(max);
+            for (int i = 0; i < list.size(); i++) {
+                Object entry = list.get(i);
+                if (!(entry instanceof CompoundTag ct)) continue;
+                int slot = readInt(ct, "slot", -1);
+                if (slot < 0) continue;
+                CompoundTag item = getCompound(ct, "item");
+                if (item == null) item = getCompound(ct, "stack");
+                if (item == null) continue;
+                setSlot(slot, item);
+            }
+        }
+
+        private void readBundleList(ListTag list) {
+            ensureSlots(Math.max(PAGE_SIZE, list.size()));
+            for (int i = 0; i < list.size(); i++) {
+                Object entry = list.get(i);
+                if (entry instanceof CompoundTag ct) setSlot(i, ct);
+            }
+        }
+
+        private void readLegacyList(ListTag list) {
+            int max = PAGE_SIZE;
+            for (int i = 0; i < list.size(); i++) {
+                Object entry = list.get(i);
+                if (!(entry instanceof CompoundTag ct)) continue;
+                max = Math.max(max, readInt(ct, "Slot", 0) + 1);
+            }
+            ensureSlots(max);
+            for (int i = 0; i < list.size(); i++) {
+                Object entry = list.get(i);
+                if (!(entry instanceof CompoundTag ct)) continue;
+                int slot = readInt(ct, "Slot", -1);
+                if (slot < 0) continue;
+                CompoundTag stack = new CompoundTag();
+                stack.putString("id", readString(ct, "id", "minecraft:air"));
+                stack.putInt("count", Math.max(1, readInt(ct, "Count", 1)));
+                CompoundTag legacyTag = getCompound(ct, "tag");
+                if (legacyTag != null && !legacyTag.isEmpty()) {
+                    CompoundTag components = new CompoundTag();
+                    components.put("minecraft:custom_data", copyTag(legacyTag));
+                    stack.put("components", components);
+                }
+                setSlot(slot, stack);
+            }
+        }
+
+        private void setSlot(int slot, CompoundTag stackTag) {
+            ensureSlots(slot + 1);
+            slotTags.set(slot, copyTag(stackTag));
+            slotStacks.set(slot, decodeStack(stackTag));
+        }
+
+        private void ensureSlots(int size) {
+            int target = Math.max(PAGE_SIZE, size);
+            while (slotTags.size() < target) {
+                slotTags.add(null);
+                slotStacks.add(ItemStack.EMPTY);
+            }
+        }
+
+        private ItemStack decodeStack(CompoundTag stackTag) {
+            if (stackTag == null || stackTag.isEmpty()) return ItemStack.EMPTY;
+            var opt = NbtHelper.deserializeItemStack(stackTag);
+            if (opt.isPresent()) return opt.get();
+            String id = readString(stackTag, "id", "");
+            if (id.isBlank()) return ItemStack.EMPTY;
+            Item item = com.ankinbt.util.ItemRegistryHelper.resolveItem(id);
+            if (item == null) return ItemStack.EMPTY;
+            return new ItemStack(item, Math.max(1, readInt(stackTag, "count", 1)));
+        }
+
+        private void applyToItem() {
+            Optional<CompoundTag> fullOpt = NbtHelper.serializeItemStack(editStack);
+            if (fullOpt.isEmpty()) {
+                message = tr("ankinbt.status.save_error");
+                msgColor = ERROR_C;
+                return;
+            }
+            CompoundTag full = fullOpt.get();
+            CompoundTag components = getOrCreateCompound(full, "components");
+
+            if (mode == StorageMode.CONTAINER) {
+                ListTag out = new ListTag();
+                for (int i = 0; i < slotTags.size(); i++) {
+                    CompoundTag stack = slotTags.get(i);
+                    if (stack == null || isAir(stack)) continue;
+                    CompoundTag entry = new CompoundTag();
+                    entry.putInt("slot", i);
+                    entry.put("item", copyTag(stack));
+                    out.add(entry);
+                }
+                components.put("minecraft:container", out);
+                removeKey(components, "minecraft:bundle_contents");
+            } else if (mode == StorageMode.BUNDLE) {
+                ListTag out = new ListTag();
+                for (CompoundTag stack : slotTags) {
+                    if (stack == null || isAir(stack)) continue;
+                    out.add(copyTag(stack));
+                }
+                components.put("minecraft:bundle_contents", out);
+                removeKey(components, "minecraft:container");
+            } else {
+                CompoundTag tag = getOrCreateCompound(full, "tag");
+                CompoundTag block = getOrCreateCompound(tag, "BlockEntityTag");
+                ListTag items = new ListTag();
+                for (int i = 0; i < slotTags.size(); i++) {
+                    CompoundTag stack = slotTags.get(i);
+                    if (stack == null || isAir(stack)) continue;
+                    items.add(toLegacyStack(i, stack));
+                }
+                block.put("Items", items);
+                tag.put("BlockEntityTag", block);
+                full.put("tag", tag);
+            }
+
+            full.put("components", components);
+            var outStack = NbtHelper.deserializeItemStack(full);
+            if (outStack.isEmpty()) {
+                message = tr("ankinbt.status.save_error");
+                msgColor = ERROR_C;
+                return;
+            }
+
+            editStack = outStack.get();
+            markDirty();
+            loadFromItem();
+            message = tr("ankinbt.container.applied");
+            msgColor = SUCCESS;
+        }
+
+        private CompoundTag toLegacyStack(int slot, CompoundTag stack) {
+            CompoundTag out = new CompoundTag();
+            out.putByte("Slot", (byte) (slot & 255));
+            out.putString("id", readString(stack, "id", "minecraft:air"));
+            out.putByte("Count", (byte) Math.max(1, Math.min(127, readInt(stack, "count", 1))));
+            CompoundTag components = getCompound(stack, "components");
+            if (components != null) {
+                CompoundTag custom = getCompound(components, "minecraft:custom_data");
+                if (custom != null && !custom.isEmpty()) out.put("tag", copyTag(custom));
+            }
+            return out;
+        }
+
+        private boolean isAir(CompoundTag stack) {
+            return "minecraft:air".equals(readString(stack, "id", "minecraft:air"));
+        }
+
+        private void renderSmallBtn(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h, String text) {
+            boolean hover = hit(mx, my, x, y, w, h);
+            g.fill(x, y, x + w, y + h, hover ? BTN_HOVER : BTN_BG);
+            String draw = text;
+            if (font.width(draw) > w - 8) draw = font.plainSubstrByWidth(draw, w - 12) + "..";
+            g.drawString(font, draw, x + (w - font.width(draw)) / 2, y + 6, C2, false);
+        }
+
+        private boolean hit(double mx, double my, int x, int y, int w, int h) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+
+        private CompoundTag copyTag(CompoundTag source) {
+            if (source == null) return null;
+            CompoundTag out = new CompoundTag();
+            out.merge(source);
+            return out;
+        }
+
+        private CompoundTag getCompound(CompoundTag parent, String key) {
+            if (parent == null || key == null || key.isBlank()) return null;
+            Object raw = getTag(parent, key);
+            return raw instanceof CompoundTag ct ? ct : null;
+        }
+
+        private ListTag getList(CompoundTag parent, String key) {
+            if (parent == null || key == null || key.isBlank()) return null;
+            Object raw = getTag(parent, key);
+            return raw instanceof ListTag lt ? lt : null;
+        }
+
+        private CompoundTag getOrCreateCompound(CompoundTag parent, String key) {
+            CompoundTag out = getCompound(parent, key);
+            if (out == null) {
+                out = new CompoundTag();
+                parent.put(key, out);
+            }
+            return out;
+        }
+
+        private void removeKey(CompoundTag parent, String key) {
+            if (parent == null || key == null || key.isBlank()) return;
+            try {
+                parent.getClass().getMethod("remove", String.class).invoke(parent, key);
+            } catch (Throwable ignored) {}
+        }
+
+        private Object getTag(CompoundTag parent, String key) {
+            try {
+                Object out = parent.getClass().getMethod("get", String.class).invoke(parent, key);
+                if (out instanceof Optional<?> opt) return opt.orElse(null);
+                return out;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        private int readInt(CompoundTag parent, String key, int def) {
+            if (parent == null) return def;
+            try {
+                Object out = parent.getClass().getMethod("getInt", String.class).invoke(parent, key);
+                if (out instanceof Number n) return n.intValue();
+                if (out instanceof Optional<?> opt && opt.orElse(null) instanceof Number n) return n.intValue();
+            } catch (Throwable ignored) {}
+            Object raw = getTag(parent, key);
+            if (raw != null) {
+                try {
+                    Object v = raw.getClass().getMethod("getAsInt").invoke(raw);
+                    if (v instanceof Number n) return n.intValue();
+                } catch (Throwable ignored) {}
+            }
+            return def;
+        }
+
+        private String readString(CompoundTag parent, String key, String def) {
+            if (parent == null) return def;
+            try {
+                Object out = parent.getClass().getMethod("getString", String.class).invoke(parent, key);
+                if (out instanceof String s) return s;
+                if (out instanceof Optional<?> opt && opt.orElse(null) instanceof String s) return s;
+            } catch (Throwable ignored) {}
+            Object raw = getTag(parent, key);
+            if (raw != null) {
+                try {
+                    Object v = raw.getClass().getMethod("getAsString").invoke(raw);
+                    if (v instanceof String s) return s;
+                } catch (Throwable ignored) {}
+            }
+            return def;
+        }
+
+        private enum StorageMode {
+            CONTAINER, BUNDLE, LEGACY
+        }
     }
 
     // ==================== INNER CLASSES ====================
@@ -1690,6 +2559,113 @@ public class SimpleEditorScreen extends Screen {
         boolean keyPressed(int key, int scan, int mod);
         boolean charTyped(char c, int mod);
         default boolean mouseScrolled(double sx, double sy) { return false; }
+    }
+
+    class InventorySwitchSubEditor implements SubEditor {
+        private static final int COLS = 9;
+        private static final int ROWS = 4;
+
+        @Override
+        public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
+            int dw = Math.min(w - 16, 246);
+            int dh = Math.min(h - 16, 150);
+            int dx = x + (w - dw) / 2;
+            int dy = y + (h - dh) / 2;
+            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
+            drawBorder(g, dx, dy, dw, dh, ACCENT);
+
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_pick"), dx + 10, dy + 8, C1, false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_hint"), dx + 10, dy + 30, C3, false);
+
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) {
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.message.no_item"), dx + 10, dy + 48, ERROR_C, false);
+                return;
+            }
+
+            int currentSlot = currentEditedSlot();
+            int gridX = dx + 10;
+            int gridY = dy + 46;
+            int cell = 20;
+            int gap = 4;
+
+            for (int r = 0; r < ROWS; r++) {
+                for (int c = 0; c < COLS; c++) {
+                    int logical = r < 3 ? (9 + r * 9 + c) : c;
+                    ItemStack stack = mc.player.getInventory().getItem(logical);
+                    int sx = gridX + c * (cell + gap);
+                    int sy = gridY + r * (cell + gap);
+                    boolean hover = mx >= sx && mx < sx + 18 && my >= sy && my < sy + 18;
+                    boolean active = logical == currentSlot;
+                    int bg = active ? SELECT_BG : (hover ? BTN_HOVER : BTN_BG);
+                    int edge = active ? ACCENT : BORDER;
+                    g.fill(sx, sy, sx + 18, sy + 18, bg);
+                    drawBorder(g, sx, sy, 18, 18, edge);
+                    if (stack != null && !stack.isEmpty()) {
+                        g.renderItem(stack, sx + 1, sy + 1);
+                        if (hover) {
+                            VersionCompat.get().renderTooltip(g, font, stack.getHoverName(), mx, my);
+                        }
+                    }
+                }
+            }
+
+            int by = dy + dh - 26;
+            int bw = 58;
+            int bh = 18;
+            int bx = dx + dw - bw - 10;
+            boolean hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
+            g.fill(bx, by, bx + bw, by + bh, hover ? BTN_HOVER : BTN_BG);
+            drawBorder(g, bx, by, bw, bh, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), bx + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 5, C1, false);
+        }
+
+        @Override
+        public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            int dw = Math.min(w - 16, 246);
+            int dh = Math.min(h - 16, 150);
+            int dx = x + (w - dw) / 2;
+            int dy = y + (h - dh) / 2;
+            int gridX = dx + 10;
+            int gridY = dy + 46;
+            int cell = 20;
+            int gap = 4;
+
+            for (int r = 0; r < ROWS; r++) {
+                for (int c = 0; c < COLS; c++) {
+                    int logical = r < 3 ? (9 + r * 9 + c) : c;
+                    int sx = gridX + c * (cell + gap);
+                    int sy = gridY + r * (cell + gap);
+                    if (mx >= sx && mx < sx + 18 && my >= sy && my < sy + 18) {
+                        switchToInventorySlot(logical);
+                        return true;
+                    }
+                }
+            }
+
+            int by = dy + dh - 26;
+            int bw = 58;
+            int bh = 18;
+            int bx = dx + dw - bw - 10;
+            if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) {
+                activeSubEditor = null;
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mod) {
+            if (key == 256) {
+                activeSubEditor = null;
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean charTyped(char c, int mod) { return false; }
     }
 
     // ==================== INLINE FIELD EDITOR (with color code support) ====================

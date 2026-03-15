@@ -33,8 +33,19 @@ public class VersionCompat {
     public java.nio.file.Path getGameDir() {
         return net.neoforged.fml.loading.FMLPaths.GAMEDIR.get();
     }
-    public String getKeyDisplayName(int keyCode) {
-        return com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, -1).getDisplayName().getString();
+        public String getKeyDisplayName(int keyCode) {
+        if (keyCode == com.mojang.blaze3d.platform.InputConstants.KEY_COMMA) return ",";
+        if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_A && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_Z) {
+            return Character.toString((char) ('A' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_A)));
+        }
+        if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_0 && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_9) {
+            return Character.toString((char) ('0' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_0)));
+        }
+        try {
+            String name = com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString();
+            if (name != null && !name.isBlank() && !name.startsWith("#")) return name;
+        } catch (Throwable ignored) {}
+        return "KEY(" + keyCode + ")";
     }
 
     public List<String> getAllEnchantIds() {
@@ -147,5 +158,27 @@ public class VersionCompat {
 
     public void renderTooltip(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font f, Component tooltip, int mx, int my) {
         g.renderTooltip(f, tooltip, mx, my);
+    }
+    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, net.minecraft.network.chat.Component text, int x, int y, int color, boolean shadow) {
+        if (text == null) return drawString(g, font, "", x, y, color, shadow);
+        try {
+            java.lang.reflect.Method m = net.minecraft.client.gui.GuiGraphics.class.getMethod("drawString",
+                    net.minecraft.client.gui.Font.class, net.minecraft.network.chat.Component.class, int.class, int.class, int.class, boolean.class);
+            Object out = m.invoke(g, font, text, x, y, color, shadow);
+            if (out instanceof Number n) return n.intValue();
+        } catch (Throwable ignored) {}
+        return drawString(g, font, text.getString(), x, y, color, shadow);
+    }
+
+    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, String text, int x, int y, int color, boolean shadow) {
+        String resolved = text == null ? "" : text;
+        try {
+            java.lang.reflect.Method m = net.minecraft.client.gui.GuiGraphics.class.getMethod("drawString",
+                    net.minecraft.client.gui.Font.class, String.class, int.class, int.class, int.class, boolean.class);
+            Object out = m.invoke(g, font, resolved, x, y, color, shadow);
+            if (out instanceof Number n) return n.intValue();
+        } catch (Throwable ignored) {}
+        g.drawString(font, resolved, x, y, color, shadow);
+        return font.width(resolved);
     }
 }

@@ -22,6 +22,15 @@ import java.util.*;
 public class VersionCompat {
 
     private static VersionCompat INSTANCE;
+    private static final java.lang.reflect.Method ITEMSTACK_GET_COMPONENT_METHOD =
+            findItemStackComponentMethod("get", "method_57824", "method_58694");
+    private static final java.lang.reflect.Method ITEMSTACK_HAS_COMPONENT_METHOD =
+            findItemStackComponentMethod("has", "method_57826");
+    private static final java.lang.reflect.Method ITEMSTACK_REMOVE_COMPONENT_METHOD =
+            findItemStackComponentMethod("remove", "method_57381");
+    private static final java.lang.reflect.Method ITEMSTACK_SET_COMPONENT_METHOD =
+            findItemStackSetComponentMethod("set", "method_57379");
+
     public static VersionCompat get() {
         if (INSTANCE == null) INSTANCE = new VersionCompat();
         return INSTANCE;
@@ -35,8 +44,19 @@ public class VersionCompat {
     public java.nio.file.Path getGameDir() {
         return net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir();
     }
-    public String getKeyDisplayName(int keyCode) {
-        return com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, -1).getDisplayName().getString();
+        public String getKeyDisplayName(int keyCode) {
+        if (keyCode == com.mojang.blaze3d.platform.InputConstants.KEY_COMMA) return ",";
+        if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_A && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_Z) {
+            return Character.toString((char) ('A' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_A)));
+        }
+        if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_0 && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_9) {
+            return Character.toString((char) ('0' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_0)));
+        }
+        try {
+            String name = com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString();
+            if (name != null && !name.isBlank() && !name.startsWith("#")) return name;
+        } catch (Throwable ignored) {}
+        return "KEY(" + keyCode + ")";
     }
     // --- Registry ---
     public List<String> getAllEnchantIds() {
@@ -75,37 +95,37 @@ public class VersionCompat {
     }
 
     // --- Fire resistant ---
-    public boolean isFireResistant(ItemStack stack) { return stack.has(DataComponents.FIRE_RESISTANT); }
+    public boolean isFireResistant(ItemStack stack) { return hasComponent(stack, DataComponents.FIRE_RESISTANT); }
     public void setFireResistant(ItemStack stack, boolean value) {
-        if (value) stack.set(DataComponents.FIRE_RESISTANT, net.minecraft.util.Unit.INSTANCE);
-        else stack.remove(DataComponents.FIRE_RESISTANT);
+        if (value) setComponent(stack, DataComponents.FIRE_RESISTANT, net.minecraft.util.Unit.INSTANCE);
+        else removeComponent(stack, DataComponents.FIRE_RESISTANT);
     }
 
     // --- Custom model data ---
     public int getCustomModelData(ItemStack stack) {
-        var cmd = stack.get(DataComponents.CUSTOM_MODEL_DATA);
+        var cmd = getComponent(stack, DataComponents.CUSTOM_MODEL_DATA);
         return cmd != null ? cmd.value() : 0;
     }
     public void setCustomModelData(ItemStack stack, int value) {
-        stack.set(DataComponents.CUSTOM_MODEL_DATA, new net.minecraft.world.item.component.CustomModelData(value));
+        setComponent(stack, DataComponents.CUSTOM_MODEL_DATA, new net.minecraft.world.item.component.CustomModelData(value));
     }
 
     // --- Food ---
-    public boolean hasFood(ItemStack stack) { return stack.get(DataComponents.FOOD) != null; }
+    public boolean hasFood(ItemStack stack) { return getComponent(stack, DataComponents.FOOD) != null; }
     public int getFoodNutrition(ItemStack stack) {
-        var food = stack.get(DataComponents.FOOD); return food != null ? food.nutrition() : 0;
+        var food = getComponent(stack, DataComponents.FOOD); return food != null ? food.nutrition() : 0;
     }
     public float getFoodSaturation(ItemStack stack) {
-        var food = stack.get(DataComponents.FOOD); return food != null ? food.saturation() : 0f;
+        var food = getComponent(stack, DataComponents.FOOD); return food != null ? food.saturation() : 0f;
     }
     public void setFoodNutrition(ItemStack stack, int nutrition) {
-        var food = stack.get(DataComponents.FOOD);
-        if (food != null) stack.set(DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
+        var food = getComponent(stack, DataComponents.FOOD);
+        if (food != null) setComponent(stack, DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
                 nutrition, food.saturation(), food.canAlwaysEat(), food.eatSeconds(), food.usingConvertsTo(), food.effects()));
     }
     public void setFoodSaturation(ItemStack stack, float saturation) {
-        var food = stack.get(DataComponents.FOOD);
-        if (food != null) stack.set(DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
+        var food = getComponent(stack, DataComponents.FOOD);
+        if (food != null) setComponent(stack, DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
                 food.nutrition(), saturation, food.canAlwaysEat(), food.eatSeconds(), food.usingConvertsTo(), food.effects()));
     }
 
@@ -126,28 +146,28 @@ public class VersionCompat {
     public int getSelectedSlot(net.minecraft.world.entity.player.Inventory inv) { return inv.selected; }
 
     // --- Hide tooltip ---
-    public boolean isHideTooltip(ItemStack stack) { return stack.has(DataComponents.HIDE_TOOLTIP); }
+    public boolean isHideTooltip(ItemStack stack) { return hasComponent(stack, DataComponents.HIDE_TOOLTIP); }
     public void setHideTooltip(ItemStack stack, boolean value) {
-        if (value) stack.set(DataComponents.HIDE_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
-        else stack.remove(DataComponents.HIDE_TOOLTIP);
+        if (value) setComponent(stack, DataComponents.HIDE_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
+        else removeComponent(stack, DataComponents.HIDE_TOOLTIP);
     }
-    public boolean isHideAdditional(ItemStack stack) { return stack.has(DataComponents.HIDE_ADDITIONAL_TOOLTIP); }
+    public boolean isHideAdditional(ItemStack stack) { return hasComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP); }
     public void setHideAdditional(ItemStack stack, boolean value) {
-        if (value) stack.set(DataComponents.HIDE_ADDITIONAL_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
-        else stack.remove(DataComponents.HIDE_ADDITIONAL_TOOLTIP);
+        if (value) setComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
+        else removeComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP);
     }
     public boolean hasHideTooltipFeature() { return true; }
     public boolean hasHideAdditionalFeature() { return true; }
 
     // --- Unbreakable ---
     public void setUnbreakable(ItemStack stack, boolean value) {
-        if (value) stack.set(DataComponents.UNBREAKABLE, new net.minecraft.world.item.component.Unbreakable(true));
-        else stack.remove(DataComponents.UNBREAKABLE);
+        if (value) setComponent(stack, DataComponents.UNBREAKABLE, new net.minecraft.world.item.component.Unbreakable(true));
+        else removeComponent(stack, DataComponents.UNBREAKABLE);
     }
 
     // --- DyedItemColor ---
     public void setDyedColor(ItemStack stack, int rgb) {
-        stack.set(DataComponents.DYED_COLOR, new net.minecraft.world.item.component.DyedItemColor(rgb, true));
+        setComponent(stack, DataComponents.DYED_COLOR, new net.minecraft.world.item.component.DyedItemColor(rgb, true));
     }
 
     // --- AttributeModifiers ---
@@ -157,6 +177,136 @@ public class VersionCompat {
 
     // --- Tooltip rendering ---
     public void renderTooltip(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font f, Component tooltip, int mx, int my) {
-        g.renderTooltip(f, tooltip, mx, my);
+        java.lang.reflect.Method simple = findGuiGraphicsMethod(
+                net.minecraft.client.gui.Font.class,
+                net.minecraft.network.chat.Component.class,
+                int.class,
+                int.class);
+        if (simple != null) {
+            try {
+                simple.invoke(g, f, tooltip, mx, my);
+                return;
+            } catch (Throwable ignored) {}
+        }
+
+        var lines = f.split(tooltip, 200);
+        var components = new java.util.ArrayList<net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent>();
+        for (var line : lines) {
+            components.add(new net.minecraft.client.gui.screens.inventory.tooltip.ClientTextTooltip(line));
+        }
+
+        java.lang.reflect.Method expanded = findGuiGraphicsMethod(
+                net.minecraft.client.gui.Font.class,
+                java.util.List.class,
+                int.class,
+                int.class,
+                net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner.class,
+                net.minecraft.resources.ResourceLocation.class);
+        if (expanded != null) {
+            try {
+                expanded.invoke(g, f, components, mx, my,
+                        net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, null);
+            } catch (Throwable ignored) {}
+        }
+    }
+    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, net.minecraft.network.chat.Component text, int x, int y, int color, boolean shadow) {
+        if (text == null) return drawString(g, font, "", x, y, color, shadow);
+        java.lang.reflect.Method m = findGuiGraphicsMethod(
+                net.minecraft.client.gui.Font.class,
+                net.minecraft.network.chat.Component.class,
+                int.class,
+                int.class,
+                int.class,
+                boolean.class);
+        if (m != null) {
+            try {
+                Object out = m.invoke(g, font, text, x, y, color, shadow);
+                if (out instanceof Number n) return n.intValue();
+                return font.width(text);
+            } catch (Throwable ignored) {}
+        }
+        return drawString(g, font, text.getString(), x, y, color, shadow);
+    }
+
+    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, String text, int x, int y, int color, boolean shadow) {
+        String resolved = text == null ? "" : text;
+        java.lang.reflect.Method m = findGuiGraphicsMethod(
+                net.minecraft.client.gui.Font.class,
+                String.class,
+                int.class,
+                int.class,
+                int.class,
+                boolean.class);
+        if (m != null) {
+            try {
+                Object out = m.invoke(g, font, resolved, x, y, color, shadow);
+                if (out instanceof Number n) return n.intValue();
+            } catch (Throwable ignored) {}
+        }
+        return font.width(resolved);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T getComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<T> type) {
+        if (ITEMSTACK_GET_COMPONENT_METHOD == null) return null;
+        try {
+            return (T) ITEMSTACK_GET_COMPONENT_METHOD.invoke(stack, type);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private boolean hasComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<?> type) {
+        if (ITEMSTACK_HAS_COMPONENT_METHOD == null) return false;
+        try {
+            Object out = ITEMSTACK_HAS_COMPONENT_METHOD.invoke(stack, type);
+            return out instanceof Boolean b && b;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private <T> void setComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<T> type, T value) {
+        if (ITEMSTACK_SET_COMPONENT_METHOD == null) return;
+        try {
+            ITEMSTACK_SET_COMPONENT_METHOD.invoke(stack, type, value);
+        } catch (Throwable ignored) {}
+    }
+
+    private void removeComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<?> type) {
+        if (ITEMSTACK_REMOVE_COMPONENT_METHOD == null) return;
+        try {
+            ITEMSTACK_REMOVE_COMPONENT_METHOD.invoke(stack, type);
+        } catch (Throwable ignored) {}
+    }
+
+    private java.lang.reflect.Method findGuiGraphicsMethod(Class<?>... parameterTypes) {
+        for (java.lang.reflect.Method method : net.minecraft.client.gui.GuiGraphics.class.getMethods()) {
+            if (java.util.Arrays.equals(method.getParameterTypes(), parameterTypes)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private static java.lang.reflect.Method findItemStackComponentMethod(String... names) {
+        for (String name : names) {
+            try {
+                return net.minecraft.world.item.ItemStack.class.getMethod(name, net.minecraft.core.component.DataComponentType.class);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private static java.lang.reflect.Method findItemStackSetComponentMethod(String... names) {
+        java.util.Set<String> nameSet = new java.util.HashSet<>(java.util.Arrays.asList(names));
+        for (java.lang.reflect.Method method : net.minecraft.world.item.ItemStack.class.getMethods()) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            if (!nameSet.contains(method.getName())) continue;
+            if (parameterTypes.length != 2) continue;
+            if (parameterTypes[0] != net.minecraft.core.component.DataComponentType.class) continue;
+            return method;
+        }
+        return null;
     }
 }

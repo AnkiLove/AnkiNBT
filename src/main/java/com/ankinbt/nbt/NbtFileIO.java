@@ -36,12 +36,40 @@ public final class NbtFileIO {
                 AnkiConfig.setLastExportCategory(category.trim());
             }
             AnkiConfig.setLastNbtFile(file.toString());
-            LOGGER.info("Exported NBT to {}", file);
+            if (AnkiConfig.isDebugLogEnabled()) LOGGER.info("Exported NBT to {}", file);
             return file;
         } catch (IOException e) {
             LOGGER.warn("Failed to export NBT: {}", e.getMessage());
             return null;
         }
+    }
+
+    public static Path exportNbtToPath(CompoundTag tag, Path file, String alias) {
+        if (tag == null || file == null) return null;
+        try {
+            Path out = file;
+            if (!out.getFileName().toString().toLowerCase().endsWith(".nbt")) {
+                out = out.resolveSibling(out.getFileName().toString() + ".nbt");
+            }
+            Path parent = out.getParent();
+            if (parent != null) Files.createDirectories(parent);
+            try (OutputStream os = new BufferedOutputStream(Files.newOutputStream(out))) {
+                NbtIo.writeCompressed(tag, os);
+            }
+            if (alias != null && !alias.isBlank() && parent != null) {
+                saveAlias(parent, out.getFileName().toString(), alias.trim());
+            }
+            AnkiConfig.setLastNbtFile(out.toString());
+            if (AnkiConfig.isDebugLogEnabled()) LOGGER.info("Exported NBT to {}", out);
+            return out;
+        } catch (IOException e) {
+            LOGGER.warn("Failed to export NBT to custom path: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public static Path exportNbtToPath(CompoundTag tag, Path file) {
+        return exportNbtToPath(tag, file, null);
     }
 
     public static Path exportNbt(CompoundTag tag, String fileName) {
@@ -71,7 +99,7 @@ public final class NbtFileIO {
         try (InputStream is = new BufferedInputStream(Files.newInputStream(file))) {
             CompoundTag tag = NbtIo.readCompressed(is, net.minecraft.nbt.NbtAccounter.unlimitedHeap());
             AnkiConfig.setLastNbtFile(file.toString());
-            LOGGER.info("Imported NBT from {}", file);
+            if (AnkiConfig.isDebugLogEnabled()) LOGGER.info("Imported NBT from {}", file);
             return tag;
         } catch (IOException e) {
             LOGGER.warn("Failed to import NBT: {}", e.getMessage());

@@ -1,5 +1,6 @@
 package com.ankinbt.gui;
 
+import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
 import net.minecraft.client.Minecraft;
@@ -33,6 +34,7 @@ public class AddTagScreen extends Screen {
     private int selectedType = 6;
     private String error = null;
     private int px, py;
+    private float openAnim = 0f;
 
     public AddTagScreen(NbtEditorScreen parent, NbtTreeNode targetNode) {
         super(Component.translatable("ankinbt.add.title"));
@@ -49,54 +51,70 @@ public class AddTagScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
-        g.fill(0, 0, width, height, 0x80000000);
-        g.fill(px, py, px + PW, py + PH, BG);
-        border(g, px, py, PW, PH, BORDER);
+        float speed = AnkiConfig.isUiAnimationEnabled() ? AnkiConfig.getUiAnimationSpeed() : 1.0f;
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
 
-        g.drawString(font, Component.translatable("ankinbt.add.title"), px + 12, py + 10, C1, false);
-        g.fill(px + 1, py + 26, px + PW - 1, py + 27, BORDER);
+        int scrim = fadeColor(0x80000000, openAnim);
+        int bg = fadeColor(BG, openAnim);
+        int border = fadeColor(BORDER, openAnim);
+        int accent = fadeColor(ACCENT, openAnim);
+        int inputBg = fadeColor(INPUT_BG, openAnim);
+        int err = fadeColor(ERR, openAnim);
+
+        g.fill(0, 0, width, height, scrim);
+        g.fill(px, py, px + PW, py + PH, bg);
+        border(g, px, py, PW, PH, border);
+
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.add.title"), px + 12, py + 10, C1, false);
+        g.fill(px + 1, py + 26, px + PW - 1, py + 27, border);
 
         // Key input
         int iy = py + 34;
-        g.drawString(font, Component.translatable("ankinbt.add.key"), px + 12, iy + 2, C2, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.add.key"), px + 12, iy + 2, C2, false);
         iy += 14;
         int ix = px + 12, iw = PW - 24, ih = 20;
-        g.fill(ix, iy, ix + iw, iy + ih, INPUT_BG);
-        border(g, ix, iy, iw, ih, ACCENT);
+        g.fill(ix, iy, ix + iw, iy + ih, inputBg);
+        border(g, ix, iy, iw, ih, accent);
         String kd = keyInput.isEmpty() ? Component.translatable("ankinbt.add.key.hint").getString() : keyInput;
-        g.drawString(font, kd + (System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, kd + (System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
                 ix + 4, iy + 6, keyInput.isEmpty() ? C3 : C1, false);
 
         // Type grid
         iy += ih + 8;
-        g.drawString(font, Component.translatable("ankinbt.add.type"), px + 12, iy, C2, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.add.type"), px + 12, iy, C2, false);
         iy += 12;
         int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
         for (int i = 0; i < TYPE_NAMES.length; i++) {
             int col = i % cols, row = i / cols;
             int bx = px + 12 + col * (bw + 4), by = iy + row * (bh + 3);
             boolean hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
-            g.fill(bx, by, bx + bw, by + bh, i == selectedType ? ACCENT : (hover ? 0x50FFFFFF : 0x30FFFFFF));
-            g.drawString(font, TYPE_NAMES[i], bx + (bw - font.width(TYPE_NAMES[i])) / 2, by + 5, i == selectedType ? C1 : C2, false);
+            g.fill(bx, by, bx + bw, by + bh, i == selectedType ? accent : fadeColor(hover ? 0x50FFFFFF : 0x30FFFFFF, openAnim));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, TYPE_NAMES[i], bx + (bw - font.width(TYPE_NAMES[i])) / 2, by + 5, i == selectedType ? C1 : C2, false);
         }
 
-        if (error != null) g.drawString(font, error, px + 12, py + PH - 38, ERR, false);
+        if (error != null) com.ankinbt.compat.VersionCompat.get().drawString(g, font, error, px + 12, py + PH - 38, err, false);
 
         // Buttons
         int btnY = py + PH - 30, btnW = 80, btnH = 22;
         int cancelX = px + PW / 2 - btnW - 8;
         boolean ch = mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH;
-        g.fill(cancelX, btnY, cancelX + btnW, btnY + btnH, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        border(g, cancelX, btnY, btnW, btnH, BORDER);
+        g.fill(cancelX, btnY, cancelX + btnW, btnY + btnH, fadeColor(ch ? 0x50FFFFFF : 0x30FFFFFF, openAnim));
+        border(g, cancelX, btnY, btnW, btnH, border);
         String cl = Component.translatable("ankinbt.edit.cancel").getString();
-        g.drawString(font, cl, cancelX + (btnW - font.width(cl)) / 2, btnY + 7, C2, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, cl, cancelX + (btnW - font.width(cl)) / 2, btnY + 7, C2, false);
 
         int okX = px + PW / 2 + 8;
         boolean oh = mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH;
-        g.fill(okX, btnY, okX + btnW, btnY + btnH, oh ? ACCENT : 0xFF4F46E5);
-        border(g, okX, btnY, btnW, btnH, ACCENT);
+        g.fill(okX, btnY, okX + btnW, btnY + btnH, fadeColor(oh ? ACCENT : 0xFF4F46E5, openAnim));
+        border(g, okX, btnY, btnW, btnH, accent);
         String ol = Component.translatable("ankinbt.add.confirm").getString();
-        g.drawString(font, ol, okX + (btnW - font.width(ol)) / 2, btnY + 7, C1, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, ol, okX + (btnW - font.width(ol)) / 2, btnY + 7, C1, false);
+    }
+
+    private int fadeColor(int color, float progress) {
+        int alpha = (color >>> 24) & 0xFF;
+        int faded = Math.max(0, Math.min(255, Math.round(alpha * progress)));
+        return (color & 0x00FFFFFF) | (faded << 24);
     }
 
     private void border(GuiGraphics g, int x, int y, int w, int h, int c) {

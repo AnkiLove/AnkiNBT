@@ -21,6 +21,7 @@ logs/
 
 # Build artifacts
 release/
+output/
 *.zip
 
 # Build logs

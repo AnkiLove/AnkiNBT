@@ -21,6 +21,6 @@ public class AnkiNBT {
         }
         AnkiConfig.init();
         KeyBindings.register(modEventBus);
-        LOGGER.info("AnkiNBT loaded - Press {} to open NBT editor", AnkiConfig.getKeyName());
+        LOGGER.info("AnkiNBT client initialized");
     }
 }

@@ -3,19 +3,29 @@ package com.ankinbt.gui;
 import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.EditorCommandHelper;
 import com.ankinbt.editor.SpawnEggEditorHelper;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 public class EntityEditorScreen extends Screen {
@@ -25,7 +35,15 @@ public class EntityEditorScreen extends Screen {
     private static final int TXT_DIM = 0xFF8EA3C7;
     private static final int TXT_OK = 0xFF34D399;
     private static final int TXT_ERR = 0xFFEF4444;
-    private static final Component HEAL_FULL_LABEL = Component.literal("补满血量");
+    private static final int SIMPLE_C1 = 0xFFE2E8F0;
+    private static final int SIMPLE_C2 = 0xFF94A3B8;
+    private static final int SIMPLE_C3 = 0xFF64748B;
+    private static final int SIMPLE_BORDER = 0xFF222236;
+    private static final int SIMPLE_BTN_BG = 0x30FFFFFF;
+    private static final int SIMPLE_BTN_HOVER = 0x50FFFFFF;
+    private static final int SIMPLE_SUCCESS = 0xFF22C55E;
+    private static final int SIMPLE_ERROR = 0xFFEF4444;
+    private static final Component HEAL_FULL_LABEL = Component.translatable("ankinbt.entity.heal_full");
 
     private final Entity targetEntity;
     private final ItemStack sourceStack;
@@ -40,6 +58,7 @@ public class EntityEditorScreen extends Screen {
     private int stSilent = -1;
     private int stBaby = -1;
     private boolean healToFullOnApply = false;
+    private EditBox nameBox;
     private EditBox healthBox;
 
     private Component status = Component.empty();
@@ -81,8 +100,13 @@ public class EntityEditorScreen extends Screen {
     @Override
     protected void init() {
         recalcBounds();
-        int left = px + 18;
-        healthBox = new EditBox(font, left + 2, py + 178, 138, 20, Component.empty());
+        nameBox = new EditBox(font, nameFieldX(), nameFieldY(), 192, 16, Component.empty());
+        styleBox(nameBox);
+        nameBox.setValue(currentCustomNameInput());
+        nameBox.setResponder(v -> dirty = true);
+        addRenderableWidget(nameBox);
+        healthBox = new EditBox(font, healthFieldX(), healthFieldY(), 88, 16, Component.empty());
+        styleBox(healthBox);
         healthBox.setValue(currentHealthNumeric());
         healthBox.setResponder(v -> dirty = true);
         addRenderableWidget(healthBox);
@@ -91,11 +115,40 @@ public class EntityEditorScreen extends Screen {
         undoStack.add(captureState());
     }
 
+    private void styleBox(EditBox box) {
+        if (box == null) return;
+        try {
+            box.setBordered(false);
+        } catch (Throwable ignored) {}
+        try {
+            box.setTextColor(TXT_MAIN);
+        } catch (Throwable ignored) {}
+        try {
+            box.setTextColorUneditable(TXT_DIM);
+        } catch (Throwable ignored) {}
+    }
+
     private void recalcBounds() {
         pw = Math.min(740, width - 20);
         ph = Math.min(420, height - 20);
         px = (width - pw) / 2;
         py = (height - ph) / 2;
+    }
+
+    private int nameFieldX() {
+        return px + 102;
+    }
+
+    private int nameFieldY() {
+        return py + 70;
+    }
+
+    private int healthFieldX() {
+        return px + 102;
+    }
+
+    private int healthFieldY() {
+        return py + 118;
     }
 
     private void rebuildButtons() {
@@ -202,6 +255,7 @@ public class EntityEditorScreen extends Screen {
         stSilent = -1;
         stBaby = -1;
         healToFullOnApply = false;
+        if (nameBox != null) nameBox.setValue(currentCustomNameInput());
         if (healthBox != null) healthBox.setValue(currentHealthNumeric());
         dirty = false;
         setStatus(Component.translatable("ankinbt.entity.reset_done"), TXT_OK);
@@ -216,9 +270,14 @@ public class EntityEditorScreen extends Screen {
         putTriState(patch, "IsBaby", stBaby);
         if (stBaby == 1) patch.putInt("Age", -24000);
         if (stBaby == 0) patch.putInt("Age", 0);
+        String customName = normalizeCustomNameInput(nameBox == null ? "" : nameBox.getValue()).trim();
+        if (!Objects.equals(customName, normalizeCustomNameInput(currentCustomNameInput()).trim())) {
+            patch.putString("CustomName", toCustomNameJson(customName));
+            patch.putBoolean("CustomNameVisible", !customName.isBlank());
+        }
 
         Float healthInput = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
-        Float currentMaxHealth = targetEntity == null ? null : invokeFloat(targetEntity, "getMaxHealth");
+        Float currentMaxHealth = currentMaxHealth();
         if (healthInput != null && (targetEntity == null || currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
             putMaxHealthPatch(patch, healthInput);
         }
@@ -261,6 +320,10 @@ public class EntityEditorScreen extends Screen {
     private void applyPatch() {
         Minecraft mc = Minecraft.getInstance();
         CompoundTag patch = buildPatch();
+        String customName = normalizeCustomNameInput(nameBox == null ? "" : nameBox.getValue()).trim();
+        Float healthInput = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
+        Float currentMaxHealth = currentMaxHealth();
+        Float healthToApply = resolveHealthForApply(healthInput, currentMaxHealth);
         if (patch.isEmpty()) {
             setStatus(Component.translatable("ankinbt.entity.preview_empty"), TXT_DIM);
             return;
@@ -268,26 +331,26 @@ public class EntityEditorScreen extends Screen {
 
         if (targetEntity != null) {
             if (mc.player == null) return;
-            if (!EditorCommandHelper.canUseEntityCommand(mc)) {
+            boolean ok = applyPatchToIntegratedServer(mc, customName, healthInput, currentMaxHealth, healthToApply);
+            if (!ok && !EditorCommandHelper.canUseEntityCommand(mc)) {
                 setStatus(Component.translatable("ankinbt.entity.admin_required"), TXT_ERR);
                 return;
             }
-            boolean ok = EditorCommandHelper.applyMergeToEntity(mc, targetEntity, patch);
+            if (!ok) {
+                ok = EditorCommandHelper.applyMergeToEntity(mc, targetEntity, patch);
+            }
             setStatus(ok ? Component.translatable("ankinbt.entity.applied") : Component.translatable("ankinbt.status.save_error"), ok ? TXT_OK : TXT_ERR);
             if (ok) {
                 applyLocalPreview(patch);
-                Float healthInput = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
-                Float currentMaxHealth = invokeFloat(targetEntity, "getMaxHealth");
                 if (healthInput != null && (currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
                     EditorCommandHelper.setEntityMaxHealth(mc, targetEntity, healthInput);
                     setLocalMaxHealth(targetEntity, healthInput);
                     currentMaxHealth = healthInput;
                 }
-                Float healthToApply = resolveHealthForApply(healthInput, currentMaxHealth);
                 if (healthToApply != null) {
-                    try {
-                        targetEntity.getClass().getMethod("setHealth", float.class).invoke(targetEntity, healthToApply);
-                    } catch (Throwable ignored) {}
+                    if (targetEntity instanceof LivingEntity living) {
+                        living.setHealth(healthToApply);
+                    }
                     healthBox.setValue(String.format(Locale.ROOT, "%.1f", healthToApply));
                 }
                 dirty = false;
@@ -354,17 +417,31 @@ public class EntityEditorScreen extends Screen {
             dirty = true;
             return true;
         }
+        if (button == 0 && clickHealthAdjuster((int) mx, (int) my)) {
+            return true;
+        }
         if (button != 0) return false;
+        if (handleTextFieldClick(mx, my, button)) {
+            return true;
+        }
         for (UiBtn btn : buttons) {
             if (btn.click((int) mx, (int) my)) {
                 rebuildButtons();
                 return true;
             }
         }
+        if (nameBox != null) nameBox.setFocused(false);
+        if (healthBox != null) healthBox.setFocused(false);
         return false;
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
+        if (nameBox != null && nameBox.isFocused()) {
+            if (nameBox.keyPressed(key, scan, mod)) return true;
+        }
+        if (healthBox != null && healthBox.isFocused()) {
+            if (healthBox.keyPressed(key, scan, mod)) return true;
+        }
         boolean ctrl = (mod & 2) != 0;
         if (ctrl && key == 90) {
             undo();
@@ -378,9 +455,21 @@ public class EntityEditorScreen extends Screen {
     }
 
     @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (nameBox != null && nameBox.isFocused()) {
+            if (nameBox.charTyped(codePoint, modifiers)) return true;
+        }
+        if (healthBox != null && healthBox.isFocused()) {
+            return healthBox.charTyped(codePoint, modifiers);
+        }
+        return false;
+    }
+
+    @Override
     public void render(GuiGraphics g, int mx, int my, float partialTick) {
         recalcBounds();
-        openAnim = UiTheme.approach(openAnim, 1.0f, 0.14f);
+        float speed = AnkiConfig.isUiAnimationEnabled() ? AnkiConfig.getUiAnimationSpeed() : 1.0f;
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
 
         int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
         float opacity = AnkiConfig.getUiOpacity();
@@ -399,39 +488,44 @@ public class EntityEditorScreen extends Screen {
         g.fill(px + 1, py + 34, px + pw - 1, py + 35, border);
         g.fill(px + 1, py + 48, px + pw - 1, py + ph - 40, card);
 
-        g.drawString(font, title, px + 12, py + 12, TXT_TITLE, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, px + 12, py + 12, TXT_TITLE, false);
 
         String mode = targetEntity != null
                 ? Component.translatable("ankinbt.entity.mode.entity").getString()
                 : Component.translatable("ankinbt.entity.mode.spawn_egg").getString();
-        g.drawString(font, mode, px + 170, py + 13, TXT_DIM, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, mode, px + 170, py + 13, TXT_DIM, false);
 
         int left = px + 18;
         int mid = px + pw / 2;
-        int y = py + 74;
+        int nameY = py + 74;
+        int typeY = nameY + 16;
+        int posY = typeY + 16;
+        int healthY = posY + 16;
+        int flagY = canEditHealth() ? (healthAdjustBaseY() + 22) : (healthY + 16);
 
-        g.drawString(font, Component.translatable("ankinbt.entity.section.current"), left, py + 64, accent, false);
-        drawInfo(g, left, y, Component.translatable("ankinbt.entity.info.name").getString(), currentName());
-        y += 16;
-        drawInfo(g, left, y, Component.translatable("ankinbt.entity.info.type").getString(), currentType());
-        y += 16;
-        drawInfo(g, left, y, Component.translatable("ankinbt.entity.info.pos").getString(), currentPos());
-        y += 16;
-        drawInfo(g, left, y, Component.translatable("ankinbt.entity.info.health").getString(), currentHealth());
-        y += 16;
-        drawInfo(g, left, y, Component.translatable("ankinbt.entity.info.flags").getString(), currentFlags());
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.entity.section.current"), left, py + 64, accent, false);
+        drawInlineLabel(g, left, nameY, Component.translatable("ankinbt.entity.info.name").getString());
+        renderInlineField(g, nameBox, currentName(), mx, my, accent);
+        drawInfo(g, left, typeY, Component.translatable("ankinbt.entity.info.type").getString(), currentType());
+        drawInfo(g, left, posY, Component.translatable("ankinbt.entity.info.pos").getString(), currentPos());
+        drawInlineLabel(g, left, healthY, Component.translatable("ankinbt.entity.info.health").getString());
+        if (canEditHealth()) {
+            renderInlineHealthField(g, mx, my, accent);
+            renderHealthAdjusters(g, mx, my, accent);
+        } else {
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, currentHealth(), left + 84, healthY, TXT_MAIN, false);
+        }
+        drawInfo(g, left, flagY, Component.translatable("ankinbt.entity.info.flags").getString(), currentFlags());
 
-        g.drawString(font, Component.translatable("ankinbt.entity.edit.health"), left, py + 166, TXT_DIM, false);
-        if (healthBox != null) healthBox.render(g, mx, my, partialTick);
         renderHealToggle(g, accent);
 
-        g.drawString(font, Component.translatable("ankinbt.entity.section.actions"), mid + 8, py + 64, accent, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.entity.section.actions"), mid + 8, py + 64, accent, false);
 
         if (AnkiConfig.isEntityLivePreview()) {
-            g.drawString(font, Component.translatable("ankinbt.entity.section.preview"), left, py + 206, accent, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.entity.section.preview"), left, previewSectionY(), accent, false);
             String preview = buildPatch().toString();
             if (preview.length() > 78) preview = preview.substring(0, 75) + "...";
-            g.drawString(font, preview, left, py + 222, TXT_MAIN, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, preview, left, previewSectionY() + 16, TXT_MAIN, false);
         }
 
         for (UiBtn btn : buttons) {
@@ -444,26 +538,93 @@ public class EntityEditorScreen extends Screen {
                     Component.translatable("ankinbt.confirm.discard_hint").getString(),
                     0xFFEF4444);
         } else if (confirmClose) {
-            renderConfirm(g, mx, my,
-                    Component.translatable("ankinbt.confirm.title").getString(),
-                    Component.translatable("ankinbt.confirm.unsaved").getString(),
-                    0xFFF59E0B);
+            renderUnsavedConfirmLikeSimple(g, mx, my);
         }
 
         if (status != null && !status.getString().isEmpty() && System.currentTimeMillis() - statusTime < 2600) {
-            g.drawString(font, status, left, py + ph - 12, statusColor, false);
+            int statusY = py + ph - 44;
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, status, left, statusY, statusColor, false);
         }
     }
 
     private void drawInfo(GuiGraphics g, int x, int y, String key, String value) {
-        g.drawString(font, key + ":", x, y, TXT_DIM, false);
-        g.drawString(font, value, x + 84, y, TXT_MAIN, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, key + ":", x, y, TXT_DIM, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, value, x + 84, y, TXT_MAIN, false);
+    }
+
+    private void drawInlineLabel(GuiGraphics g, int x, int y, String key) {
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, key + ":", x, y, TXT_DIM, false);
+    }
+
+    private void renderInlineField(GuiGraphics g, EditBox box, String placeholder, int mx, int my, int accent) {
+        if (box == null) return;
+        boolean focused = box.isFocused();
+        boolean hover = mx >= box.getX() && mx < box.getX() + box.getWidth() && my >= box.getY() && my < box.getY() + box.getHeight();
+        String raw = box.getValue();
+        boolean placeholderMode = (raw == null || raw.isBlank()) && !focused && placeholder != null && !placeholder.isBlank();
+        String shown = placeholderMode ? placeholder : (raw == null ? "" : raw);
+        int color = placeholderMode ? TXT_DIM : TXT_MAIN;
+        int textY = box.getY() + 2;
+        int maxWidth = Math.max(12, box.getWidth() - 4);
+        if (font.width(shown) > maxWidth) {
+            shown = font.plainSubstrByWidth(shown, maxWidth);
+        }
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, shown, box.getX(), textY, color, false);
+        int underline = focused ? accent : (hover ? 0xFF415A86 : 0xFF2C3B5C);
+        g.fill(box.getX(), box.getY() + box.getHeight() - 1, box.getX() + box.getWidth(), box.getY() + box.getHeight(), underline);
+        if (focused && ((System.currentTimeMillis() / 500L) & 1L) == 0L) {
+            int cursorX = Math.min(box.getX() + font.width(shown) + 1, box.getX() + box.getWidth() - 1);
+            g.fill(cursorX, box.getY() + 1, cursorX + 1, box.getY() + box.getHeight() - 2, TXT_MAIN);
+        }
+    }
+
+    private void renderInlineHealthField(GuiGraphics g, int mx, int my, int accent) {
+        if (healthBox == null) return;
+        String raw = healthBox.getValue();
+        if (raw == null || raw.isBlank()) raw = currentHealthNumeric();
+        String shown = raw == null ? "" : raw;
+        renderInlineField(g, healthBox, shown, mx, my, accent);
+        Float max = currentMaxHealth();
+        if (max != null) {
+            String tail = " / " + String.format(Locale.ROOT, "%.1f", max);
+            int tailX = Math.min(healthBox.getX() + Math.min(font.width(shown), healthBox.getWidth() - 4) + 8, healthBox.getX() + healthBox.getWidth() + 12);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tail, tailX, healthBox.getY() + 2, TXT_DIM, false);
+        }
+    }
+
+    private void renderHealthAdjusters(GuiGraphics g, int mx, int my, int accent) {
+        if (!canEditHealth() || healthBox == null) return;
+        String[] labels = {"-10", "-1", "+1", "+10", "+100"};
+        int x = healthAdjustBaseX();
+        int y = healthAdjustBaseY();
+        int h = 16;
+        for (int i = 0; i < labels.length; i++) {
+            int w = healthAdjustWidth(labels[i]);
+            int bx = healthAdjustButtonX(labels, i);
+            boolean hover = mx >= bx && mx < bx + w && my >= y && my < y + h;
+            g.fill(bx, y, bx + w, y + h, hover ? 0x4A273752 : 0x32141C2B);
+            border(g, bx, y, w, h, hover ? accent : 0xFF2C3B5C);
+            String label = labels[i];
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, bx + (w - font.width(label)) / 2, y + 4, TXT_MAIN, false);
+        }
     }
 
     private String currentName() {
-        if (targetEntity != null) return targetEntity.getDisplayName().getString();
+        if (targetEntity != null) {
+            String custom = currentCustomNameInput();
+            if (!custom.isBlank()) return custom;
+            return normalizeCustomNameInput(targetEntity.getDisplayName().getString());
+        }
         if (!sourceStack.isEmpty()) return sourceStack.getHoverName().getString();
         return "-";
+    }
+
+    private String currentCustomNameInput() {
+        if (targetEntity != null) {
+            Component custom = targetEntity.getCustomName();
+            return custom == null ? "" : normalizeCustomNameInput(custom.getString());
+        }
+        return "";
     }
 
     private String currentType() {
@@ -478,50 +639,104 @@ public class EntityEditorScreen extends Screen {
     }
 
     private String currentHealth() {
-        if (targetEntity == null) return "-";
-        Float hp = invokeFloat(targetEntity, "getHealth");
-        Float max = invokeFloat(targetEntity, "getMaxHealth");
-        if (hp == null) return "-";
-        if (max != null) return String.format(Locale.ROOT, "%.1f / %.1f", hp, max);
-        return String.format(Locale.ROOT, "%.1f", hp);
+        if (!(targetEntity instanceof LivingEntity living)) return "-";
+        return String.format(Locale.ROOT, "%.1f / %.1f", living.getHealth(), living.getMaxHealth());
     }
 
     private String currentHealthNumeric() {
-        if (targetEntity == null) return "";
-        Float hp = invokeFloat(targetEntity, "getHealth");
-        if (hp == null) return "";
-        return String.format(Locale.ROOT, "%.1f", hp);
+        if (!(targetEntity instanceof LivingEntity living)) return "";
+        return String.format(Locale.ROOT, "%.1f", living.getHealth());
+    }
+
+    private boolean canEditHealth() {
+        return targetEntity instanceof LivingEntity || !sourceStack.isEmpty();
+    }
+
+    private int healthAdjustBaseX() {
+        return healthBox == null ? px + 102 : healthBox.getX();
+    }
+
+    private int healthAdjustBaseY() {
+        return healthBox == null ? py + 144 : healthBox.getY() + 22;
+    }
+
+    private boolean clickHealthAdjuster(int mx, int my) {
+        if (!canEditHealth() || healthBox == null) return false;
+        int y = healthAdjustBaseY();
+        int h = 16;
+        String[] labels = {"-10", "-1", "+1", "+10", "+100"};
+        float[] deltas = {-10.0f, -1.0f, 1.0f, 10.0f, 100.0f};
+        for (int i = 0; i < deltas.length; i++) {
+            int w = healthAdjustWidth(labels[i]);
+            int bx = healthAdjustButtonX(labels, i);
+            if (mx >= bx && mx < bx + w && my >= y && my < y + h) {
+                pushUndo();
+                adjustHealthBy(deltas[i]);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void adjustHealthBy(float delta) {
+        Float current = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
+        if (current == null && targetEntity instanceof LivingEntity living) {
+            current = living.getHealth();
+        }
+        if (current == null) current = 1.0f;
+        float next = Math.max(0.0f, current + delta);
+        if (healthBox != null) {
+            healthBox.setValue(formatEditableHealth(next));
+        }
+        dirty = true;
+    }
+
+    private String formatEditableHealth(float value) {
+        float rounded = Math.round(value);
+        if (Math.abs(value - rounded) < 0.001f) {
+            return Integer.toString((int) rounded);
+        }
+        return String.format(Locale.ROOT, "%.1f", value);
     }
 
     private String currentFlags() {
         if (targetEntity == null) return "-";
-        boolean inv = invokeBool(targetEntity, "isInvulnerable", false);
-        boolean ng = invokeBool(targetEntity, "isNoGravity", false);
-        boolean sl = invokeBool(targetEntity, "isSilent", false);
+        boolean inv = targetEntity.isInvulnerable();
+        boolean ng = targetEntity.isNoGravity();
+        boolean sl = targetEntity.isSilent();
         return "Inv=" + inv + ", G=" + (!ng) + ", S=" + sl;
     }
 
     private void applyLocalPreview(CompoundTag patch) {
         if (targetEntity == null || patch == null) return;
-        applyLocalBool(patch, "Invulnerable", "setInvulnerable");
-        applyLocalBool(patch, "NoGravity", "setNoGravity");
-        applyLocalBool(patch, "Silent", "setSilent");
-        applyLocalBool(patch, "NoAI", "setNoAi");
-        applyLocalBool(patch, "IsBaby", "setBaby");
-        if (patch.contains("Age")) {
-            int age = readIntTag(patch, "Age", 0);
-            try {
-                targetEntity.getClass().getMethod("setAge", int.class).invoke(targetEntity, age);
-            } catch (Throwable ignored) {}
+        if (patch.contains("Invulnerable")) targetEntity.setInvulnerable(readBoolTag(patch, "Invulnerable", false));
+        if (patch.contains("NoGravity")) targetEntity.setNoGravity(readBoolTag(patch, "NoGravity", false));
+        if (patch.contains("Silent")) targetEntity.setSilent(readBoolTag(patch, "Silent", false));
+        if (patch.contains("NoAI") && targetEntity instanceof Mob mob) mob.setNoAi(readBoolTag(patch, "NoAI", false));
+        if (patch.contains("IsBaby") && targetEntity instanceof AgeableMob ageable) {
+            if (readBoolTag(patch, "IsBaby", false)) ageable.setAge(-24000);
+            else ageable.setAge(0);
+        }
+        if (patch.contains("CustomNameVisible")) targetEntity.setCustomNameVisible(readBoolTag(patch, "CustomNameVisible", false));
+        if (patch.contains("CustomName")) {
+            applyLocalCustomName(nameBox == null ? "" : nameBox.getValue());
+        }
+        if (patch.contains("Age") && targetEntity instanceof AgeableMob ageable) {
+            ageable.setAge(readIntTag(patch, "Age", 0));
         }
     }
 
-    private void applyLocalBool(CompoundTag patch, String key, String method) {
-        if (!patch.contains(key)) return;
-        boolean value = readBoolTag(patch, key, false);
-        try {
-            targetEntity.getClass().getMethod(method, boolean.class).invoke(targetEntity, value);
-        } catch (Throwable ignored) {}
+    private void applyLocalCustomName(String name) {
+        if (targetEntity == null) return;
+        String normalized = normalizeCustomNameInput(name);
+        Component component = normalized.isBlank() ? null : Component.literal(normalized);
+        targetEntity.setCustomName(component);
+        targetEntity.setCustomNameVisible(!normalized.isBlank());
+    }
+
+    private int previewSectionY() {
+        int base = healToggleY() + 26;
+        return Math.min(base, py + ph - 92);
     }
 
     private int readIntTag(CompoundTag patch, String key, int def) {
@@ -560,53 +775,15 @@ public class EntityEditorScreen extends Screen {
         return def;
     }
 
-    private Float invokeFloat(Object target, String method) {
-        try {
-            Object out = target.getClass().getMethod(method).invoke(target);
-            if (out instanceof Number n) return n.floatValue();
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    private boolean invokeBool(Object target, String method, boolean def) {
-        try {
-            Object out = target.getClass().getMethod(method).invoke(target);
-            if (out instanceof Boolean b) return b;
-        } catch (Throwable ignored) {}
-        return def;
-    }
-
     private void setLocalMaxHealth(Object entity, float value) {
-        if (entity == null || value <= 0.0f) return;
-        try {
-            Object holder = entity.getClass().getMethod("getAttributes").invoke(entity);
-            if (holder == null) return;
-            Object attr = findMaxHealthAttribute(entity);
-            if (attr == null) return;
-            Object instance = holder.getClass().getMethod("getInstance", attr.getClass()).invoke(holder, attr);
-            if (instance != null) {
-                instance.getClass().getMethod("setBaseValue", double.class).invoke(instance, (double) value);
-                return;
-            }
-        } catch (Throwable ignored) {}
-        try {
-            entity.getClass().getMethod("setMaxHealth", float.class).invoke(entity, value);
-        } catch (Throwable ignored) {}
+        if (!(entity instanceof LivingEntity living) || value <= 0.0f) return;
+        var attr = living.getAttribute(Attributes.MAX_HEALTH);
+        if (attr != null) attr.setBaseValue(value);
     }
 
-    private Object findMaxHealthAttribute(Object entity) {
-        try {
-            Class<?> attrs = Class.forName("net.minecraft.world.entity.ai.attributes.Attributes");
-            try {
-                return attrs.getField("MAX_HEALTH").get(null);
-            } catch (Throwable ignored) {}
-            for (String name : new String[]{"MAX_HEALTH", "f_22265_"}) {
-                try {
-                    return attrs.getDeclaredField(name).get(null);
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-        return null;
+    private Float currentMaxHealth() {
+        if (!(targetEntity instanceof LivingEntity living)) return null;
+        return living.getMaxHealth();
     }
 
     private void border(GuiGraphics g, int x, int y, int w, int h, int c) {
@@ -617,11 +794,14 @@ public class EntityEditorScreen extends Screen {
     }
 
     private int healToggleX() {
-        return px + 18 + 148;
+        return px + 18;
     }
 
     private int healToggleY() {
-        return py + 182;
+        if (canEditHealth() && healthBox != null) {
+            return healthAdjustBaseY() + 44;
+        }
+        return py + 168;
     }
 
     private boolean hitHealToggle(int mx, int my) {
@@ -639,7 +819,168 @@ public class EntityEditorScreen extends Screen {
         g.fill(x, y, x + size, y + size, 0x4A1B2638);
         border(g, x, y, size, size, healToFullOnApply ? accent : 0xFF2C3B5C);
         if (healToFullOnApply) g.fill(x + 3, y + 3, x + size - 3, y + size - 3, 0xFF22C55E);
-        g.drawString(font, HEAL_FULL_LABEL, x + size + 6, y + 2, TXT_MAIN, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, HEAL_FULL_LABEL, x + size + 6, y + 2, TXT_MAIN, false);
+    }
+
+    private boolean handleTextFieldClick(double mx, double my, int button) {
+        if (focusInlineBox(nameBox, mx, my, currentName())) {
+            if (healthBox != null) healthBox.setFocused(false);
+            return true;
+        }
+        if (nameBox != null) nameBox.setFocused(false);
+
+        if (canEditHealth() && focusInlineBox(healthBox, mx, my, currentHealthNumeric())) {
+            if (nameBox != null) nameBox.setFocused(false);
+            return true;
+        }
+        if (healthBox != null) healthBox.setFocused(false);
+        return false;
+    }
+
+    private boolean focusInlineBox(EditBox box, double mx, double my, String fallback) {
+        if (box == null || !hitInlineField(box, mx, my)) return false;
+        if ((box.getValue() == null || box.getValue().isBlank()) && fallback != null && !fallback.isBlank()) {
+            setInlineBoxValue(box, fallback);
+        }
+        box.setFocused(true);
+        return true;
+    }
+
+    private boolean hitInlineField(EditBox box, double mx, double my) {
+        if (box == null) return false;
+        return mx >= box.getX() - 2 && mx < box.getX() + box.getWidth() + 2
+                && my >= box.getY() - 2 && my < box.getY() + box.getHeight() + 2;
+    }
+
+    private void setInlineBoxValue(EditBox box, String value) {
+        if (box == null) return;
+        boolean wasDirty = dirty;
+        String next = box == nameBox ? normalizeCustomNameInput(value) : (value == null ? "" : value);
+        box.setValue(next);
+        dirty = wasDirty;
+    }
+
+    private int healthAdjustWidth(String label) {
+        return Math.max(28, font.width(label) + 12);
+    }
+
+    private int healthAdjustButtonX(String[] labels, int index) {
+        int x = healthAdjustBaseX();
+        for (int i = 0; i < index; i++) {
+            x += healthAdjustWidth(labels[i]) + 4;
+        }
+        return x;
+    }
+
+    private String toCustomNameJson(String value) {
+        return "{\"text\":" + jsonString(normalizeCustomNameInput(value)) + "}";
+    }
+
+    private String jsonString(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 8);
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> out.append(ch);
+            }
+        }
+        out.append('"');
+        return out.toString();
+    }
+
+    private String normalizeCustomNameInput(String value) {
+        if (value == null || value.isBlank()) return "";
+        String trimmed = value.trim();
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+            return value;
+        }
+        try {
+            String decoded = extractJsonText(JsonParser.parseString(trimmed));
+            return decoded == null ? value : decoded;
+        } catch (Throwable ignored) {
+            return value;
+        }
+    }
+
+    private String extractJsonText(JsonElement element) {
+        if (element == null || element.isJsonNull()) return "";
+        if (element.isJsonPrimitive()) return element.getAsString();
+        if (element.isJsonArray()) {
+            StringBuilder out = new StringBuilder();
+            for (JsonElement entry : element.getAsJsonArray()) {
+                String text = extractJsonText(entry);
+                if (text != null) out.append(text);
+            }
+            return out.toString();
+        }
+        if (!element.isJsonObject()) return null;
+        JsonObject object = element.getAsJsonObject();
+        StringBuilder out = new StringBuilder();
+        if (object.has("text")) {
+            out.append(object.get("text").getAsString());
+        }
+        if (object.has("extra") && object.get("extra").isJsonArray()) {
+            for (JsonElement extra : object.getAsJsonArray("extra")) {
+                String text = extractJsonText(extra);
+                if (text != null) out.append(text);
+            }
+        }
+        return out.toString();
+    }
+
+    private boolean applyPatchToIntegratedServer(Minecraft mc, String customName, Float healthInput, Float currentMaxHealth, Float healthToApply) {
+        if (mc == null || targetEntity == null) return false;
+        var server = mc.getSingleplayerServer();
+        if (server == null) return false;
+
+        AtomicBoolean success = new AtomicBoolean(false);
+        CountDownLatch latch = new CountDownLatch(1);
+        server.execute(() -> {
+            try {
+                Entity serverEntity = EditorCommandHelper.findIntegratedServerEntity(server, targetEntity.getId(), targetEntity.getUUID());
+                if (serverEntity == null) return;
+
+                if (stInvulnerable != -1) serverEntity.setInvulnerable(stInvulnerable == 1);
+                if (stNoGravity != -1) serverEntity.setNoGravity(stNoGravity == 1);
+                if (stSilent != -1) serverEntity.setSilent(stSilent == 1);
+                if (stNoAi != -1 && serverEntity instanceof Mob mob) mob.setNoAi(stNoAi == 1);
+                if (stBaby != -1 && serverEntity instanceof AgeableMob ageable) {
+                    ageable.setAge(stBaby == 1 ? -24000 : 0);
+                }
+
+                Component serverName = customName.isBlank() ? null : Component.literal(customName);
+                serverEntity.setCustomName(serverName);
+                serverEntity.setCustomNameVisible(!customName.isBlank());
+
+                if (serverEntity instanceof LivingEntity living) {
+                    if (healthInput != null && (currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
+                        var attr = living.getAttribute(Attributes.MAX_HEALTH);
+                        if (attr != null) attr.setBaseValue(healthInput);
+                    }
+                    if (healthToApply != null) {
+                        living.setHealth(Math.max(0.0f, healthToApply));
+                    }
+                }
+                success.set(true);
+            } catch (Throwable ignored) {
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        try {
+            if (!latch.await(3, TimeUnit.SECONDS)) return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return success.get();
     }
 
     @Override
@@ -714,14 +1055,15 @@ public class EntityEditorScreen extends Screen {
 
             String text = label.get();
             if (font.width(text) > w - 10) text = font.plainSubstrByWidth(text, w - 14) + "..";
-            g.drawString(font, text, x + 6, y + 7, color, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, text, x + 6, y + 7, color, false);
         }
     }
 
-    private record StateSnapshot(int stNoAi, int stInvulnerable, int stNoGravity, int stSilent, int stBaby, boolean healFull, String health) {}
+    private record StateSnapshot(int stNoAi, int stInvulnerable, int stNoGravity, int stSilent, int stBaby, boolean healFull, String name, String health) {}
 
     private StateSnapshot captureState() {
-        return new StateSnapshot(stNoAi, stInvulnerable, stNoGravity, stSilent, stBaby, healToFullOnApply, healthBox == null ? "" : healthBox.getValue());
+        return new StateSnapshot(stNoAi, stInvulnerable, stNoGravity, stSilent, stBaby, healToFullOnApply,
+                nameBox == null ? "" : nameBox.getValue(), healthBox == null ? "" : healthBox.getValue());
     }
 
     private void applyState(StateSnapshot s) {
@@ -732,6 +1074,7 @@ public class EntityEditorScreen extends Screen {
         stSilent = s.stSilent;
         stBaby = s.stBaby;
         healToFullOnApply = s.healFull;
+        if (nameBox != null) nameBox.setValue(s.name == null ? "" : s.name);
         if (healthBox != null) healthBox.setValue(s.health == null ? "" : s.health);
     }
 
@@ -765,20 +1108,55 @@ public class EntityEditorScreen extends Screen {
         g.fill(0, 0, width, height, 0x88000000);
         g.fill(x, y, x + w, y + h, 0xF0111726);
         border(g, x, y, w, h, 0xFF2C3B5C);
-        g.drawString(font, title, x + 12, y + 12, color, false);
-        g.drawString(font, desc, x + 12, y + 30, TXT_MAIN, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, x + 12, y + 12, color, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, desc, x + 12, y + 30, TXT_MAIN, false);
 
         int by = y + h - 30;
         g.fill(x + 12, by, x + 102, by + 20, 0x6A273752);
         border(g, x + 12, by, 90, 20, 0xFF2C3B5C);
-        g.drawString(font, Component.translatable("ankinbt.edit.cancel"), x + 20, by + 6, TXT_MAIN, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.edit.cancel"), x + 20, by + 6, TXT_MAIN, false);
 
         g.fill(x + w - 102, by, x + w - 12, by + 20, color == 0xFFEF4444 ? 0x8A991B1B : 0x8A166534);
         border(g, x + w - 102, by, 90, 20, color);
-        g.drawString(font, Component.translatable("ankinbt.edit.apply"), x + w - 72, by + 6, TXT_MAIN, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.edit.apply"), x + w - 72, by + 6, TXT_MAIN, false);
+    }
+
+    private void renderUnsavedConfirmLikeSimple(GuiGraphics g, int mx, int my) {
+        int dw = 260, dh = 110;
+        int dx = (width - dw) / 2, dy = (height - dh) / 2;
+        g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
+        border(g, dx, dy, dw, dh, SIMPLE_ERROR);
+
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.confirm.title"), dx + 10, dy + 10, SIMPLE_C1, false);
+        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, SIMPLE_BORDER);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.confirm.unsaved"), dx + 10, dy + 32, SIMPLE_C2, false);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.confirm.discard_hint"), dx + 10, dy + 46, SIMPLE_C3, false);
+
+        int by = dy + dh - 32;
+        int bw2 = 70, bh2 = 22;
+
+        int saveX = dx + 10;
+        boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
+        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? 0xFF16A34A : SIMPLE_SUCCESS);
+        String saveLabel = Component.translatable("ankinbt.confirm.save_close").getString();
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, SIMPLE_C1, false);
+
+        int discardX = dx + dw / 2 - bw2 / 2;
+        boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
+        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? 0x80EF4444 : 0x40EF4444);
+        String discardLabel = Component.translatable("ankinbt.confirm.discard").getString();
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, SIMPLE_C1, false);
+
+        int cancelX = dx + dw - bw2 - 10;
+        boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
+        g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? SIMPLE_BTN_HOVER : SIMPLE_BTN_BG);
+        String cancelLabel = Component.translatable("ankinbt.edit.cancel").getString();
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, cancelLabel, cancelX + (bw2 - font.width(cancelLabel)) / 2, by + 7, SIMPLE_C2, false);
     }
 
     private boolean clickConfirm(int mx, int my) {
+        if (confirmClose) return clickUnsavedConfirmLikeSimple(mx, my);
+
         int w = 320, h = 110;
         int x = (width - w) / 2;
         int y = (height - h) / 2;
@@ -797,6 +1175,36 @@ public class EntityEditorScreen extends Screen {
                 dirty = false;
                 Minecraft.getInstance().setScreen(parent);
             }
+            return true;
+        }
+        return true;
+    }
+
+    private boolean clickUnsavedConfirmLikeSimple(int mx, int my) {
+        int dw = 260, dh = 110;
+        int dx = (width - dw) / 2, dy = (height - dh) / 2;
+        int by = dy + dh - 32;
+        int bw2 = 70, bh2 = 22;
+
+        int saveX = dx + 10;
+        if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+            applyPatch();
+            if (!dirty) {
+                confirmClose = false;
+                Minecraft.getInstance().setScreen(parent);
+            }
+            return true;
+        }
+        int discardX = dx + dw / 2 - bw2 / 2;
+        if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
+            confirmClose = false;
+            dirty = false;
+            Minecraft.getInstance().setScreen(parent);
+            return true;
+        }
+        int cancelX = dx + dw - bw2 - 10;
+        if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
+            confirmClose = false;
             return true;
         }
         return true;
