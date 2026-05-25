@@ -1,43 +1,46 @@
 :root {
-  --anbt-accent: oklch(0.72 0.15 225);
-  --anbt-accent-soft: oklch(0.72 0.05 225 / 0.18);
-  --anbt-surface: oklch(0.22 0.018 255 / 0.68);
-  --anbt-border: oklch(0.72 0.05 225 / 0.26);
+  --anbt-accent: oklch(0.73 0.16 226);
+  --anbt-pink: oklch(0.66 0.2 355);
+  --anbt-ink: oklch(0.92 0.012 245);
+  --anbt-muted: oklch(0.74 0.035 246);
+  --anbt-surface: oklch(0.23 0.018 255 / 0.72);
+  --anbt-surface-quiet: oklch(0.19 0.015 255 / 0.58);
+  --anbt-border: oklch(0.72 0.05 225 / 0.28);
 }
 
 .anbt-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(96px, 168px);
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   gap: clamp(1.5rem, 4vw, 3.5rem);
   align-items: center;
-  margin: 1.2rem 0 2.2rem;
-  padding: clamp(1.25rem, 4vw, 2.4rem);
+  margin: 0.6rem 0 2rem;
+  padding: clamp(1.3rem, 4vw, 3rem);
   border: 1px solid var(--anbt-border);
-  border-radius: 14px;
+  border-radius: 18px;
   background: var(--anbt-surface);
+  box-shadow: 0 22px 70px oklch(0.08 0.02 255 / 0.32);
 }
 
 .anbt-hero h1 {
-  margin: 0.1rem 0 0.8rem;
-  font-size: clamp(2.1rem, 6vw, 4.2rem);
-  line-height: 1;
+  max-width: 10ch;
+  margin: 0.15rem 0 0.85rem;
+  color: var(--anbt-ink);
+  font-size: clamp(2.6rem, 8vw, 5.7rem);
+  line-height: 0.92;
   letter-spacing: 0;
-}
-
-.anbt-hero img {
-  width: min(168px, 26vw);
-  justify-self: center;
 }
 
 .anbt-kicker {
   margin: 0;
   color: var(--anbt-accent);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .anbt-lead {
-  max-width: 64ch;
-  font-size: 1.02rem;
+  max-width: 58ch;
+  color: var(--anbt-muted);
+  font-size: clamp(1rem, 2vw, 1.12rem);
+  line-height: 1.75;
 }
 
 .anbt-actions {
@@ -47,35 +50,118 @@
   margin: 1.1rem 0 0;
 }
 
-.anbt-grid {
+.anbt-device {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 0.85rem;
+  gap: 0.75rem;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  border: 1px solid oklch(0.72 0.05 225 / 0.24);
+  border-radius: 16px;
+  background: var(--anbt-surface-quiet);
 }
 
-.anbt-card {
+.anbt-device img {
+  width: 92px;
+  margin-bottom: 0.2rem;
+}
+
+.anbt-device-line {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+  min-height: 48px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid oklch(0.73 0.05 226 / 0.18);
+  border-radius: 10px;
+  background: oklch(0.14 0.014 255 / 0.54);
+}
+
+.anbt-device-line span {
+  color: var(--anbt-accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.anbt-device-line strong {
+  overflow: hidden;
+  color: var(--anbt-ink);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anbt-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0 0 2rem;
+  border: 1px solid var(--anbt-border);
+  border-radius: 14px;
+  background: var(--anbt-border);
+}
+
+.anbt-strip > p {
+  margin: 0;
+  padding: 1rem;
+  background: var(--anbt-surface-quiet);
+  color: var(--anbt-muted);
+}
+
+.anbt-strip strong {
   display: block;
-  min-height: 112px;
+  margin-bottom: 0.35rem;
+  color: var(--anbt-ink);
+}
+
+.anbt-lanes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.8rem, 2vw, 1rem);
+  margin: 0.9rem 0 2rem;
+}
+
+.anbt-lane {
+  min-height: 230px;
   padding: 1rem;
   border: 1px solid var(--anbt-border);
-  border-radius: 10px;
-  background: var(--anbt-accent-soft);
+  border-radius: 14px;
+  background: var(--anbt-surface-quiet);
 }
 
-.anbt-card a {
-  display: block;
-  margin-bottom: 0.45rem;
-  font-weight: 700;
+.anbt-lane h3 {
+  margin-top: 0;
 }
 
-@media (max-width: 640px) {
+.anbt-lane-strong {
+  border-color: oklch(0.66 0.14 355 / 0.5);
+  background: oklch(0.26 0.04 350 / 0.48);
+}
+
+.anbt-lane p {
+  color: var(--anbt-muted);
+}
+
+@media (max-width: 860px) {
   .anbt-hero {
     grid-template-columns: 1fr;
   }
 
-  .anbt-hero img {
-    grid-row: 1;
-    width: 96px;
-    justify-self: start;
+  .anbt-strip,
+  .anbt-lanes {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .anbt-device-line {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .anbt-device-line strong {
+    white-space: normal;
   }
 }

@@ -1,48 +1,82 @@
 <section class="anbt-hero">
-  <div>
+  <div class="anbt-hero-copy">
     <p class="anbt-kicker">Minecraft NBT Editor</p>
     <h1>AnkiNBT Wiki</h1>
     <p class="anbt-lead">
-      面向 Fabric 与 NeoForge 的客户端 NBT 编辑器文档。这里整理安装、基础使用、简易模式、高级模式、编译和版本兼容信息。
+      一个给物品、实体和数据组件准备的客户端 NBT 编辑器文档站。先装好版本，再按场景进入简易模式或高级模式。
     </p>
-    <p class="anbt-actions">
+    <div class="anbt-actions">
       <a class="md-button md-button--primary" href="zh/installation-guide/">开始安装</a>
       <a class="md-button" href="zh/getting-started/">快速上手</a>
-    </p>
+      <a class="md-button" href="en/">English</a>
+    </div>
   </div>
-  <img src="assets/blue-logo.png" alt="AnkiNBT logo">
+  <div class="anbt-device" aria-label="AnkiNBT editor overview">
+    <img src="assets/blue-logo.png" alt="AnkiNBT logo">
+    <div class="anbt-device-line"><span>Simple</span><strong>物品名称 / Lore / 药水效果</strong></div>
+    <div class="anbt-device-line"><span>Advanced</span><strong>NBT 树 / 搜索 / 批量定位</strong></div>
+    <div class="anbt-device-line"><span>Build</span><strong>Fabric + NeoForge</strong></div>
+  </div>
 </section>
 
-## 支持范围
+<section class="anbt-strip" markdown>
 
-| 加载器 | Minecraft 版本 | Java |
-|---|---|---|
-| Fabric | 1.21 ~ 1.21.11、26.1、26.1.1、26.1.2 | Java 21 / Java 25 |
-| NeoForge | 1.21 ~ 1.21.11、26.1、26.1.1、26.1.2 | Java 21 / Java 25 |
+**Fabric 与 NeoForge**  
+覆盖 1.21 ~ 1.21.11、26.1 ~ 26.1.2
 
-1.21 系列使用 Java 21，26.1 系列使用 Java 25。
+**Java 要求**  
+1.21 系列使用 Java 21，26.1 系列使用 Java 25
 
-## 常用入口
+**语言支持**  
+中文和英文文档可从右上角切换
 
-<div class="anbt-grid" markdown>
+</section>
 
-[:material-book-open-variant: 安装指南](zh/installation-guide.md)
-快速确认加载器、Java 和文件放置位置。
-{ .anbt-card }
+## 按目标进入
 
-[:material-cursor-default-click: 快速上手](zh/getting-started.md)
-打开编辑器、切换模式、保存和配置文件说明。
-{ .anbt-card }
+<div class="anbt-lanes" markdown>
 
-[:material-tune-variant: 简易模式](zh/simple-mode.md)
-物品名称、附魔、Lore、属性修饰、药水效果和 NBT 导入导出。
-{ .anbt-card }
+<article class="anbt-lane" markdown>
+### 第一次使用
 
-[:material-file-tree: 高级模式](zh/advanced-mode.md)
-NBT 树查看、搜索、编辑、添加和删除。
-{ .anbt-card }
+- [安装指南](zh/installation-guide.md)
+- [快速上手](zh/getting-started.md)
+- [快捷键](zh/keyboard-shortcuts.md)
+
+适合刚下载模组、需要确认加载器和 Java 版本的用户。
+</article>
+
+<article class="anbt-lane anbt-lane-strong" markdown>
+### 编辑物品
+
+- [简易模式](zh/simple-mode.md)
+- [高级模式](zh/advanced-mode.md)
+- [常见问题](zh/faq.md)
+
+简易模式处理名称、Lore、附魔、属性修饰和药水；高级模式直接改 NBT 树。
+</article>
+
+<article class="anbt-lane" markdown>
+### 版本与发布
+
+- [兼容矩阵](compat-matrix.md)
+- [编译说明](BUILDING.md)
+- [Modrinth 介绍](MODRINTH.md)
+
+用于确认目标版本、复现构建流程，或者维护发布页面文案。
+</article>
 
 </div>
+
+## 功能地图
+
+| 场景 | 推荐入口 | 说明 |
+|---|---|---|
+| 修改名称、数量、耐久 | [简易模式](zh/simple-mode.md) | 点击字段即可编辑 |
+| 管理附魔和属性修饰 | [简易模式](zh/simple-mode.md) | 支持搜索、添加、编辑和删除 |
+| 调整药水效果 | [简易模式](zh/simple-mode.md) | 支持多选和每个效果单独配置 |
+| 查找具体 NBT 节点 | [高级模式](zh/advanced-mode.md) | 支持按键名、值和类型过滤 |
+| 全版本构建 | [编译说明](BUILDING.md) | Fabric 与 NeoForge 批量构建 |
 
 ## 项目链接
 
