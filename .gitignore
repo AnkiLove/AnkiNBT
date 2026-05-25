@@ -21,6 +21,10 @@ logs/
 
 # Build artifacts
 release/
+output/
+site/
+.cache/
+.venv-mkdocs/
 *.zip
 
 # Build logs

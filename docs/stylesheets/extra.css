@@ -1,0 +1,81 @@
+:root {
+  --anbt-accent: oklch(0.72 0.15 225);
+  --anbt-accent-soft: oklch(0.72 0.05 225 / 0.18);
+  --anbt-surface: oklch(0.22 0.018 255 / 0.68);
+  --anbt-border: oklch(0.72 0.05 225 / 0.26);
+}
+
+.anbt-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 168px);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: center;
+  margin: 1.2rem 0 2.2rem;
+  padding: clamp(1.25rem, 4vw, 2.4rem);
+  border: 1px solid var(--anbt-border);
+  border-radius: 14px;
+  background: var(--anbt-surface);
+}
+
+.anbt-hero h1 {
+  margin: 0.1rem 0 0.8rem;
+  font-size: clamp(2.1rem, 6vw, 4.2rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.anbt-hero img {
+  width: min(168px, 26vw);
+  justify-self: center;
+}
+
+.anbt-kicker {
+  margin: 0;
+  color: var(--anbt-accent);
+  font-weight: 700;
+}
+
+.anbt-lead {
+  max-width: 64ch;
+  font-size: 1.02rem;
+}
+
+.anbt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.1rem 0 0;
+}
+
+.anbt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.85rem;
+}
+
+.anbt-card {
+  display: block;
+  min-height: 112px;
+  padding: 1rem;
+  border: 1px solid var(--anbt-border);
+  border-radius: 10px;
+  background: var(--anbt-accent-soft);
+}
+
+.anbt-card a {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .anbt-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .anbt-hero img {
+    grid-row: 1;
+    width: 96px;
+    justify-self: start;
+  }
+}
