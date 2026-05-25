@@ -1,7 +1,7 @@
 <section class="anbt-hero">
   <div class="anbt-hero-copy">
     <p class="anbt-kicker">Minecraft NBT Editor</p>
-    <h1>AnkiNBT Wiki</h1>
+    <h1>AnkiNBT</h1>
     <p class="anbt-lead">
       Documentation for a client-side NBT editor built for items, entities, common data components, Fabric and NeoForge.
     </p>
@@ -13,30 +13,24 @@
   </div>
   <div class="anbt-device" aria-label="AnkiNBT editor overview">
     <img src="../assets/blue-logo.png" alt="AnkiNBT logo">
-    <div class="anbt-device-line"><span>Simple</span><strong>Name / Lore / Potion Effects</strong></div>
-    <div class="anbt-device-line"><span>Advanced</span><strong>NBT Tree / Search / Edit</strong></div>
-    <div class="anbt-device-line"><span>Build</span><strong>Fabric + NeoForge</strong></div>
+    <div class="anbt-device-line"><span>Simple</span><strong>Name, lore, potion effects</strong></div>
+    <div class="anbt-device-line"><span>Advanced</span><strong>NBT tree, search, edit</strong></div>
+    <div class="anbt-device-line"><span>Versions</span><strong>Fabric + NeoForge</strong></div>
   </div>
 </section>
 
-## Supported Versions
+<section class="anbt-strip" markdown>
 
-| Loader | Minecraft versions | Java |
-|---|---|---|
-| Fabric | 1.21 ~ 1.21.11, 26.1, 26.1.1, 26.1.2 | Java 21 / Java 25 |
-| NeoForge | 1.21 ~ 1.21.11, 26.1, 26.1.1, 26.1.2 | Java 21 / Java 25 |
+**Fabric and NeoForge**  
+Supports 1.21 through 1.21.11, plus 26.1 through 26.1.2
 
-Minecraft 1.21 builds use Java 21. Minecraft 26.1 builds use Java 25.
+**Java requirement**  
+Java 21 for 1.21 builds, Java 25 for 26.1 builds
 
-## Features
+**Language switch**  
+Use the top-right language menu to switch between English and 中文
 
-- Simple Mode for visual item editing
-- Advanced Mode for direct NBT tree editing
-- Item picker with search
-- Lore editor with color codes and palette support
-- Potion effects editor with multi-select and per-effect settings
-- NBT import and export
-- English and Chinese UI, following the game language
+</section>
 
 ## Start Here
 
@@ -73,3 +67,19 @@ Check support status, Java requirements and release-facing notes.
 </article>
 
 </div>
+
+## Feature Map
+
+| Goal | Recommended page | Notes |
+|---|---|---|
+| Edit name, count or durability | [Simple Mode](../simple-mode.md) | Click a field and edit directly |
+| Manage enchantments and attributes | [Simple Mode](../simple-mode.md) | Search, add, edit and remove entries |
+| Adjust potion effects | [Simple Mode](../simple-mode.md) | Multi-select with per-effect settings |
+| Find a specific NBT node | [Advanced Mode](../advanced-mode.md) | Filter by key, value or tag type |
+| Build every target | [Build Notes](../BUILDING.md) | Batch build Fabric and NeoForge |
+
+## Project Links
+
+- GitHub repository: <https://github.com/AnkiLove/AnkiNBT>
+- Modrinth page: <https://modrinth.com/mod/ankinbt>
+- GitBook docs: <https://rabbit-6.gitbook.io/ankinbt-wiki>
