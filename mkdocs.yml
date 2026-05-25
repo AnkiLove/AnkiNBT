@@ -19,11 +19,14 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.indexes
     - navigation.top
     - navigation.footer
     - navigation.instant
+    - navigation.tracking
     - search.highlight
     - search.suggest
+    - search.share
     - content.action.edit
     - content.code.copy
   palette:
@@ -42,6 +45,19 @@ theme:
 
 extra_css:
   - stylesheets/extra.css
+
+extra:
+  alternate:
+    - name: 中文
+      link: https://ankilove.github.io/AnkiNBT/
+      lang: zh
+    - name: English
+      link: https://ankilove.github.io/AnkiNBT/en/
+      lang: en
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/AnkiLove/AnkiNBT
+      name: GitHub
 
 plugins:
   - search:
@@ -66,26 +82,32 @@ markdown_extensions:
 
 nav:
   - 首页: index.md
-  - 使用文档:
-      - 中文首页: zh/README.md
+  - 快速开始:
       - 安装指南: zh/installation-guide.md
       - 快速上手: zh/getting-started.md
-      - 简易模式: zh/simple-mode.md
-      - 高级模式: zh/advanced-mode.md
       - 快捷键: zh/keyboard-shortcuts.md
       - 常见问题: zh/faq.md
+  - 编辑器指南:
+      - 文档概览: zh/README.md
+      - 简易模式: zh/simple-mode.md
+      - 高级模式: zh/advanced-mode.md
+  - 兼容与发布:
+      - 兼容矩阵: compat-matrix.md
+      - 更新记录 1.2.0: CHANGELOG-1.2.0.zh-CN.md
+      - 更新记录 1.1.0: CHANGELOG-1.1.0.md
   - English:
       - Home: en/index.md
-      - Installation Guide: installation-guide.md
-      - Getting Started: getting-started.md
-      - Simple Mode: simple-mode.md
-      - Advanced Mode: advanced-mode.md
-      - Keyboard Shortcuts: keyboard-shortcuts.md
-      - FAQ: faq.md
-  - 开发与发布:
+      - Start:
+          - Installation Guide: installation-guide.md
+          - Getting Started: getting-started.md
+          - Keyboard Shortcuts: keyboard-shortcuts.md
+          - FAQ: faq.md
+      - Editor Guide:
+          - Simple Mode: simple-mode.md
+          - Advanced Mode: advanced-mode.md
+      - Release:
+          - Compatibility Matrix: compat-matrix.md
+          - Changelog 1.2.0: CHANGELOG-1.2.0.en-US.md
+  - 开发:
       - 编译说明: BUILDING.md
-      - 兼容矩阵: compat-matrix.md
       - Modrinth 介绍: MODRINTH.md
-      - 更新记录 1.2.0: CHANGELOG-1.2.0.zh-CN.md
-      - Changelog 1.2.0: CHANGELOG-1.2.0.en-US.md
-      - 更新记录 1.1.0: CHANGELOG-1.1.0.md
