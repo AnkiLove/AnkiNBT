@@ -8,7 +8,7 @@
 - Java 21: `C:\Program Files\Zulu\zulu-21`
 - Java 25: `C:\Program Files\Zulu\zulu-25`
 - 代理端口: `127.0.0.1:7897`
-- 当前发布版本: `1.2.5`
+- 当前发布版本: `1.2.6`
 
 编译脚本会自动设置 `JAVA_HOME`、`HTTP_PROXY`、`HTTPS_PROXY`。1.21 系列使用 Java 21，26.1 系列使用 Java 25。
 
@@ -79,17 +79,17 @@ output\周一022605-043813
 
 常用顶层合并包：
 
-- `AnkiNBT-Fabric-mc1.21.1-1.21.8-1.2.5.jar`
-- `AnkiNBT-Fabric-mc1.21.9-1.21.10-1.2.5.jar`
-- `AnkiNBT-Fabric-mc1.21.11-1.2.5.jar`
-- `AnkiNBT-Fabric-mc26.1-1.2.5.jar`
-- `AnkiNBT-Fabric-mc26.1.1-1.2.5.jar`
-- `AnkiNBT-Fabric-mc26.1.2-1.2.5.jar`
-- `AnkiNBT-NeoForge-mc1.21.9-1.21.10-1.2.5.jar`
-- `AnkiNBT-NeoForge-mc1.21.11-1.2.5.jar`
-- `AnkiNBT-NeoForge-mc26.1-1.2.5.jar`
-- `AnkiNBT-NeoForge-mc26.1.1-1.2.5.jar`
-- `AnkiNBT-NeoForge-mc26.1.2-1.2.5.jar`
+- `AnkiNBT-Fabric-mc1.21.1-1.21.8-1.2.6.jar`
+- `AnkiNBT-Fabric-mc1.21.9-1.21.10-1.2.6.jar`
+- `AnkiNBT-Fabric-mc1.21.11-1.2.6.jar`
+- `AnkiNBT-Fabric-mc26.1-1.2.6.jar`
+- `AnkiNBT-Fabric-mc26.1.1-1.2.6.jar`
+- `AnkiNBT-Fabric-mc26.1.2-1.2.6.jar`
+- `AnkiNBT-NeoForge-mc1.21.9-1.21.10-1.2.6.jar`
+- `AnkiNBT-NeoForge-mc1.21.11-1.2.6.jar`
+- `AnkiNBT-NeoForge-mc26.1-1.2.6.jar`
+- `AnkiNBT-NeoForge-mc26.1.1-1.2.6.jar`
+- `AnkiNBT-NeoForge-mc26.1.2-1.2.6.jar`
 
 ## 验证
 

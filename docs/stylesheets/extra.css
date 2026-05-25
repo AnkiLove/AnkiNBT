@@ -10,24 +10,24 @@
 
 .anbt-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-  gap: clamp(1.5rem, 4vw, 3.5rem);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.62fr);
+  gap: clamp(1rem, 3vw, 2rem);
   align-items: center;
-  margin: 0.6rem 0 2rem;
-  padding: clamp(1.3rem, 4vw, 3rem);
+  margin: 0.4rem 0 1.6rem;
+  padding: clamp(1rem, 3vw, 2rem);
   border: 1px solid var(--anbt-border);
-  border-radius: 18px;
+  border-radius: 12px;
   background: var(--anbt-surface);
-  box-shadow: 0 22px 70px oklch(0.08 0.02 255 / 0.32);
+  box-shadow: 0 18px 48px oklch(0.08 0.02 255 / 0.24);
 }
 
 .anbt-hero h1 {
-  max-width: 10ch;
-  margin: 0.15rem 0 0.85rem;
+  margin: 0.12rem 0 0.65rem;
   color: var(--anbt-ink);
-  font-size: clamp(2.6rem, 8vw, 5.7rem);
-  line-height: 0.92;
+  font-size: clamp(2.15rem, 5vw, 3.8rem);
+  line-height: 1.02;
   letter-spacing: 0;
+  word-break: keep-all;
 }
 
 .anbt-kicker {
@@ -39,8 +39,8 @@
 .anbt-lead {
   max-width: 58ch;
   color: var(--anbt-muted);
-  font-size: clamp(1rem, 2vw, 1.12rem);
-  line-height: 1.75;
+  font-size: 1rem;
+  line-height: 1.68;
 }
 
 .anbt-actions {
@@ -56,22 +56,22 @@
   gap: 0.75rem;
   padding: clamp(1rem, 3vw, 1.4rem);
   border: 1px solid oklch(0.72 0.05 225 / 0.24);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--anbt-surface-quiet);
 }
 
 .anbt-device img {
-  width: 92px;
+  width: 68px;
   margin-bottom: 0.2rem;
 }
 
 .anbt-device-line {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr);
   gap: 0.8rem;
   align-items: center;
-  min-height: 48px;
-  padding: 0.7rem 0.8rem;
+  min-height: 42px;
+  padding: 0.58rem 0.7rem;
   border: 1px solid oklch(0.73 0.05 226 / 0.18);
   border-radius: 10px;
   background: oklch(0.14 0.014 255 / 0.54);
@@ -79,9 +79,8 @@
 
 .anbt-device-line span {
   color: var(--anbt-accent);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  text-transform: uppercase;
 }
 
 .anbt-device-line strong {
@@ -99,7 +98,7 @@
   overflow: hidden;
   margin: 0 0 2rem;
   border: 1px solid var(--anbt-border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--anbt-border);
 }
 
@@ -127,7 +126,7 @@
   min-height: 230px;
   padding: 1rem;
   border: 1px solid var(--anbt-border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--anbt-surface-quiet);
 }
 

@@ -93,6 +93,7 @@ nav:
       - 高级模式: zh/advanced-mode.md
   - 兼容与发布:
       - 兼容矩阵: compat-matrix.md
+      - 更新记录 1.2.6: CHANGELOG-1.2.6.zh-CN.md
       - 更新记录 1.2.0: CHANGELOG-1.2.0.zh-CN.md
       - 更新记录 1.1.0: CHANGELOG-1.1.0.md
   - English:
@@ -107,7 +108,12 @@ nav:
           - Advanced Mode: advanced-mode.md
       - Release:
           - Compatibility Matrix: compat-matrix.md
+          - Changelog 1.2.6: CHANGELOG-1.2.6.en-US.md
           - Changelog 1.2.0: CHANGELOG-1.2.0.en-US.md
+          - Changelog 1.1.0: CHANGELOG-1.1.0.md
+      - Development:
+          - Build Notes: BUILDING.md
+          - Modrinth Description: MODRINTH.md
   - 开发:
       - 编译说明: BUILDING.md
       - Modrinth 介绍: MODRINTH.md

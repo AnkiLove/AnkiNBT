@@ -1,0 +1,107 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.0-alpha.12'
+    id 'java'
+}
+
+version = project.mod_version
+group = project.mod_group
+
+base {
+    archivesName = "AnkiNBT-Fabric-mc${project.minecraft_version}"
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.parchmentmc.org' }
+}
+
+loom {
+    runs {
+        client {
+            client()
+            runDir 'run/client'
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+task copySharedSources(type: Copy) {
+    from('../../src/main/java') {
+        exclude 'com/ankinbt/AnkiNBT.java'
+        exclude 'com/ankinbt/config/**'
+        exclude 'com/ankinbt/gui/**'
+        exclude 'com/ankinbt/keybind/**'
+        exclude 'com/ankinbt/util/FlatEditBox.java'
+        exclude 'com/ankinbt/compat/**'
+        exclude 'net/minecraft/**'
+    }
+    into 'build/shared-src/java'
+}
+
+task copyVersionSources(type: Copy) {
+    from('src/main/java') {
+        include 'com/ankinbt/AnkiNBTFabric.java'
+        include 'com/ankinbt/config/**'
+        include 'com/ankinbt/gui/**'
+        include 'com/ankinbt/compat/**'
+        include 'com/ankinbt/keybind/**'
+        include 'com/ankinbt/util/FlatEditBox.java'
+        include 'net/minecraft/**'
+    }
+    into 'build/version-src/java'
+}
+
+task copySharedResources(type: Copy) {
+    from('../../src/main/resources') {
+        exclude 'META-INF/**'
+        exclude 'pack.mcmeta'
+    }
+    into 'build/shared-resources'
+}
+
+sourceSets {
+    main {
+        java {
+            setSrcDirs([])
+            srcDir 'build/shared-src/java'
+            srcDir 'build/version-src/java'
+        }
+        resources {
+            srcDir 'src/main/resources'
+            srcDir 'build/shared-resources'
+        }
+    }
+}
+
+compileJava.dependsOn copySharedSources, copyVersionSources
+processResources.dependsOn copySharedResources
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.mod_version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+clean.doFirst {
+    delete 'build/shared-src'
+    delete 'build/version-src'
+    delete 'build/shared-resources'
+}
+
+tasks.named('jar').configure {
+    exclude 'net/minecraft/**'
+}
+

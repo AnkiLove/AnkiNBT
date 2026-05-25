@@ -1,7 +1,7 @@
 <section class="anbt-hero">
   <div class="anbt-hero-copy">
     <p class="anbt-kicker">Minecraft NBT Editor</p>
-    <h1>AnkiNBT Wiki</h1>
+    <h1>AnkiNBT</h1>
     <p class="anbt-lead">
       一个给物品、实体和数据组件准备的客户端 NBT 编辑器文档站。先装好版本，再按场景进入简易模式或高级模式。
     </p>
@@ -13,9 +13,9 @@
   </div>
   <div class="anbt-device" aria-label="AnkiNBT editor overview">
     <img src="assets/blue-logo.png" alt="AnkiNBT logo">
-    <div class="anbt-device-line"><span>Simple</span><strong>物品名称 / Lore / 药水效果</strong></div>
-    <div class="anbt-device-line"><span>Advanced</span><strong>NBT 树 / 搜索 / 批量定位</strong></div>
-    <div class="anbt-device-line"><span>Build</span><strong>Fabric + NeoForge</strong></div>
+    <div class="anbt-device-line"><span>简易模式</span><strong>名称、Lore、药水效果</strong></div>
+    <div class="anbt-device-line"><span>高级模式</span><strong>NBT 树、搜索、编辑</strong></div>
+    <div class="anbt-device-line"><span>版本</span><strong>Fabric + NeoForge</strong></div>
   </div>
 </section>
 
@@ -28,7 +28,7 @@
 1.21 系列使用 Java 21，26.1 系列使用 Java 25
 
 **语言支持**  
-中文和英文文档可从右上角切换
+右上角可在中文和 English 之间切换
 
 </section>
 
