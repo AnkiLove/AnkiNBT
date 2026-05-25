@@ -1,0 +1,91 @@
+site_name: AnkiNBT Wiki
+site_description: AnkiNBT Minecraft NBT editor documentation
+site_url: https://ankilove.github.io/AnkiNBT/
+repo_url: https://github.com/AnkiLove/AnkiNBT
+repo_name: AnkiLove/AnkiNBT
+edit_uri: edit/1.2.0/docs/
+docs_dir: docs
+site_dir: site
+not_in_nav: |
+  SUMMARY.md
+  zh/SUMMARY.md
+
+theme:
+  name: material
+  language: zh
+  logo: assets/blue-logo.png
+  favicon: assets/blue-logo.png
+  font: false
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.instant
+    - search.highlight
+    - search.suggest
+    - content.action.edit
+    - content.code.copy
+  palette:
+    - scheme: slate
+      primary: cyan
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: 切换到浅色模式
+    - scheme: default
+      primary: cyan
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: 切换到深色模式
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - 首页: index.md
+  - 使用文档:
+      - 中文首页: zh/README.md
+      - 安装指南: zh/installation-guide.md
+      - 快速上手: zh/getting-started.md
+      - 简易模式: zh/simple-mode.md
+      - 高级模式: zh/advanced-mode.md
+      - 快捷键: zh/keyboard-shortcuts.md
+      - 常见问题: zh/faq.md
+  - English:
+      - Home: en/index.md
+      - Installation Guide: installation-guide.md
+      - Getting Started: getting-started.md
+      - Simple Mode: simple-mode.md
+      - Advanced Mode: advanced-mode.md
+      - Keyboard Shortcuts: keyboard-shortcuts.md
+      - FAQ: faq.md
+  - 开发与发布:
+      - 编译说明: BUILDING.md
+      - 兼容矩阵: compat-matrix.md
+      - Modrinth 介绍: MODRINTH.md
+      - 更新记录 1.2.0: CHANGELOG-1.2.0.zh-CN.md
+      - Changelog 1.2.0: CHANGELOG-1.2.0.en-US.md
+      - 更新记录 1.1.0: CHANGELOG-1.1.0.md

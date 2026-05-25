@@ -71,9 +71,8 @@ Each tag type is **color-coded** for easy identification:
 4. Enter the tag name (for Compound children) and value.
 5. Confirm to add the new tag.
 
-{% hint style="info" %}
-You can add any NBT type: Byte, Short, Int, Long, Float, Double, String, ByteArray, IntArray, LongArray, List, Compound.
-{% endhint %}
+!!! info
+    You can add any NBT type: Byte, Short, Int, Long, Float, Double, String, ByteArray, IntArray, LongArray, List, Compound.
 
 ---
 

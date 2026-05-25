@@ -1,6 +1,8 @@
-A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, covering all versions from 1.21 to 1.21.11.
+A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, covering Minecraft 1.21 through 1.21.11, plus 26.1 through 26.1.2.
 
-一个简单现代化的 Minecraft 客户端 NBT 编辑器，支持 NeoForge 和 Fabric，覆盖 1.21 ~ 1.21.11 全版本。
+一个简单现代化的 Minecraft 客户端 NBT 编辑器，支持 NeoForge 和 Fabric，覆盖 1.21 ~ 1.21.11、26.1 ~ 26.1.2。
+
+Wiki / 使用文档：<https://rabbit-6.gitbook.io/ankinbt-wiki>
 
 ---
 
@@ -20,6 +22,10 @@ A modern client-side Minecraft NBT editor. Supports NeoForge and Fabric, coverin
   未保存更改确认对话框
 - Lore multi-line text editor with move up/down and color palette
   Lore 多行文本编辑器，支持上下移动和色板选择
+- Potion effects editor with multi-select and per-effect settings
+  药水效果编辑器，支持多选，并可单独配置每个效果
+- Searchable item picker
+  物品选择器支持搜索
 - Bilingual (English / Chinese), auto-follows game language
   中英双语，自动跟随游戏语言设置
 
@@ -81,8 +87,8 @@ A visual editor with category sidebar on the left and property list on the right
 **Enchantments / 附魔** - View, edit, add enchantments with searchable list, adjust levels, clear all
 查看/修改/添加附魔，支持中文搜索，可调整等级，一键清除
 
-**Lore / 描述** - Add, edit, remove lore lines. Color codes (&c red, &l bold, etc.), built-in palette picker, live preview. Multi-line text editor with move up/down.
-添加/编辑/删除描述行，支持颜色代码（&c 红色、&l 粗体等），内置色板选择器，实时预览。多行文本编辑器，支持上下移动。
+**Lore / 描述** - Add, edit, remove lore lines. Color codes (&c red, &l bold, etc.), built-in palette picker, multi-line text editor with move up/down.
+添加/编辑/删除描述行，支持颜色代码（&c 红色、&l 粗体等）、内置色板选择器和多行文本编辑器，可上下移动文本行。
 
 **Attributes / 属性修饰** - Add modifiers (attack damage, armor, speed, etc.), 3 operations, slot selection, searchable list
 添加属性修饰（攻击力、护甲、速度等），三种运算模式，支持槽位选择，中文搜索
@@ -115,15 +121,13 @@ Full NBT tree editor for viewing and modifying all item data components.
 
 ## Development / 开发信息
 
-**NeoForge (Based on 1.21.1):**
-- Minecraft: 1.21.1
-- NeoForge: 21.1.172
-- Parchment Mappings: 2024.11.17
-- Java 21
+Full build notes are maintained in `docs/BUILDING.md`.
 
-**Fabric (Based on 1.21.1):**
-- Minecraft: 1.21.1
-- Fabric Loader: 0.16.9
-- Fabric API: 0.102.1+1.21.1
-- Parchment Mappings: 2024.11.17
-- Java 21
+完整编译说明见 `docs/BUILDING.md`。
+
+Java requirement / Java 要求：
+
+| Minecraft | Java |
+|---|---|
+| 1.21 ~ 1.21.11 | Java 21 |
+| 26.1 ~ 26.1.2 | Java 25 |

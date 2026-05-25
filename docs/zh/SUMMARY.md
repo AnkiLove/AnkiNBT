@@ -1,6 +1,6 @@
 # 目录
 
-- [首页](README.md)
+- [首页](../index.md)
 - [安装指南](installation-guide.md)
 - [快速上手](getting-started.md)
 - [简易模式](simple-mode.md)

@@ -71,9 +71,8 @@ NBT 树以层级结构展示物品的所有数据组件：
 4. 输入标签名称（Compound 子节点需要）和值。
 5. 确认后添加新标签。
 
-{% hint style="info" %}
-可添加任意 NBT 类型：Byte、Short、Int、Long、Float、Double、String、ByteArray、IntArray、LongArray、List、Compound。
-{% endhint %}
+!!! info
+    可添加任意 NBT 类型：Byte、Short、Int、Long、Float、Double、String、ByteArray、IntArray、LongArray、List、Compound。
 
 ---
 

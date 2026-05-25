@@ -1,6 +1,6 @@
 # Table of contents
 
-- [Home](README.md)
+- [Home](index.md)
 - [Installation Guide](installation-guide.md)
 - [Getting Started](getting-started.md)
 - [Simple Mode](simple-mode.md)

@@ -50,7 +50,9 @@
 
 ### 问：支持哪些 Minecraft 版本？
 
-**答：** AnkiNBT 支持 Minecraft **1.21 到 1.21.11**，同时支持 NeoForge 和 Fabric。每个版本都有专门的构建版本。
+**答：** AnkiNBT 支持 Minecraft **1.21 到 1.21.11**，以及 **26.1、26.1.1、26.1.2**，同时支持 NeoForge 和 Fabric。每个版本都有专门的构建版本。
+
+1.21 系列使用 Java 21，26.1 系列使用 Java 25。
 
 ---
 

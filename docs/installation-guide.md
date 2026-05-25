@@ -2,8 +2,9 @@
 
 ## Prerequisites
 
-- **Minecraft** 1.21 ~ 1.21.11
-- **Java 21** or later
+- **Minecraft** 1.21 ~ 1.21.11, 26.1 ~ 26.1.2
+- **Java 21** for Minecraft 1.21 builds
+- **Java 25** for Minecraft 26.1 builds
 - **NeoForge** or **Fabric** (+ Fabric API) installed for your MC version
 
 ---
@@ -45,6 +46,9 @@
 | 1.21.9    | Yes      | Yes                  |
 | 1.21.10   | Yes      | Yes                  |
 | 1.21.11   | Yes      | Yes                  |
+| 26.1      | Yes      | Yes                  |
+| 26.1.1    | Yes      | Yes                  |
+| 26.1.2    | Yes      | Yes                  |
 
 ---
 
@@ -57,7 +61,7 @@ After launching the game:
 3. If nothing happens, check that:
    - You have the correct mod version for your Minecraft version.
    - On Fabric, Fabric API is also installed.
-   - You are using Java 21.
+   - You are using Java 21 for Minecraft 1.21, or Java 25 for Minecraft 26.1.
 
 ---
 

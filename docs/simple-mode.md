@@ -42,9 +42,8 @@ Manage item enchantments:
 - **Remove** individual enchantments
 - **Clear All** — remove all enchantments at once
 
-{% hint style="info" %}
-The enchantment list includes all vanilla enchantments. You can type in the search box to filter by name.
-{% endhint %}
+!!! info
+    The enchantment list includes all vanilla enchantments. You can type in the search box to filter by name.
 
 ### Lore
 
@@ -56,7 +55,7 @@ Edit item lore (description lines):
 - **Reorder** lines using Move Up / Move Down buttons
 - **Color codes** — use `&` color codes (e.g., `&c` for red, `&l` for bold)
 - **Color palette** — built-in palette picker for easy color selection
-- **Live preview** — see formatted text as you type
+- **Formatted color codes** — color codes are applied when editing is confirmed
 
 #### Color Code Reference
 
