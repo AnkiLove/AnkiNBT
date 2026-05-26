@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/blue-logo.png" alt="AnkiNBT" width="128">
+<img src="src/main/resources/logo.png" alt="AnkiNBT" width="128">
 
 # AnkiNBT
 
@@ -10,9 +10,9 @@ AnkiNBT 是一个现代化的 Minecraft 客户端 NBT 编辑器，支持 Fabric 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21--1.21.11%20%7C%2026.1--26.1.2-38bdf8?style=flat-square)](https://minecraft.net)
 [![Fabric](https://img.shields.io/badge/Fabric-supported-f5c542?style=flat-square)](https://fabricmc.net)
 [![NeoForge](https://img.shields.io/badge/NeoForge-supported-ff7a45?style=flat-square)](https://neoforged.net)
-[![Docs](https://img.shields.io/badge/Wiki-GitHub%20Pages-22c55e?style=flat-square)](https://ankilove.github.io/AnkiNBT/)
+[![Docs](https://img.shields.io/badge/Wiki-GitHub%20Pages-22c55e?style=flat-square)](https://ankilove.github.io/AnkiNBT-wiki/)
 
-[在线文档 / Wiki](https://ankilove.github.io/AnkiNBT/) · [Releases](https://github.com/AnkiLove/AnkiNBT/releases) · [Issues](https://github.com/AnkiLove/AnkiNBT/issues)
+[在线文档 / Wiki](https://ankilove.github.io/AnkiNBT-wiki/) · [Releases](https://github.com/AnkiLove/AnkiNBT/releases) · [Issues](https://github.com/AnkiLove/AnkiNBT/issues)
 
 </div>
 
@@ -55,13 +55,9 @@ Java 要求：
 
 完整使用说明、安装说明和常见问题放在 GitHub Pages：
 
-https://ankilove.github.io/AnkiNBT/
+https://ankilove.github.io/AnkiNBT-wiki/
 
-仓库内文档主要用于开发和编译记录：
-
-- [编译说明](docs/BUILDING.md)
-- [兼容矩阵](docs/compat-matrix.md)
-- [本地文档首页](docs/index.md)
+文档站已统一迁移到独立项目 AnkiNBT-wiki，主项目不再维护内置 Wiki。
 
 ## 编译
 
@@ -71,7 +67,7 @@ Windows 下直接运行：
 scripts\build-all.bat -AllVersions -NoPause
 ```
 
-完整说明见 [docs/BUILDING.md](docs/BUILDING.md)。
+完整说明见在线文档的编译说明页面。
 
 ## 许可证
 
