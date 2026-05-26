@@ -10,9 +10,9 @@ AnkiNBT 是一个现代化的 Minecraft 客户端 NBT 编辑器，支持 Fabric 
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21--1.21.11%20%7C%2026.1--26.1.2-38bdf8?style=flat-square)](https://minecraft.net)
 [![Fabric](https://img.shields.io/badge/Fabric-supported-f5c542?style=flat-square)](https://fabricmc.net)
 [![NeoForge](https://img.shields.io/badge/NeoForge-supported-ff7a45?style=flat-square)](https://neoforged.net)
-[![Docs](https://img.shields.io/badge/Wiki-GitBook-22c55e?style=flat-square)](https://rabbit-6.gitbook.io/ankinbt-wiki)
+[![Docs](https://img.shields.io/badge/Wiki-GitHub%20Pages-22c55e?style=flat-square)](https://ankilove.github.io/AnkiNBT/)
 
-[在线文档 / Wiki](https://rabbit-6.gitbook.io/ankinbt-wiki) · [Releases](https://github.com/AnkiLove/AnkiNBT/releases) · [Issues](https://github.com/AnkiLove/AnkiNBT/issues)
+[在线文档 / Wiki](https://ankilove.github.io/AnkiNBT/) · [Releases](https://github.com/AnkiLove/AnkiNBT/releases) · [Issues](https://github.com/AnkiLove/AnkiNBT/issues)
 
 </div>
 
@@ -53,9 +53,9 @@ Java 要求：
 
 ## 文档
 
-完整使用说明、安装说明和常见问题放在 GitBook：
+完整使用说明、安装说明和常见问题放在 GitHub Pages：
 
-https://rabbit-6.gitbook.io/ankinbt-wiki
+https://ankilove.github.io/AnkiNBT/
 
 仓库内文档主要用于开发和编译记录：
 
