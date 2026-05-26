@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/main/resources/logo.png" alt="AnkiNBT" width="128">
+<img src="https://raw.githubusercontent.com/AnkiLove/AnkiNBT-wiki/main/docs/assets/blue-logo.png" alt="AnkiNBT" width="128">
 
 # AnkiNBT
 
