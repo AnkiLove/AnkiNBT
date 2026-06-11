@@ -1,0 +1,66 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.minecraft.client.gui.Font
+ *  net.minecraft.client.gui.GuiGraphics
+ *  net.minecraft.client.gui.components.EditBox
+ *  net.minecraft.network.chat.Component
+ */
+package com.ankinbt.util;
+
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.network.chat.Component;
+
+public class FlatEditBox
+extends EditBox {
+    private int bgColor = 1075059755;
+    private int borderColor = -13878436;
+    private int focusedBorderColor = -10262799;
+
+    public FlatEditBox(Font font, int x, int y, int width, int height, Component message) {
+        super(font, x, y, width, height, message);
+        try {
+            this.setBordered(false);
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        try {
+            this.setTextColor(-2497806);
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        try {
+            this.setTextColorUneditable(-7429177);
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+    }
+
+    public FlatEditBox setThemeColors(int bgColor, int borderColor, int focusedBorderColor) {
+        this.bgColor = bgColor;
+        this.borderColor = borderColor;
+        this.focusedBorderColor = focusedBorderColor;
+        return this;
+    }
+
+    public void renderWidget(GuiGraphics g, int mx, int my, float partialTick) {
+        int x = this.getX();
+        int y = this.getY();
+        int w = this.getWidth();
+        int h = this.getHeight();
+        int edge = this.isFocused() ? this.focusedBorderColor : this.borderColor;
+        g.fill(x, y, x + w, y + h, this.bgColor);
+        g.fill(x, y, x + w, y + 1, edge);
+        g.fill(x, y + h - 1, x + w, y + h, edge);
+        g.fill(x, y, x + 1, y + h, edge);
+        g.fill(x + w - 1, y, x + w, y + h, edge);
+        super.renderWidget(g, mx, my, partialTick);
+    }
+}
+

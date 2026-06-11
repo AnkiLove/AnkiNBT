@@ -1,3 +1,13 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.neoforged.bus.api.IEventBus
+ *  net.neoforged.fml.ModContainer
+ *  net.neoforged.fml.common.Mod
+ *  org.slf4j.Logger
+ *  org.slf4j.LoggerFactory
+ */
 package com.ankinbt;
 
 import com.ankinbt.config.AnkiConfig;
@@ -5,22 +15,18 @@ import com.ankinbt.keybind.KeyBindings;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@Mod(AnkiNBT.MOD_ID)
+@Mod(value="ankinbt")
 public class AnkiNBT {
     public static final String MOD_ID = "ankinbt";
-    public static final Logger LOGGER = LoggerFactory.getLogger("AnkiNBT");
+    public static final Logger LOGGER = LoggerFactory.getLogger((String)"AnkiNBT");
 
     public AnkiNBT(IEventBus modEventBus, ModContainer modContainer) {
-        if (!FMLEnvironment.dist.isClient()) {
-            LOGGER.warn("AnkiNBT is a client-only mod. It will not function on a dedicated server.");
-            return;
-        }
         AnkiConfig.init();
         KeyBindings.register(modEventBus);
-        LOGGER.info("AnkiNBT loaded - Press {} to open NBT editor", AnkiConfig.getKeyName());
+        LOGGER.info("AnkiNBT client initialized");
     }
 }
+

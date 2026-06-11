@@ -1,22 +1,26 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.minecraft.nbt.CompoundTag
+ *  net.minecraft.nbt.ListTag
+ *  net.minecraft.nbt.Tag
+ */
 package com.ankinbt.nbt;
 
-import net.minecraft.nbt.*;
-
 import com.ankinbt.compat.VersionCompat;
+import com.ankinbt.nbt.NbtHelper;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 
-/**
- * Tree node for NBT editing. Follows NBTEdit's NbtTree.Node pattern:
- * each node holds a key, a tag, and children. The tree can be converted
- * back to a CompoundTag via toCompoundTag() for saving.
- */
 public class NbtTreeNode {
-
     private String key;
     private Tag tag;
     private final NbtTreeNode parent;
-    private final List<NbtTreeNode> children = new ArrayList<>();
+    private final List<NbtTreeNode> children = new ArrayList<NbtTreeNode>();
     private boolean expanded;
     private final int depth;
 
@@ -26,119 +30,161 @@ public class NbtTreeNode {
         this.parent = parent;
         this.depth = parent == null ? 0 : parent.depth + 1;
         this.expanded = expandByDefault;
-        buildChildren(expandByDefault);
+        this.buildChildren(expandByDefault);
     }
 
     private void buildChildren(boolean expandByDefault) {
-        children.clear();
-        if (tag instanceof CompoundTag compound) {
-            for (String childKey : VersionCompat.get().getCompoundKeys(compound)) {
-                children.add(new NbtTreeNode(childKey, compound.get(childKey), this, expandByDefault));
+        block3: {
+            Object object;
+            block2: {
+                this.children.clear();
+                object = this.tag;
+                if (!(object instanceof CompoundTag)) break block2;
+                CompoundTag compound = (CompoundTag)object;
+                for (String childKey : VersionCompat.get().getCompoundKeys(compound)) {
+                    this.children.add(new NbtTreeNode(childKey, compound.get(childKey), this, expandByDefault));
+                }
+                break block3;
             }
-        } else if (tag instanceof ListTag list) {
-            for (int i = 0; i < list.size(); i++) {
-                children.add(new NbtTreeNode("[" + i + "]", list.get(i), this, expandByDefault));
+            object = this.tag;
+            if (!(object instanceof ListTag)) break block3;
+            ListTag list = (ListTag)object;
+            for (int i = 0; i < list.size(); ++i) {
+                this.children.add(new NbtTreeNode("[" + i + "]", list.get(i), this, expandByDefault));
             }
         }
     }
 
     public void rebuild(boolean expandByDefault) {
-        buildChildren(expandByDefault);
+        this.buildChildren(expandByDefault);
     }
 
-    // ==================== Getters/Setters ====================
+    public String getKey() {
+        return this.key;
+    }
 
-    public String getKey() { return key; }
-    public void setKey(String key) { this.key = key; }
-    public Tag getTag() { return tag; }
-    public void setTag(Tag tag) { this.tag = tag; }
-    public NbtTreeNode getParent() { return parent; }
-    public List<NbtTreeNode> getChildren() { return children; }
-    public boolean isExpanded() { return expanded; }
-    public void setExpanded(boolean expanded) { this.expanded = expanded; }
-    public void toggleExpanded() { this.expanded = !this.expanded; }
-    public int getDepth() { return depth; }
-    public boolean isLeaf() { return children.isEmpty(); }
-    public boolean isCompound() { return tag instanceof CompoundTag; }
-    public boolean isList() { return tag instanceof ListTag; }
+    public void setKey(String key) {
+        this.key = key;
+    }
 
-    public String getTypeName() { return NbtHelper.getTagTypeName(tag); }
+    public Tag getTag() {
+        return this.tag;
+    }
 
-    public String getDisplayValue() { return NbtHelper.getValueAsString(tag); }
+    public void setTag(Tag tag) {
+        this.tag = tag;
+    }
 
-    // ==================== Tree Operations ====================
+    public NbtTreeNode getParent() {
+        return this.parent;
+    }
+
+    public List<NbtTreeNode> getChildren() {
+        return this.children;
+    }
+
+    public boolean isExpanded() {
+        return this.expanded;
+    }
+
+    public void setExpanded(boolean expanded) {
+        this.expanded = expanded;
+    }
+
+    public void toggleExpanded() {
+        this.expanded = !this.expanded;
+    }
+
+    public int getDepth() {
+        return this.depth;
+    }
+
+    public boolean isLeaf() {
+        return this.children.isEmpty();
+    }
+
+    public boolean isCompound() {
+        return this.tag instanceof CompoundTag;
+    }
+
+    public boolean isList() {
+        return this.tag instanceof ListTag;
+    }
+
+    public String getTypeName() {
+        return NbtHelper.getTagTypeName(this.tag);
+    }
+
+    public String getDisplayValue() {
+        return NbtHelper.getValueAsString(this.tag);
+    }
 
     public void collectVisible(List<NbtTreeNode> out) {
         out.add(this);
-        if (expanded) {
-            for (NbtTreeNode child : children) {
+        if (this.expanded) {
+            for (NbtTreeNode child : this.children) {
                 child.collectVisible(out);
             }
         }
     }
 
-    /**
-     * Writes this node's value back into the parent's tag.
-     */
     public void applyToParent() {
-        if (parent == null) return;
-        Tag parentTag = parent.getTag();
-        if (parentTag instanceof CompoundTag compound) {
-            compound.put(key, tag);
-        } else if (parentTag instanceof ListTag list) {
-            int idx = parseListIndex(key);
+        if (this.parent == null) {
+            return;
+        }
+        Tag parentTag = this.parent.getTag();
+        if (parentTag instanceof CompoundTag) {
+            CompoundTag compound = (CompoundTag)parentTag;
+            compound.put(this.key, this.tag);
+        } else if (parentTag instanceof ListTag) {
+            ListTag list = (ListTag)parentTag;
+            int idx = NbtTreeNode.parseListIndex(this.key);
             if (idx >= 0 && idx < list.size()) {
-                list.set(idx, tag);
+                list.set(idx, this.tag);
             }
         }
     }
 
-    /**
-     * Adds a new child tag. For CompoundTag parents, uses the given key.
-     * For ListTag parents, appends to the end.
-     */
     public NbtTreeNode addChild(String childKey, Tag childTag, boolean expandByDefault) {
-        if (tag instanceof CompoundTag compound) {
-            compound.put(childKey, childTag);
-        } else if (tag instanceof ListTag list) {
-            list.add(childTag);
-            childKey = "[" + (list.size() - 1) + "]";
+        Tag tag = this.tag;
+        if (tag instanceof CompoundTag) {
+            CompoundTag compound = (CompoundTag)tag;
+            compound.put((String)childKey, childTag);
+        } else {
+            tag = this.tag;
+            if (tag instanceof ListTag) {
+                ListTag list = (ListTag)tag;
+                list.add(childTag);
+                childKey = "[" + (list.size() - 1) + "]";
+            }
         }
-        NbtTreeNode child = new NbtTreeNode(childKey, childTag, this, expandByDefault);
-        children.add(child);
+        NbtTreeNode child = new NbtTreeNode((String)childKey, childTag, this, expandByDefault);
+        this.children.add(child);
         return child;
     }
 
-    /**
-     * Removes a child node.
-     */
     public void removeChild(NbtTreeNode child) {
         Tag pt = this.tag;
-        if (pt instanceof CompoundTag compound) {
+        if (pt instanceof CompoundTag) {
+            CompoundTag compound = (CompoundTag)pt;
             compound.remove(child.getKey());
-        } else if (pt instanceof ListTag list) {
-            int idx = parseListIndex(child.getKey());
+        } else if (pt instanceof ListTag) {
+            ListTag list = (ListTag)pt;
+            int idx = NbtTreeNode.parseListIndex(child.getKey());
             if (idx >= 0 && idx < list.size()) {
                 list.remove(idx);
             }
         }
-        children.remove(child);
-        // Re-index list children
+        this.children.remove(child);
         if (pt instanceof ListTag) {
-            for (int i = 0; i < children.size(); i++) {
-                children.get(i).key = "[" + i + "]";
+            for (int i = 0; i < this.children.size(); ++i) {
+                this.children.get((int)i).key = "[" + i + "]";
             }
         }
     }
 
-    // ==================== Conversion ====================
-
-    /**
-     * Recursively converts this node tree back to a CompoundTag.
-     * Following NBTEdit's NbtTree.toCompound() pattern.
-     */
     public CompoundTag toCompoundTag() {
-        return buildCompound(this);
+        return NbtTreeNode.buildCompound(this);
     }
 
     private static CompoundTag buildCompound(NbtTreeNode node) {
@@ -147,12 +193,14 @@ public class NbtTreeNode {
             String name = child.getKey();
             Tag childTag = child.getTag();
             if (childTag instanceof CompoundTag) {
-                result.put(name, buildCompound(child));
-            } else if (childTag instanceof ListTag) {
-                result.put(name, buildList(child));
-            } else {
-                result.put(name, childTag);
+                result.put(name, (Tag)NbtTreeNode.buildCompound(child));
+                continue;
             }
+            if (childTag instanceof ListTag) {
+                result.put(name, (Tag)NbtTreeNode.buildList(child));
+                continue;
+            }
+            result.put(name, childTag);
         }
         return result;
     }
@@ -162,12 +210,14 @@ public class NbtTreeNode {
         for (NbtTreeNode child : node.getChildren()) {
             Tag childTag = child.getTag();
             if (childTag instanceof CompoundTag) {
-                result.add(buildCompound(child));
-            } else if (childTag instanceof ListTag) {
-                result.add(buildList(child));
-            } else {
-                result.add(childTag);
+                result.add(NbtTreeNode.buildCompound(child));
+                continue;
             }
+            if (childTag instanceof ListTag) {
+                result.add(NbtTreeNode.buildList(child));
+                continue;
+            }
+            result.add(childTag);
         }
         return result;
     }
@@ -177,7 +227,10 @@ public class NbtTreeNode {
             if (key.startsWith("[") && key.endsWith("]")) {
                 return Integer.parseInt(key.substring(1, key.length() - 1));
             }
-        } catch (NumberFormatException ignored) {}
+        }
+        catch (NumberFormatException numberFormatException) {
+            // empty catch block
+        }
         return -1;
     }
 }

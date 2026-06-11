@@ -78,3 +78,8 @@ tasks.withType(ProcessResources).configureEach {
         expand replaceProperties
     }
 }
+
+
+tasks.named('jar').configure {
+    exclude 'net/minecraft/**'
+}

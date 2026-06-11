@@ -41,8 +41,18 @@ task copySharedSources(type: Copy) {
         exclude 'com/ankinbt/AnkiNBT.java'
         exclude 'com/ankinbt/keybind/**'
         exclude 'com/ankinbt/compat/**'
+        exclude 'com/ankinbt/modcompat/**'
     }
     into 'build/shared-src/java'
+}
+
+task copyVersionSources(type: Copy) {
+    from('../../fabric/src/main/java') {
+        include 'com/ankinbt/AnkiNBTFabric.java'
+        include 'com/ankinbt/compat/**'
+        include 'com/ankinbt/keybind/**'
+    }
+    into 'build/version-src/java'
 }
 
 task copySharedResources(type: Copy) {
@@ -56,8 +66,9 @@ task copySharedResources(type: Copy) {
 sourceSets {
     main {
         java {
-            srcDir 'src/main/java'
+            setSrcDirs([])
             srcDir 'build/shared-src/java'
+            srcDir 'build/version-src/java'
         }
         resources {
             srcDir 'src/main/resources'
@@ -66,7 +77,7 @@ sourceSets {
     }
 }
 
-compileJava.dependsOn copySharedSources
+compileJava.dependsOn copySharedSources, copyVersionSources
 processResources.dependsOn copySharedResources
 
 processResources {
@@ -83,5 +94,6 @@ tasks.withType(JavaCompile).configureEach {
 
 clean.doFirst {
     delete 'build/shared-src'
+    delete 'build/version-src'
     delete 'build/shared-resources'
 }

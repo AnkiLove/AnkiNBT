@@ -57,6 +57,7 @@ tasks.named('compileJava').configure {
         exclude 'com/ankinbt/keybind/**'
         exclude 'com/ankinbt/AnkiNBT.java'
         exclude 'com/ankinbt/config/AnkiConfig.java'
+        exclude 'net/minecraft/**'
     }
 }
 
