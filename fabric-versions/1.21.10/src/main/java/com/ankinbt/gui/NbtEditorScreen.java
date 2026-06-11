@@ -5,9 +5,13 @@ import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtTreeNode;
+import com.ankinbt.util.UiSound;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
@@ -74,6 +78,8 @@ public class NbtEditorScreen extends Screen {
     private long statusTime = 0;
     private int statusColor = C3;
     private boolean dirty = false;
+    private boolean nativeDialogOpen = false;
+    private long lastNativeDialogAt = 0L;
     private boolean confirmClose = false;
     private float openAnim = 0f;
 
@@ -215,8 +221,9 @@ public class NbtEditorScreen extends Screen {
         // Header
         g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
         g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
-        g.drawString(font, Component.translatable("ankinbt.title"), px + 10, py + 12, C1, false);
-        if (dirty) g.drawString(font, "*", px + 10 + font.width(Component.translatable("ankinbt.title")), py + 12, ERROR_C, false);
+        g.drawString(font, "ANBT", px + 16, py + 11, 0xFFE2E8F0, false);
+        g.drawString(font, "高级模式", px + 46, py + 11, 0xFFFF2D7A, false);
+        if (dirty) g.drawString(font, "*", px + 116, py + 12, ERROR_C, false);
 
         for (Btn b : buttons) b.render(g, font, mx, my);
 
@@ -414,29 +421,34 @@ public class NbtEditorScreen extends Screen {
 
             int saveX = dx + 10;
             if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
                 saveToItem(); onClose(); return true;
             }
             int discardX = dx + dw / 2 - bw2 / 2;
             if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
                 dirty = false; onClose(); return true;
             }
             int cancelX = dx + dw - bw2 - 10;
             if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
                 confirmClose = false; return true;
             }
             return true;
         }
 
-        for (Btn b : buttons) if (b.isHover((int) mx, (int) my)) { b.action.run(); return true; }
+        for (Btn b : buttons) if (b.isHover((int) mx, (int) my)) { UiSound.playClick(); b.action.run(); return true; }
 
         if (hoverIdx >= 0 && hoverIdx < visibleNodes.size()) {
             long now = System.currentTimeMillis();
             if (hoverIdx == lastClickIdx && now - lastClickTime < 400) {
                 NbtTreeNode node = visibleNodes.get(hoverIdx);
+                UiSound.playClick();
                 if (!node.isLeaf()) { node.toggleExpanded(); refreshVisible(); }
                 else openEditor(node);
                 lastClickIdx = -1;
             } else {
+                UiSound.playClick();
                 selIdx = hoverIdx;
                 lastClickIdx = hoverIdx;
                 lastClickTime = now;
@@ -644,6 +656,9 @@ public class NbtEditorScreen extends Screen {
     }
 
     private String tinyFdDialog(String methodName, String defaultPath, boolean isOpen) {
+        long now = System.currentTimeMillis();
+        if (nativeDialogOpen || now - lastNativeDialogAt < 600L) return null;
+        nativeDialogOpen = true;
         try {
             Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
             for (Method m : clazz.getMethods()) {
@@ -652,6 +667,10 @@ public class NbtEditorScreen extends Screen {
                 if (out instanceof CharSequence cs) return cs.toString();
             }
         } catch (Throwable ignored) {}
+        finally {
+            lastNativeDialogAt = System.currentTimeMillis();
+            nativeDialogOpen = false;
+        }
         return null;
     }
 
@@ -740,4 +759,37 @@ public class NbtEditorScreen extends Screen {
             if (h && tooltip != null) VersionCompat.get().renderTooltip(g, f, tooltip, mx, my);
         }
     }
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
+        double mx = event.x();
+        double my = event.y();
+        if (mouseClicked(mx, my, event.button())) return true;
+        if (minecraft != null) {
+            double sw = minecraft.getWindow().getScreenWidth();
+            double sh = minecraft.getWindow().getScreenHeight();
+            if (sw > 0.0 && sh > 0.0) {
+                double sx = mx * width / sw;
+                double sy = my * height / sh;
+                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && mouseClicked(sx, sy, event.button())) {
+                    return true;
+                }
+            }
+        }
+        return super.mouseClicked(event, isDoubleClick);
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (keyPressed(event.key(), event.scancode(), event.modifiers())) return true;
+        return super.keyPressed(event);
+    }
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        if (charTyped((char) event.codepoint(), event.modifiers())) return true;
+        return super.charTyped(event);
+    }
 }
+
+
+
+

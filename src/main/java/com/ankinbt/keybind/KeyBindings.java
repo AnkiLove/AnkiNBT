@@ -1,3 +1,25 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.blaze3d.platform.InputConstants$Type
+ *  net.minecraft.client.KeyMapping
+ *  net.minecraft.client.KeyMapping$Category
+ *  net.minecraft.client.Minecraft
+ *  net.minecraft.client.gui.screens.Screen
+ *  net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+ *  net.minecraft.network.chat.Component
+ *  net.minecraft.world.entity.Entity
+ *  net.minecraft.world.inventory.Slot
+ *  net.minecraft.world.item.ItemStack
+ *  net.minecraft.world.phys.EntityHitResult
+ *  net.minecraft.world.phys.HitResult
+ *  net.neoforged.bus.api.IEventBus
+ *  net.neoforged.neoforge.client.event.ClientTickEvent$Post
+ *  net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent
+ *  net.neoforged.neoforge.client.event.ScreenEvent$KeyPressed$Pre
+ *  net.neoforged.neoforge.common.NeoForge
+ */
 package com.ankinbt.keybind;
 
 import com.ankinbt.config.AnkiConfig;
@@ -8,22 +30,25 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.SimpleEditorScreen;
 import com.ankinbt.gui.VillagerTradeEditorScreen;
 import com.mojang.blaze3d.platform.InputConstants;
+import java.lang.reflect.Field;
+import java.util.Locale;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
-import java.util.Locale;
-
 public class KeyBindings {
-
     private static final String CATEGORY = "key.categories.ankinbt";
     private static KeyMapping openItemEditorKey;
     private static KeyMapping openEntityEditorKey;
@@ -36,173 +61,162 @@ public class KeyBindings {
     }
 
     private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
-        refreshMappingsFromConfig();
+        KeyBindings.refreshMappingsFromConfig();
         event.register(openItemEditorKey);
         event.register(openEntityEditorKey);
         event.register(openConfigMenuKey);
     }
 
     private static void refreshMappingsFromConfig() {
-        int entityKeyCode = normalizeEntityEditorKeyCode(AnkiConfig.getOpenEntityEditorKeyCode());
+        int entityKeyCode = KeyBindings.normalizeEntityEditorKeyCode(AnkiConfig.getOpenEntityEditorKeyCode());
         if (entityKeyCode != AnkiConfig.getOpenEntityEditorKeyCode()) {
             AnkiConfig.setOpenEntityEditorKeyCode(entityKeyCode);
         }
         if (entityKeyCode != AnkiConfig.getOpenVillagerEditorKeyCode()) {
             AnkiConfig.setOpenVillagerEditorKeyCode(entityKeyCode);
         }
-
-        openItemEditorKey = new KeyMapping(
-                "key.ankinbt.open_editor",
-                InputConstants.Type.KEYSYM,
-                AnkiConfig.getOpenItemEditorKeyCode(),
-                CATEGORY
-        );
-        openEntityEditorKey = new KeyMapping(
-                "key.ankinbt.open_entity_editor",
-                InputConstants.Type.KEYSYM,
-                entityKeyCode,
-                CATEGORY
-        );
-        openConfigMenuKey = new KeyMapping(
-                "key.ankinbt.open_config_menu",
-                InputConstants.Type.KEYSYM,
-                AnkiConfig.getOpenConfigMenuKeyCode(),
-                CATEGORY
-        );
+        openItemEditorKey = new KeyMapping("key.ankinbt.open_editor", AnkiConfig.getOpenItemEditorKeyCode(), CATEGORY);
+        openEntityEditorKey = new KeyMapping("key.ankinbt.open_entity_editor", entityKeyCode, CATEGORY);
+        openConfigMenuKey = new KeyMapping("key.ankinbt.open_config_menu", AnkiConfig.getOpenConfigMenuKeyCode(), CATEGORY);
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
-
+        if (mc.player == null) {
+            return;
+        }
         if (openConfigMenuKey != null && openConfigMenuKey.consumeClick()) {
-            mc.setScreen(new AnkiConfigScreen(mc.screen));
+            mc.setScreen((Screen)new AnkiConfigScreen(mc.screen));
             return;
         }
-
-        if (mc.screen != null) return;
-
+        if (mc.screen != null) {
+            return;
+        }
         if (openItemEditorKey != null && openItemEditorKey.consumeClick()) {
-            ItemStack held = getHeldOrOffhand(mc);
+            ItemStack held = KeyBindings.getHeldOrOffhand(mc);
             if (held.isEmpty()) {
-                mc.player.displayClientMessage(net.minecraft.network.chat.Component.translatable("ankinbt.message.no_item"), true);
+                mc.player.displayClientMessage((Component)Component.translatable((String)"ankinbt.message.no_item"), true);
                 return;
             }
-            openItemEditor(held, -1);
+            KeyBindings.openItemEditor(held, -1);
             return;
         }
-
         if (openEntityEditorKey != null && openEntityEditorKey.consumeClick()) {
-            Entity looked = getLookedEntity(mc);
+            Entity looked = KeyBindings.getLookedEntity(mc);
             if (looked != null) {
-                openSmartEntityEditor(mc, looked, ItemStack.EMPTY, -1, mc.screen);
+                KeyBindings.openSmartEntityEditor(mc, looked, ItemStack.EMPTY, -1, mc.screen);
                 return;
             }
-
-            ItemStack held = getHeldOrOffhand(mc);
+            ItemStack held = KeyBindings.getHeldOrOffhand(mc);
             if (SpawnEggEditorHelper.isSpawnEgg(held)) {
-                openSmartEntityEditor(mc, null, held, -1, mc.screen);
+                KeyBindings.openSmartEntityEditor(mc, null, held, -1, mc.screen);
                 return;
             }
-
-            mc.player.displayClientMessage(net.minecraft.network.chat.Component.translatable("ankinbt.entity.target_hint"), true);
+            mc.player.displayClientMessage((Component)Component.translatable((String)"ankinbt.entity.target_hint"), true);
         }
     }
 
     private static void onScreenKeyPress(ScreenEvent.KeyPressed.Pre event) {
-        if (!(event.getScreen() instanceof AbstractContainerScreen<?> containerScreen)) return;
-
-        if (openConfigMenuKey != null && openConfigMenuKey.matches(event.getKeyCode(), event.getScanCode())) {
-            event.setCanceled(true);
-            Minecraft.getInstance().setScreen(new AnkiConfigScreen(event.getScreen()));
+        Screen screen = event.getScreen();
+        if (!(screen instanceof AbstractContainerScreen)) {
             return;
         }
-
+        AbstractContainerScreen containerScreen = (AbstractContainerScreen)screen;
+        if (openConfigMenuKey != null && KeyBindings.matchesEventKey(openConfigMenuKey, event)) {
+            event.setCanceled(true);
+            Minecraft.getInstance().setScreen((Screen)new AnkiConfigScreen(event.getScreen()));
+            return;
+        }
         Slot hoveredSlot = containerScreen.getSlotUnderMouse();
-        if (hoveredSlot == null || !hoveredSlot.hasItem()) return;
-
+        if (hoveredSlot == null || !hoveredSlot.hasItem()) {
+            return;
+        }
         ItemStack stack = hoveredSlot.getItem();
         int slotIndex = hoveredSlot.getContainerSlot();
-
-        if (openItemEditorKey != null && openItemEditorKey.matches(event.getKeyCode(), event.getScanCode())) {
+        if (openItemEditorKey != null && KeyBindings.matchesEventKey(openItemEditorKey, event)) {
             event.setCanceled(true);
-            openItemEditor(stack, slotIndex);
+            KeyBindings.openItemEditor(stack, slotIndex);
             return;
         }
-
-        if (openEntityEditorKey != null && openEntityEditorKey.matches(event.getKeyCode(), event.getScanCode())) {
-            if (!SpawnEggEditorHelper.isSpawnEgg(stack)) return;
+        if (openEntityEditorKey != null && KeyBindings.matchesEventKey(openEntityEditorKey, event)) {
+            if (!SpawnEggEditorHelper.isSpawnEgg(stack)) {
+                return;
+            }
             event.setCanceled(true);
-            openSmartEntityEditor(Minecraft.getInstance(), null, stack, slotIndex, event.getScreen());
+            KeyBindings.openSmartEntityEditor(Minecraft.getInstance(), null, stack, slotIndex, event.getScreen());
         }
     }
 
-    private static void openSmartEntityEditor(Minecraft mc, Entity looked, ItemStack spawnEgg, int slot, net.minecraft.client.gui.screens.Screen parent) {
+    private static void openSmartEntityEditor(Minecraft mc, Entity looked, ItemStack spawnEgg, int slot, Screen parent) {
         boolean smart = AnkiConfig.isSmartEntityEditorKey();
-
         if (looked != null) {
-            if (smart && isVillagerEntity(looked)) {
-                mc.setScreen(VillagerTradeEditorScreen.forEntity(looked, parent));
+            if (smart && KeyBindings.isVillagerEntity(looked)) {
+                mc.setScreen((Screen)VillagerTradeEditorScreen.forEntity(looked, parent));
             } else {
-                mc.setScreen(EntityEditorScreen.forEntity(looked, parent));
+                mc.setScreen((Screen)EntityEditorScreen.forEntity(looked, parent));
             }
             return;
         }
-
         if (!spawnEgg.isEmpty()) {
             if (smart && SpawnEggEditorHelper.isVillagerSpawnEgg(spawnEgg)) {
-                mc.setScreen(VillagerTradeEditorScreen.forSpawnEgg(spawnEgg, slot, parent));
+                mc.setScreen((Screen)VillagerTradeEditorScreen.forSpawnEgg(spawnEgg, slot, parent));
             } else {
-                mc.setScreen(EntityEditorScreen.forSpawnEgg(spawnEgg, slot, parent));
+                mc.setScreen((Screen)EntityEditorScreen.forSpawnEgg(spawnEgg, slot, parent));
             }
         }
     }
 
     private static Entity getLookedEntity(Minecraft mc) {
-        if (mc.hitResult instanceof net.minecraft.world.phys.EntityHitResult ehr) {
+        HitResult hitResult = mc.hitResult;
+        if (hitResult instanceof EntityHitResult) {
+            EntityHitResult ehr = (EntityHitResult)hitResult;
             return ehr.getEntity();
         }
         return null;
     }
 
     private static boolean isVillagerEntity(Entity entity) {
-        if (entity == null) return false;
+        if (entity == null) {
+            return false;
+        }
         String type = entity.getType().toString().toLowerCase(Locale.ROOT);
         return type.contains("villager") || type.contains("wandering_trader");
     }
 
     private static ItemStack getHeldOrOffhand(Minecraft mc) {
         ItemStack held = mc.player.getMainHandItem();
-        if (held.isEmpty()) held = mc.player.getOffhandItem();
+        if (held.isEmpty()) {
+            held = mc.player.getOffhandItem();
+        }
         return held;
     }
 
     private static void openItemEditor(ItemStack stack, int slot) {
         Minecraft mc = Minecraft.getInstance();
         if ("advanced".equalsIgnoreCase(AnkiConfig.getPreferredItemEditor())) {
-            mc.setScreen(new NbtEditorScreen(stack, slot));
+            mc.setScreen((Screen)new NbtEditorScreen(stack, slot));
         } else {
-            mc.setScreen(new SimpleEditorScreen(stack, slot));
+            mc.setScreen((Screen)new SimpleEditorScreen(stack, slot));
         }
     }
 
     private static int normalizeEntityEditorKeyCode(int keyCode) {
-        if (keyCode == InputConstants.KEY_M || keyCode == InputConstants.KEY_V) {
-            return InputConstants.KEY_COMMA;
+        if (keyCode == 77 || keyCode == 86) {
+            return 44;
         }
         return keyCode;
     }
 
     public static boolean syncConfigFromKeyMappings() {
+        int menuCode;
+        int entityCode;
         boolean changed = false;
-        int itemCode = keyCode(openItemEditorKey, AnkiConfig.getOpenItemEditorKeyCode());
+        int itemCode = KeyBindings.keyCode(openItemEditorKey, AnkiConfig.getOpenItemEditorKeyCode());
         if (itemCode != AnkiConfig.getOpenItemEditorKeyCode()) {
             AnkiConfig.setOpenItemEditorKeyCode(itemCode);
             changed = true;
         }
-
-        int entityCode = keyCode(openEntityEditorKey, AnkiConfig.getOpenEntityEditorKeyCode());
-        if (entityCode != AnkiConfig.getOpenEntityEditorKeyCode()) {
+        if ((entityCode = KeyBindings.keyCode(openEntityEditorKey, AnkiConfig.getOpenEntityEditorKeyCode())) != AnkiConfig.getOpenEntityEditorKeyCode()) {
             AnkiConfig.setOpenEntityEditorKeyCode(entityCode);
             changed = true;
         }
@@ -210,9 +224,7 @@ public class KeyBindings {
             AnkiConfig.setOpenVillagerEditorKeyCode(entityCode);
             changed = true;
         }
-
-        int menuCode = keyCode(openConfigMenuKey, AnkiConfig.getOpenConfigMenuKeyCode());
-        if (menuCode != AnkiConfig.getOpenConfigMenuKeyCode()) {
+        if ((menuCode = KeyBindings.keyCode(openConfigMenuKey, AnkiConfig.getOpenConfigMenuKeyCode())) != AnkiConfig.getOpenConfigMenuKeyCode()) {
             AnkiConfig.setOpenConfigMenuKeyCode(menuCode);
             changed = true;
         }
@@ -220,24 +232,79 @@ public class KeyBindings {
     }
 
     private static int keyCode(KeyMapping mapping, int fallback) {
-        if (mapping == null) return fallback;
+        if (mapping == null) {
+            return fallback;
+        }
         try {
+            Object value;
             try {
-                Object key = mapping.getClass().getMethod("getKey").invoke(mapping);
-                if (key != null) {
-                    Object value = key.getClass().getMethod("getValue").invoke(key);
-                    if (value instanceof Number n) return n.intValue();
+                Object value2;
+                Object key = mapping.getClass().getMethod("getKey", new Class[0]).invoke((Object)mapping, new Object[0]);
+                if (key != null && (value2 = key.getClass().getMethod("getValue", new Class[0]).invoke(key, new Object[0])) instanceof Number) {
+                    Number n = (Number)value2;
+                    return n.intValue();
                 }
-            } catch (Throwable ignored) {}
-            java.lang.reflect.Field keyField = KeyMapping.class.getDeclaredField("key");
+            }
+            catch (Throwable key) {
+                // empty catch block
+            }
+            Field keyField = KeyMapping.class.getDeclaredField("key");
             keyField.setAccessible(true);
             Object key = keyField.get(mapping);
-            if (key != null) {
-                Object value = key.getClass().getMethod("getValue").invoke(key);
-                if (value instanceof Number n) return n.intValue();
+            if (key != null && (value = key.getClass().getMethod("getValue", new Class[0]).invoke(key, new Object[0])) instanceof Number) {
+                Number n = (Number)value;
+                return n.intValue();
             }
-        } catch (Throwable ignored) {
+        }
+        catch (Throwable throwable) {
+            // empty catch block
         }
         return fallback;
+    }
+
+    private static boolean matchesEventKey(KeyMapping mapping, Object event) {
+        Integer code = KeyBindings.eventKeyCode(event);
+        return code != null && KeyBindings.keyCode(mapping, Integer.MIN_VALUE) == code;
+    }
+
+    private static Integer eventKeyCode(Object event) {
+        if (event == null) {
+            return null;
+        }
+        try {
+            Object keyEvent = event.getClass().getMethod("getKeyEvent", new Class[0]).invoke(event, new Object[0]);
+            if (keyEvent != null) {
+                Object value = keyEvent.getClass().getMethod("getKey", new Class[0]).invoke(keyEvent, new Object[0]);
+                if (value instanceof Number) {
+                    return ((Number)value).intValue();
+                }
+                value = keyEvent.getClass().getMethod("getValue", new Class[0]).invoke(keyEvent, new Object[0]);
+                if (value instanceof Number) {
+                    return ((Number)value).intValue();
+                }
+            }
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        try {
+            Object value = event.getClass().getMethod("getKeyCode", new Class[0]).invoke(event, new Object[0]);
+            if (value instanceof Number) {
+                return ((Number)value).intValue();
+            }
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        try {
+            Object value = event.getClass().getMethod("getKey", new Class[0]).invoke(event, new Object[0]);
+            if (value instanceof Number) {
+                return ((Number)value).intValue();
+            }
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        return null;
     }
 }

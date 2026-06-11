@@ -1,32 +1,49 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.minecraft.client.Minecraft
+ *  net.minecraft.client.gui.Font
+ *  net.minecraft.client.gui.GuiGraphics
+ *  net.minecraft.client.gui.screens.Screen
+ *  net.minecraft.core.Holder$Reference
+ *  net.minecraft.nbt.CompoundTag
+ *  net.minecraft.nbt.Tag
+ *  net.minecraft.network.chat.Component
+ *  net.minecraft.network.chat.FormattedText
+ *  net.minecraft.world.item.ItemStack
+ */
 package com.ankinbt.gui;
 
 import com.ankinbt.compat.VersionCompat;
 import com.ankinbt.config.AnkiConfig;
-import com.ankinbt.nbt.NbtHelper;
+import com.ankinbt.gui.AddTagScreen;
+import com.ankinbt.gui.SimpleEditorScreen;
+import com.ankinbt.gui.UiTheme;
+import com.ankinbt.gui.ValueEditScreen;
 import com.ankinbt.nbt.NbtFileIO;
+import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.ItemStack;
-
+import com.ankinbt.util.TextEditBuffer;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.Holder;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FormattedText;
+import net.minecraft.world.item.ItemStack;
 
-/**
- * Main NBT editor screen. Uses ItemStack.CODEC (like NBTEdit) to serialize
- * the full item to a CompoundTag for editing, then deserializes back on save.
- * Layout: left sidebar (item info) + right tree view.
- */
-public class NbtEditorScreen extends Screen {
-
-    // Layout
+public class NbtEditorScreen
+extends Screen {
     private static final int HEADER_H = 32;
     private static final int ROW_H = 18;
     private static final int INDENT = 14;
@@ -34,412 +51,420 @@ public class NbtEditorScreen extends Screen {
     private static final int SCROLLBAR_W = 6;
     private static final int FOOTER_H = 20;
     private static final int MARGIN = 16;
-
-    // Colors
-    private static final int BG = 0xD8080810;
-    private static final int SIDEBAR_BG = 0xD80C0C18;
-    private static final int HEADER_BG = 0xD8101020;
-    private static final int BORDER = 0xFF222236;
+    private static final int BG = -670562288;
+    private static final int SIDEBAR_BG = -670299112;
+    private static final int HEADER_BG = -670035936;
+    private static final int BORDER = -14540234;
     private static final int HOVER = 0x30FFFFFF;
-    private static final int C1 = 0xFFE2E8F0;
-    private static final int C2 = 0xFF94A3B8;
-    private static final int C3 = 0xFF64748B;
+    private static final int C1 = -1906448;
+    private static final int C2 = -7035976;
+    private static final int C3 = -10193781;
     private static final int SB_TRACK = 0x30FFFFFF;
     private static final int SB_THUMB = 0x70FFFFFF;
     private static final int BTN_BG = 0x30FFFFFF;
     private static final int BTN_HOVER = 0x50FFFFFF;
-    private static final int SUCCESS = 0xFF22C55E;
-    private static final int ERROR_C = 0xFFEF4444;
-
+    private static final int SUCCESS = -14498466;
+    private static final int ERROR_C = -1096636;
     private final ItemStack originalStack;
     private final int inventorySlot;
-    private CompoundTag fullItemTag; // Full item serialized via ItemStack.CODEC
+    private CompoundTag fullItemTag;
     private NbtTreeNode rootNode;
-    private List<NbtTreeNode> visibleNodes = new ArrayList<>();
-
-    private int scrollOff = 0, maxRows;
-    private int selIdx = -1, hoverIdx = -1;
+    private List<NbtTreeNode> visibleNodes = new ArrayList<NbtTreeNode>();
+    private int scrollOff = 0;
+    private int maxRows;
+    private int selIdx = -1;
+    private int hoverIdx = -1;
     private int lastClickIdx = -1;
-    private long lastClickTime = 0;
-
-    private int px, py, pw, ph;
-    private int sideX, sideY, sideW, sideH;
-    private int treeX, treeY, treeW, treeH;
-
-    private String searchQ = "";
+    private long lastClickTime = 0L;
+    private int px;
+    private int py;
+    private int pw;
+    private int ph;
+    private int sideX;
+    private int sideY;
+    private int sideW;
+    private int sideH;
+    private int treeX;
+    private int treeY;
+    private int treeW;
+    private int treeH;
+    private final TextEditBuffer searchQ = new TextEditBuffer("");
     private boolean searching = false;
-    private final List<Btn> buttons = new ArrayList<>();
-
+    private final List<Btn> buttons = new ArrayList<Btn>();
     private String statusMsg = null;
-    private long statusTime = 0;
-    private int statusColor = C3;
+    private long statusTime = 0L;
+    private int statusColor = -10193781;
     private boolean dirty = false;
     private boolean confirmClose = false;
-    private float openAnim = 0f;
+    private boolean nativeDialogOpen = false;
+    private long lastNativeDialogAt = 0L;
+    private float openAnim = 0.0f;
 
     public NbtEditorScreen(ItemStack stack) {
         this(stack, -1);
     }
 
     public NbtEditorScreen(ItemStack stack, int inventorySlot) {
-        super(Component.translatable("ankinbt.title"));
+        super((Component)Component.translatable((String)"ankinbt.title"));
         this.originalStack = stack;
         this.inventorySlot = inventorySlot;
-
-        // Serialize the full ItemStack via CODEC (like NBTEdit)
-        var opt = NbtHelper.serializeItemStack(stack);
+        Optional<CompoundTag> opt = NbtHelper.serializeItemStack(stack);
         this.fullItemTag = opt.orElseGet(() -> {
-            // Fallback: just use an empty compound with the item id
             CompoundTag fallback = new CompoundTag();
-            fallback.putString("id", resolveItemId(stack));
+            fallback.putString("id", this.resolveItemId(stack));
             fallback.putInt("count", stack.getCount());
             return fallback;
         });
-
-        rebuildTree();
+        this.rebuildTree();
     }
 
     private void rebuildTree() {
-        rootNode = new NbtTreeNode("", fullItemTag, null, AnkiConfig.isTreeExpandedByDefault());
-        rootNode.setExpanded(true);
-        refreshVisible();
+        this.rootNode = new NbtTreeNode("", (Tag)this.fullItemTag, null, AnkiConfig.isTreeExpandedByDefault());
+        this.rootNode.setExpanded(true);
+        this.refreshVisible();
     }
 
     private void refreshVisible() {
-        visibleNodes.clear();
-        if (rootNode != null) rootNode.collectVisible(visibleNodes);
-        if (searching && !searchQ.isEmpty()) {
-            String q = searchQ.toLowerCase();
-            visibleNodes = visibleNodes.stream()
-                    .filter(n -> n.getKey().toLowerCase().contains(q)
-                            || n.getDisplayValue().toLowerCase().contains(q)
-                            || n.getTypeName().toLowerCase().contains(q))
-                    .collect(Collectors.toList());
+        this.visibleNodes.clear();
+        if (this.rootNode != null) {
+            this.rootNode.collectVisible(this.visibleNodes);
         }
-        clampScroll();
+        if (this.searching && !this.searchQ.value().isEmpty()) {
+            String q = this.searchQ.value().toLowerCase();
+            this.visibleNodes = this.visibleNodes.stream().filter(n -> n.getKey().toLowerCase().contains(q) || n.getDisplayValue().toLowerCase().contains(q) || n.getTypeName().toLowerCase().contains(q)).collect(Collectors.toList());
+        }
+        this.clampScroll();
     }
 
-    @Override
     protected void init() {
         super.init();
-        pw = Math.min(width - MARGIN * 2, 620);
-        ph = Math.min(height - MARGIN * 2, 420);
-        px = (width - pw) / 2;
-        py = (height - ph) / 2;
-
-        sideX = px + 1; sideY = py + HEADER_H + 1;
-        sideW = SIDEBAR_W; sideH = ph - HEADER_H - FOOTER_H - 2;
-
-        treeX = px + SIDEBAR_W + 2; treeY = py + HEADER_H + 1;
-        treeW = pw - SIDEBAR_W - SCROLLBAR_W - 6;
-        treeH = ph - HEADER_H - FOOTER_H - 2;
-        maxRows = treeH / ROW_H;
-
-        buildButtons();
+        this.pw = Math.min(this.width - 32, 620);
+        this.ph = Math.min(this.height - 32, 420);
+        this.px = (this.width - this.pw) / 2;
+        this.py = (this.height - this.ph) / 2;
+        this.sideX = this.px + 1;
+        this.sideY = this.py + 32 + 1;
+        this.sideW = 140;
+        this.sideH = this.ph - 32 - 20 - 2;
+        this.treeX = this.px + 140 + 2;
+        this.treeY = this.py + 32 + 1;
+        this.treeW = this.pw - 140 - 6 - 6;
+        this.treeH = this.ph - 32 - 20 - 2;
+        this.maxRows = this.treeH / 18;
+        this.buildButtons();
     }
 
     private void buildButtons() {
-        buttons.clear();
-        int bw = 22, gap = 3, by = py + 6;
-        int bx = px + pw - MARGIN - 2;
-
-        bx -= bw;
-        buttons.add(new Btn(bx, by, bw, bw, "X", Component.translatable("ankinbt.btn.close"), this::tryClose));
-        bx -= bw + gap;
-        buttons.add(new Btn(bx, by, bw, bw, "-", Component.translatable("ankinbt.btn.collapse"), () -> {
-            collapseAll(rootNode); rootNode.setExpanded(true); refreshVisible();
+        this.buttons.clear();
+        int bw = 22;
+        int gap = 3;
+        int by = this.py + 6;
+        int bx = this.px + this.pw - 16 - 2;
+        this.buttons.add(new Btn(bx -= bw, by, bw, bw, "X", (Component)Component.translatable((String)"ankinbt.btn.close"), this::tryClose));
+        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "-", (Component)Component.translatable((String)"ankinbt.btn.collapse"), () -> {
+            this.collapseAll(this.rootNode);
+            this.rootNode.setExpanded(true);
+            this.refreshVisible();
         }));
-        bx -= bw + gap;
-        buttons.add(new Btn(bx, by, bw, bw, "+", Component.translatable("ankinbt.btn.expand"), () -> {
-            expandAll(rootNode); refreshVisible();
+        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "+", (Component)Component.translatable((String)"ankinbt.btn.expand"), () -> {
+            this.expandAll(this.rootNode);
+            this.refreshVisible();
         }));
-        bx -= bw + gap;
-        buttons.add(new Btn(bx, by, bw, bw, "S", Component.translatable("ankinbt.btn.search"), () -> {
-            searching = !searching; if (!searching) searchQ = ""; refreshVisible();
+        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "S", (Component)Component.translatable((String)"ankinbt.btn.search"), () -> {
+            boolean bl = this.searching = !this.searching;
+            if (!this.searching) {
+                this.searchQ.setValue("");
+            }
+            this.searchQ.moveTo(this.searchQ.value().length(), false);
+            this.refreshVisible();
         }));
-        bx -= bw + gap;
-        buttons.add(new Btn(bx, by, bw, bw, "N", Component.translatable("ankinbt.btn.add"), this::addTag));
-
+        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "N", (Component)Component.translatable((String)"ankinbt.btn.add"), this::addTag));
         int saveW = 40;
-        bx -= saveW + gap + 4;
-        buttons.add(new Btn(bx, by, saveW, bw,
-                Component.translatable("ankinbt.btn.save").getString(),
-                Component.translatable("ankinbt.btn.save.tip"), this::saveToItem));
-
-        // Mode switch button
+        this.buttons.add(new Btn(bx -= saveW + gap + 4, by, saveW, bw, Component.translatable((String)"ankinbt.btn.save").getString(), (Component)Component.translatable((String)"ankinbt.btn.save.tip"), this::saveToItem));
         int modeW = 50;
-        bx -= modeW + gap + 4;
-        buttons.add(new Btn(bx, by, modeW, bw,
-                Component.translatable("ankinbt.btn.simple").getString(),
-                Component.translatable("ankinbt.btn.switch_simple"), this::switchToSimple));
-
-        // Export button
+        this.buttons.add(new Btn(bx -= modeW + gap + 4, by, modeW, bw, Component.translatable((String)"ankinbt.btn.simple").getString(), (Component)Component.translatable((String)"ankinbt.btn.switch_simple"), this::switchToSimple));
         int expW = 30;
-        bx -= expW + gap;
-        buttons.add(new Btn(bx, by, expW, bw, "Ex",
-                Component.translatable("ankinbt.simple.export_nbt"), this::exportNbt));
-
-        // Import button
+        this.buttons.add(new Btn(bx -= expW + gap, by, expW, bw, "Ex", (Component)Component.translatable((String)"ankinbt.simple.export_nbt"), this::exportNbt));
         int impW = 30;
-        bx -= impW + gap;
-        buttons.add(new Btn(bx, by, impW, bw, "Im",
-                Component.translatable("ankinbt.simple.import_nbt"), this::importNbt));
+        this.buttons.add(new Btn(bx -= impW + gap, by, impW, bw, "Im", (Component)Component.translatable((String)"ankinbt.simple.import_nbt"), this::importNbt));
     }
 
-    // ==================== RENDER ====================
-
-    @Override
     public void render(GuiGraphics g, int mx, int my, float pt) {
         float cfgSpeed = AnkiConfig.getUiAnimationSpeed();
         float speed = Math.max(0.06f, Math.min(0.14f, cfgSpeed));
-        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
-
-        int scrim = UiTheme.scrim(AnkiConfig.getUiOpacity(), openAnim);
-        int panel = fadeColor(BG, openAnim);
-        int header = fadeColor(HEADER_BG, openAnim);
-        int border = fadeColor(BORDER, openAnim);
-        int sidebar = fadeColor(SIDEBAR_BG, openAnim);
-        int hover = fadeColor(HOVER, openAnim);
+        this.openAnim = UiTheme.approach(this.openAnim, 1.0f, speed);
+        int scrim = UiTheme.scrim(AnkiConfig.getUiOpacity(), this.openAnim);
+        int panel = this.fadeColor(-670562288, this.openAnim);
+        int header = this.fadeColor(-670035936, this.openAnim);
+        int border = this.fadeColor(-14540234, this.openAnim);
+        int sidebar = this.fadeColor(-670299112, this.openAnim);
+        int hover = this.fadeColor(0x30FFFFFF, this.openAnim);
         int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
-        int selected = fadeColor(UiTheme.withAlpha(accent & 0x00FFFFFF, 0x28), openAnim);
-        int accentFade = fadeColor(accent, openAnim);
-        int sbTrack = fadeColor(SB_TRACK, openAnim);
-        int sbThumb = fadeColor(SB_THUMB, openAnim);
-
-        g.fill(0, 0, width, height, scrim);
-
-        // Panel
-        g.fill(px, py, px + pw, py + ph, panel);
-        drawBorder(g, px, py, pw, ph, border);
-
-        // Header
-        g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
-        g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.title"), px + 10, py + 12, C1, false);
-        if (dirty) com.ankinbt.compat.VersionCompat.get().drawString(g, font, "*", px + 10 + font.width(Component.translatable("ankinbt.title")), py + 12, ERROR_C, false);
-
-        for (Btn b : buttons) b.render(g, font, mx, my);
-
-        // Sidebar
-        renderSidebar(g, sidebar, border);
-        g.fill(px + SIDEBAR_W + 1, py + HEADER_H + 1, px + SIDEBAR_W + 2, py + ph - FOOTER_H, border);
-
-        // Search
-        int atY = treeY, atH = treeH;
-        if (searching) {
-            g.fill(treeX, treeY, treeX + treeW, treeY + ROW_H, 0x40000000);
-            drawBorder(g, treeX, treeY, treeW, ROW_H, accentFade);
-            String disp = searchQ.isEmpty() ? Component.translatable("ankinbt.search.hint").getString() : searchQ + "_";
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, disp, treeX + 4, treeY + 5, searchQ.isEmpty() ? C3 : C1, false);
-            atY += ROW_H + 2; atH -= ROW_H + 2;
-            maxRows = atH / ROW_H;
-        } else {
-            maxRows = treeH / ROW_H;
+        int selected = this.fadeColor(UiTheme.withAlpha(accent & 0xFFFFFF, 40), this.openAnim);
+        int accentFade = this.fadeColor(accent, this.openAnim);
+        int sbTrack = this.fadeColor(0x30FFFFFF, this.openAnim);
+        int sbThumb = this.fadeColor(0x70FFFFFF, this.openAnim);
+        g.fill(0, 0, this.width, this.height, scrim);
+        g.fill(this.px, this.py, this.px + this.pw, this.py + this.ph, panel);
+        this.drawBorder(g, this.px, this.py, this.pw, this.ph, border);
+        g.fill(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 32, header);
+        g.fill(this.px + 1, this.py + 32, this.px + this.pw - 1, this.py + 32 + 1, border);
+        g.drawString(this.font, "ANBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
+        g.drawString(this.font, "高级模式", this.px + 46, this.py + 11, 0xFFFF2D7A, false);
+        if (this.dirty) {
+            g.drawString(this.font, "*", this.px + 116, this.py + 12, -1096636, false);
         }
-
-        // Tree
-        hoverIdx = -1;
-        int end = Math.min(scrollOff + maxRows, visibleNodes.size());
-        for (int i = scrollOff; i < end; i++) {
-            int ry = atY + (i - scrollOff) * ROW_H;
-            NbtTreeNode node = visibleNodes.get(i);
-            boolean hovered = mx >= treeX && mx < treeX + treeW && my >= ry && my < ry + ROW_H;
-            if (hovered) { hoverIdx = i; g.fill(treeX, ry, treeX + treeW, ry + ROW_H, hover); }
-            if (i == selIdx) {
-                g.fill(treeX, ry, treeX + treeW, ry + ROW_H, selected);
-                g.fill(treeX, ry, treeX + 2, ry + ROW_H, accentFade);
+        for (Btn b : this.buttons) {
+            b.render(g, this.font, mx, my);
+        }
+        this.renderSidebar(g, sidebar, border);
+        g.fill(this.px + 140 + 1, this.py + 32 + 1, this.px + 140 + 2, this.py + this.ph - 20, border);
+        int atY = this.treeY;
+        int atH = this.treeH;
+        if (this.searching) {
+            int selEnd;
+            int selStart;
+            String disp;
+            g.fill(this.treeX, this.treeY, this.treeX + this.treeW, this.treeY + 18, 0x40000000);
+            this.drawBorder(g, this.treeX, this.treeY, this.treeW, 18, accentFade);
+            String value = this.searchQ.value();
+            int maxSearchW = this.treeW - 8;
+            int viewStart = this.textViewStart(value, this.searchQ.cursor(), maxSearchW);
+            String string = disp = value.isEmpty() ? Component.translatable((String)"ankinbt.search.hint").getString() : this.visibleText(value, viewStart, maxSearchW);
+            if (!value.isEmpty() && this.searchQ.hasSelection() && (selStart = Math.max(this.searchQ.selectionStart(), viewStart)) < (selEnd = Math.min(this.searchQ.selectionEnd(), viewStart + disp.length()))) {
+                int sx = this.treeX + 4 + this.font.width(value.substring(viewStart, selStart));
+                int ex = this.treeX + 4 + this.font.width(value.substring(viewStart, selEnd));
+                g.fill(sx, this.treeY + 4, ex, this.treeY + 18 - 4, 1715176182);
             }
-
-            int indent = node.getDepth() * INDENT;
-            int tx = treeX + 6 + indent;
-
+            VersionCompat.get().drawString(g, this.font, disp, this.treeX + 4, this.treeY + 5, value.isEmpty() ? -10193781 : -1906448, false);
+            if (!value.isEmpty() && !this.searchQ.hasSelection() && System.currentTimeMillis() % 1000L < 500L) {
+                int cx = this.treeX + 4 + this.font.width(value.substring(viewStart, Math.max(viewStart, Math.min(this.searchQ.cursor(), value.length()))));
+                g.fill(cx, this.treeY + 4, cx + 1, this.treeY + 18 - 4, -1906448);
+            }
+            atY += 20;
+            this.maxRows = (atH -= 20) / 18;
+        } else {
+            this.maxRows = this.treeH / 18;
+        }
+        this.hoverIdx = -1;
+        int end = Math.min(this.scrollOff + this.maxRows, this.visibleNodes.size());
+        for (int i = this.scrollOff; i < end; ++i) {
+            Object val;
+            boolean hovered;
+            int ry = atY + (i - this.scrollOff) * 18;
+            NbtTreeNode node = this.visibleNodes.get(i);
+            boolean bl = hovered = mx >= this.treeX && mx < this.treeX + this.treeW && my >= ry && my < ry + 18;
+            if (hovered) {
+                this.hoverIdx = i;
+                g.fill(this.treeX, ry, this.treeX + this.treeW, ry + 18, hover);
+            }
+            if (i == this.selIdx) {
+                g.fill(this.treeX, ry, this.treeX + this.treeW, ry + 18, selected);
+                g.fill(this.treeX, ry, this.treeX + 2, ry + 18, accentFade);
+            }
+            int indent = node.getDepth() * 14;
+            int tx = this.treeX + 6 + indent;
             if (!node.isLeaf()) {
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, node.isExpanded() ? "v" : ">", tx, ry + 5, C3, false);
+                g.drawString(this.font, node.isExpanded() ? "v" : ">", tx, ry + 5, -10193781, false);
                 tx += 10;
             }
-
             int tc = NbtHelper.getTagColor(node.getTag());
             String badge = node.getTypeName();
-            if (badge.length() > 3) badge = badge.substring(0, 3);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, badge, tx, ry + 5, tc, false);
-            tx += font.width(badge) + 4;
-
+            if (badge.length() > 3) {
+                badge = badge.substring(0, 3);
+            }
+            g.drawString(this.font, badge, tx, ry + 5, tc, false);
+            tx += this.font.width(badge) + 4;
             String key = node.getKey();
             if (!key.isEmpty()) {
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, key, tx, ry + 5, C1, false);
-                tx += font.width(key) + 6;
+                g.drawString(this.font, key, tx, ry + 5, -1906448, false);
+                tx += this.font.width(key) + 6;
             }
-
-            String val = node.getDisplayValue();
-            if (val.length() > 36) val = val.substring(0, 33) + "...";
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, val, tx, ry + 5, C2, false);
+            if (((String)(val = node.getDisplayValue())).length() > 36) {
+                val = ((String)val).substring(0, 33) + "...";
+            }
+            g.drawString(this.font, (String)val, tx, ry + 5, -7035976, false);
         }
-
-        // Scrollbar
-        if (visibleNodes.size() > maxRows) {
-            int sbx = px + pw - SCROLLBAR_W - 3;
-            g.fill(sbx, atY, sbx + SCROLLBAR_W, atY + atH, sbTrack);
-            float ratio = (float) maxRows / visibleNodes.size();
-            int thumbH = Math.max(16, (int) (atH * ratio));
-            float sr = (float) scrollOff / Math.max(1, visibleNodes.size() - maxRows);
-            int thumbY = atY + (int) ((atH - thumbH) * sr);
-            g.fill(sbx, thumbY, sbx + SCROLLBAR_W, thumbY + thumbH, sbThumb);
+        if (this.visibleNodes.size() > this.maxRows) {
+            int sbx = this.px + this.pw - 6 - 3;
+            g.fill(sbx, atY, sbx + 6, atY + atH, sbTrack);
+            float ratio = (float)this.maxRows / (float)this.visibleNodes.size();
+            int thumbH = Math.max(16, (int)((float)atH * ratio));
+            float sr = (float)this.scrollOff / (float)Math.max(1, this.visibleNodes.size() - this.maxRows);
+            int thumbY = atY + (int)((float)(atH - thumbH) * sr);
+            g.fill(sbx, thumbY, sbx + 6, thumbY + thumbH, sbThumb);
         }
-
-        // Footer
-        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, border);
-        renderFooter(g);
-
-        // Confirm close dialog
-        if (confirmClose) {
-            renderConfirmClose(g, mx, my);
+        g.fill(this.px + 1, this.py + this.ph - 20, this.px + this.pw - 1, this.py + this.ph - 20 + 1, border);
+        this.renderFooter(g);
+        if (this.confirmClose) {
+            this.renderConfirmClose(g, mx, my);
         }
     }
 
     private void renderConfirmClose(GuiGraphics g, int mx, int my) {
-        g.fill(0, 0, width, height, 0x60000000);
-        int dw = 260, dh = 110;
-        int dx = (width - dw) / 2, dy = (height - dh) / 2;
-        g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-        drawBorder(g, dx, dy, dw, dh, ERROR_C);
-
-        String title = Component.translatable("ankinbt.confirm.title").getString();
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, dx + 10, dy + 10, C1, false);
-        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, BORDER);
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.confirm.unsaved").getString(), dx + 10, dy + 32, C2, false);
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.confirm.discard_hint").getString(), dx + 10, dy + 46, C3, false);
-
+        g.fill(0, 0, this.width, this.height, 0x60000000);
+        int dw = 260;
+        int dh = 110;
+        int dx = (this.width - dw) / 2;
+        int dy = (this.height - dh) / 2;
+        g.fill(dx, dy, dx + dw, dy + dh, -267909104);
+        this.drawBorder(g, dx, dy, dw, dh, -1096636);
+        String title = Component.translatable((String)"ankinbt.confirm.title").getString();
+        g.drawString(this.font, title, dx + 10, dy + 10, -1906448, false);
+        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, -14540234);
+        g.drawString(this.font, Component.translatable((String)"ankinbt.confirm.unsaved").getString(), dx + 10, dy + 32, -7035976, false);
+        g.drawString(this.font, Component.translatable((String)"ankinbt.confirm.discard_hint").getString(), dx + 10, dy + 46, -10193781, false);
         int by = dy + dh - 32;
-        int bw2 = 70, bh2 = 22;
-
+        int bw2 = 70;
+        int bh2 = 22;
         int saveX = dx + 10;
         boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
         int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
-        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? accent : UiTheme.withAlpha(accent & 0x00FFFFFF, 196));
-        String saveLabel = Component.translatable("ankinbt.confirm.save_close").getString();
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, C1, false);
-
+        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? accent : UiTheme.withAlpha(accent & 0xFFFFFF, 196));
+        String saveLabel = Component.translatable((String)"ankinbt.confirm.save_close").getString();
+        g.drawString(this.font, saveLabel, saveX + (bw2 - this.font.width(saveLabel)) / 2, by + 7, -1906448, false);
         int discardX = dx + dw / 2 - bw2 / 2;
         boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
-        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? 0x80EF4444 : 0x40EF4444);
-        String discardLabel = Component.translatable("ankinbt.confirm.discard").getString();
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, C1, false);
-
+        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? -2131803068 : 1089422404);
+        String discardLabel = Component.translatable((String)"ankinbt.confirm.discard").getString();
+        g.drawString(this.font, discardLabel, discardX + (bw2 - this.font.width(discardLabel)) / 2, by + 7, -1906448, false);
         int cancelX = dx + dw - bw2 - 10;
         boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
         g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        String cancelLabel = Component.translatable("ankinbt.edit.cancel").getString();
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, cancelLabel, cancelX + (bw2 - font.width(cancelLabel)) / 2, by + 7, C2, false);
+        String cancelLabel = Component.translatable((String)"ankinbt.edit.cancel").getString();
+        g.drawString(this.font, cancelLabel, cancelX + (bw2 - this.font.width(cancelLabel)) / 2, by + 7, -7035976, false);
     }
 
     private void renderSidebar(GuiGraphics g, int sidebarBg, int border) {
-        g.fill(sideX, sideY, sideX + sideW, sideY + sideH, sidebarBg);
-        int y = sideY + 8, lx = sideX + 8;
-
-        g.renderItem(originalStack, lx + (sideW - 32) / 2, y);
+        Tag comp;
+        g.fill(this.sideX, this.sideY, this.sideX + this.sideW, this.sideY + this.sideH, sidebarBg);
+        int y = this.sideY + 8;
+        int lx = this.sideX + 8;
+        g.renderItem(this.originalStack, lx + (this.sideW - 32) / 2, y);
         y += 24;
-
-        String name = originalStack.getHoverName().getString();
-        if (font.width(name) > sideW - 16) name = font.plainSubstrByWidth(name, sideW - 22) + "...";
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, name, lx, y, C1, false);
-        y += 14;
-
-        g.fill(lx, y, sideX + sideW - 8, y + 1, border);
+        Object name = this.originalStack.getHoverName().getString();
+        if (this.font.width((String)name) > this.sideW - 16) {
+            name = this.font.plainSubstrByWidth((String)name, this.sideW - 22) + "...";
+        }
+        g.drawString(this.font, (String)name, lx, y, -1906448, false);
+        g.fill(lx, y += 14, this.sideX + this.sideW - 8, y + 1, border);
         y += 6;
-
-        // Item info from the serialized tag
-        if (fullItemTag.contains("id")) {
-            sideInfo(g, lx, y, Component.translatable("ankinbt.side.id").getString(), VersionCompat.get().compoundGetString(fullItemTag, "id"));
+        if (this.fullItemTag.contains("id")) {
+            this.sideInfo(g, lx, y, Component.translatable((String)"ankinbt.side.id").getString(), VersionCompat.get().compoundGetString(this.fullItemTag, "id"));
             y += 12;
         }
-        if (fullItemTag.contains("count")) {
-            sideInfo(g, lx, y, Component.translatable("ankinbt.side.count").getString(), String.valueOf(VersionCompat.get().compoundGetInt(fullItemTag, "count")));
+        if (this.fullItemTag.contains("count")) {
+            this.sideInfo(g, lx, y, Component.translatable((String)"ankinbt.side.count").getString(), String.valueOf(VersionCompat.get().compoundGetInt(this.fullItemTag, "count")));
             y += 12;
         }
-
-        // Components info
-        if (fullItemTag.contains("components")) {
-            Tag comp = fullItemTag.get("components");
-            if (comp instanceof CompoundTag ct) {
-                g.fill(lx, y + 2, sideX + sideW - 8, y + 3, border);
-                y += 8;
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.side.components"), lx, y, C2, false);
-                y += 12;
-                sideInfo(g, lx, y, Component.translatable("ankinbt.side.tags").getString(), String.valueOf(ct.size()));
-                y += 12;
-            }
+        if (this.fullItemTag.contains("components") && (comp = this.fullItemTag.get("components")) instanceof CompoundTag) {
+            CompoundTag ct = (CompoundTag)comp;
+            g.fill(lx, y + 2, this.sideX + this.sideW - 8, y + 3, border);
+            g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.side.components"), lx, y += 8, -7035976, false);
+            this.sideInfo(g, lx, y += 12, Component.translatable((String)"ankinbt.side.tags").getString(), String.valueOf(ct.size()));
+            y += 12;
         }
-
-        g.fill(lx, y + 2, sideX + sideW - 8, y + 3, border);
-        y += 8;
-        sideInfo(g, lx, y, Component.translatable("ankinbt.side.visible").getString(), String.valueOf(visibleNodes.size()));
+        g.fill(lx, y + 2, this.sideX + this.sideW - 8, y + 3, border);
+        this.sideInfo(g, lx, y += 8, Component.translatable((String)"ankinbt.side.visible").getString(), String.valueOf(this.visibleNodes.size()));
     }
 
     private int fadeColor(int color, float factor) {
-        int alpha = (color >>> 24) & 0xFF;
-        return UiTheme.withAlpha(color & 0x00FFFFFF, Math.round(alpha * factor));
+        int alpha = color >>> 24 & 0xFF;
+        return UiTheme.withAlpha(color & 0xFFFFFF, Math.round((float)alpha * factor));
     }
 
     private void sideInfo(GuiGraphics g, int x, int y, String label, String value) {
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, x, y, C3, false);
-        int maxW = sideW - 16 - font.width(label) - 4;
-        if (font.width(value) > maxW) value = font.plainSubstrByWidth(value, maxW - 8) + "..";
-        com.ankinbt.compat.VersionCompat.get().drawString(g, font, value, x + font.width(label) + 4, y, C2, false);
+        g.drawString(this.font, label, x, y, -10193781, false);
+        int maxW = this.sideW - 16 - this.font.width(label) - 4;
+        if (this.font.width((String)value) > maxW) {
+            value = this.font.plainSubstrByWidth((String)value, maxW - 8) + "..";
+        }
+        g.drawString(this.font, (String)value, x + this.font.width(label) + 4, y, -7035976, false);
     }
 
     private void renderFooter(GuiGraphics g) {
-        int fy = py + ph - FOOTER_H + 5;
-        if (statusMsg != null && System.currentTimeMillis() - statusTime < 3000) {
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, statusMsg, px + SIDEBAR_W + 8, fy, statusColor, false);
+        int fy = this.py + this.ph - 20 + 5;
+        if (this.statusMsg != null && System.currentTimeMillis() - this.statusTime < 3000L) {
+            g.drawString(this.font, this.statusMsg, this.px + 140 + 8, fy, this.statusColor, false);
         } else {
-            statusMsg = null;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, Component.translatable("ankinbt.hint"), px + SIDEBAR_W + 8, fy, C3, false);
+            this.statusMsg = null;
+            g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.hint"), this.px + 140 + 8, fy, -10193781, false);
         }
-        if (selIdx >= 0 && selIdx < visibleNodes.size()) {
-            NbtTreeNode sel = visibleNodes.get(selIdx);
+        if (this.selIdx >= 0 && this.selIdx < this.visibleNodes.size()) {
+            NbtTreeNode sel = this.visibleNodes.get(this.selIdx);
             String info = sel.getKey() + " : " + sel.getTypeName();
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, info, px + pw - font.width(info) - 10, fy, C3, false);
+            g.drawString(this.font, info, this.px + this.pw - this.font.width(info) - 10, fy, -10193781, false);
         }
     }
 
-    // ==================== INPUT ====================
+    private int textViewStart(String value, int cursor, int maxWidth) {
+        int start;
+        if (value == null || value.isEmpty()) {
+            return 0;
+        }
+        int clampedCursor = Math.max(0, Math.min(cursor, value.length()));
+        for (start = 0; start < clampedCursor && this.font.width(value.substring(start, clampedCursor)) > maxWidth; ++start) {
+        }
+        return start;
+    }
+
+    private String visibleText(String value, int start, int maxWidth) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        int safeStart = Math.max(0, Math.min(start, value.length()));
+        String text = value.substring(safeStart);
+        return this.font.width(text) <= maxWidth ? text : this.font.plainSubstrByWidth(text, maxWidth);
+    }
 
     public boolean mouseClicked(double mx, double my, int btn) {
-        // Handle confirm close dialog
-        if (confirmClose) {
-            int dw = 260, dh = 110;
-            int dx = (width - dw) / 2, dy = (height - dh) / 2;
+        if (this.confirmClose) {
+            int dw = 260;
+            int dh = 110;
+            int dx = (this.width - dw) / 2;
+            int dy = (this.height - dh) / 2;
             int by = dy + dh - 32;
-            int bw2 = 70, bh2 = 22;
-
+            int bw2 = 70;
+            int bh2 = 22;
             int saveX = dx + 10;
-            if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
-                saveToItem(); onClose(); return true;
+            if (mx >= (double)saveX && mx < (double)(saveX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
+                this.saveToItem();
+                this.onClose();
+                return true;
             }
             int discardX = dx + dw / 2 - bw2 / 2;
-            if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
-                dirty = false; onClose(); return true;
+            if (mx >= (double)discardX && mx < (double)(discardX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
+                this.dirty = false;
+                this.onClose();
+                return true;
             }
             int cancelX = dx + dw - bw2 - 10;
-            if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
-                confirmClose = false; return true;
+            if (mx >= (double)cancelX && mx < (double)(cancelX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
+                this.confirmClose = false;
+                return true;
             }
             return true;
         }
-
-        for (Btn b : buttons) if (b.isHover((int) mx, (int) my)) { b.action.run(); return true; }
-
-        if (hoverIdx >= 0 && hoverIdx < visibleNodes.size()) {
+        for (Btn b : this.buttons) {
+            if (!b.isHover((int)mx, (int)my)) continue;
+            b.action.run();
+            return true;
+        }
+        if (this.hoverIdx >= 0 && this.hoverIdx < this.visibleNodes.size()) {
             long now = System.currentTimeMillis();
-            if (hoverIdx == lastClickIdx && now - lastClickTime < 400) {
-                NbtTreeNode node = visibleNodes.get(hoverIdx);
-                if (!node.isLeaf()) { node.toggleExpanded(); refreshVisible(); }
-                else openEditor(node);
-                lastClickIdx = -1;
+            if (this.hoverIdx == this.lastClickIdx && now - this.lastClickTime < 400L) {
+                NbtTreeNode node = this.visibleNodes.get(this.hoverIdx);
+                if (!node.isLeaf()) {
+                    node.toggleExpanded();
+                    this.refreshVisible();
+                } else {
+                    this.openEditor(node);
+                }
+                this.lastClickIdx = -1;
             } else {
-                selIdx = hoverIdx;
-                lastClickIdx = hoverIdx;
-                lastClickTime = now;
+                this.selIdx = this.hoverIdx;
+                this.lastClickIdx = this.hoverIdx;
+                this.lastClickTime = now;
             }
             return true;
         }
@@ -447,297 +472,411 @@ public class NbtEditorScreen extends Screen {
     }
 
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        scrollOff -= (int) sy * 3; clampScroll(); return true;
+        this.scrollOff -= (int)sy * 3;
+        this.clampScroll();
+        return true;
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
-        if (confirmClose) {
-            if (key == 256) { confirmClose = false; return true; }
+        if (this.confirmClose) {
+            if (key == 256) {
+                this.confirmClose = false;
+                return true;
+            }
             return true;
         }
-        if (searching) {
-            if (key == 259 && !searchQ.isEmpty()) { searchQ = searchQ.substring(0, searchQ.length() - 1); refreshVisible(); return true; }
-            if (key == 256) { searching = false; searchQ = ""; refreshVisible(); return true; }
+        if (this.searching) {
+            String before = this.searchQ.value();
+            if (this.searchQ.keyPressed(key, mod)) {
+                if (!before.equals(this.searchQ.value())) {
+                    this.refreshVisible();
+                }
+                return true;
+            }
+            if (key == 256) {
+                this.searching = false;
+                this.searchQ.setValue("");
+                this.searchQ.moveTo(0, false);
+                this.refreshVisible();
+                return true;
+            }
         }
-        if (key == 256) { tryClose(); return true; }
-        if (key == 264 && selIdx < visibleNodes.size() - 1) { selIdx++; ensureVis(selIdx); return true; }
-        if (key == 265 && selIdx > 0) { selIdx--; ensureVis(selIdx); return true; }
-
-        if (!searching && selIdx >= 0 && selIdx < visibleNodes.size()) {
-            NbtTreeNode node = visibleNodes.get(selIdx);
-            if (key == 69) { if (!node.isLeaf()) { node.toggleExpanded(); refreshVisible(); } return true; }
-            if (key == 257) { if (node.isLeaf()) openEditor(node); else { node.toggleExpanded(); refreshVisible(); } return true; }
-            if (key == 261) { deleteNode(); return true; }
+        if (key == 256) {
+            this.tryClose();
+            return true;
         }
-        if (key == 83 && (mod & 2) != 0) { saveToItem(); return true; }
+        if (key == 264 && this.selIdx < this.visibleNodes.size() - 1) {
+            ++this.selIdx;
+            this.ensureVis(this.selIdx);
+            return true;
+        }
+        if (key == 265 && this.selIdx > 0) {
+            --this.selIdx;
+            this.ensureVis(this.selIdx);
+            return true;
+        }
+        if (!this.searching && this.selIdx >= 0 && this.selIdx < this.visibleNodes.size()) {
+            NbtTreeNode node = this.visibleNodes.get(this.selIdx);
+            if (key == 69) {
+                if (!node.isLeaf()) {
+                    node.toggleExpanded();
+                    this.refreshVisible();
+                }
+                return true;
+            }
+            if (key == 257) {
+                if (node.isLeaf()) {
+                    this.openEditor(node);
+                } else {
+                    node.toggleExpanded();
+                    this.refreshVisible();
+                }
+                return true;
+            }
+            if (key == 261) {
+                this.deleteNode();
+                return true;
+            }
+        }
+        if (key == 83 && (mod & 2) != 0) {
+            this.saveToItem();
+            return true;
+        }
         return false;
     }
 
     public boolean charTyped(char c, int mod) {
-        if (searching) { searchQ += c; refreshVisible(); return true; }
+        if (this.searching) {
+            if (this.searchQ.charTyped(c)) {
+                this.refreshVisible();
+            }
+            return true;
+        }
         return false;
     }
 
-    // ==================== ACTIONS ====================
-
     private void openEditor(NbtTreeNode node) {
-        Minecraft.getInstance().setScreen(new ValueEditScreen(this, node));
+        Minecraft.getInstance().setScreen((Screen)new ValueEditScreen(this, node));
     }
 
     private void deleteNode() {
-        if (selIdx < 0 || selIdx >= visibleNodes.size()) return;
-        NbtTreeNode node = visibleNodes.get(selIdx);
+        if (this.selIdx < 0 || this.selIdx >= this.visibleNodes.size()) {
+            return;
+        }
+        NbtTreeNode node = this.visibleNodes.get(this.selIdx);
         NbtTreeNode parent = node.getParent();
-        if (parent == null) return;
+        if (parent == null) {
+            return;
+        }
         parent.removeChild(node);
-        dirty = true;
-        refreshVisible();
-        if (selIdx >= visibleNodes.size()) selIdx = visibleNodes.size() - 1;
-        setStatus(Component.translatable("ankinbt.status.deleted").getString(), C2);
+        this.dirty = true;
+        this.refreshVisible();
+        if (this.selIdx >= this.visibleNodes.size()) {
+            this.selIdx = this.visibleNodes.size() - 1;
+        }
+        this.setStatus(Component.translatable((String)"ankinbt.status.deleted").getString(), -7035976);
     }
 
     private void addTag() {
-        NbtTreeNode target = (selIdx >= 0 && selIdx < visibleNodes.size()) ? visibleNodes.get(selIdx) : rootNode;
-        // Only add to compound or list nodes
-        if (!target.isCompound() && !target.isList()) target = target.getParent();
-        if (target == null) target = rootNode;
-        Minecraft.getInstance().setScreen(new AddTagScreen(this, target));
+        NbtTreeNode target;
+        NbtTreeNode nbtTreeNode = target = this.selIdx >= 0 && this.selIdx < this.visibleNodes.size() ? this.visibleNodes.get(this.selIdx) : this.rootNode;
+        if (!target.isCompound() && !target.isList()) {
+            target = target.getParent();
+        }
+        if (target == null) {
+            target = this.rootNode;
+        }
+        Minecraft.getInstance().setScreen((Screen)new AddTagScreen(this, target));
     }
 
     public void addTagToNode(NbtTreeNode parent, String key, Tag tag) {
         parent.addChild(key, tag, false);
         parent.setExpanded(true);
-        dirty = true;
-        refreshVisible();
-        setStatus(Component.translatable("ankinbt.status.added", key).getString(), SUCCESS);
+        this.dirty = true;
+        this.refreshVisible();
+        this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{key}).getString(), -14498466);
     }
 
-    /**
-     * Save: rebuild the CompoundTag from the tree, deserialize back to ItemStack,
-     * and set it in the player's hand via creative mode packet.
-     */
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
-
+        if (mc.player == null) {
+            return;
+        }
         if (!mc.player.isCreative()) {
-            setStatus(Component.translatable("ankinbt.status.creative_only").getString(), ERROR_C);
+            this.setStatus(Component.translatable((String)"ankinbt.status.creative_only").getString(), -1096636);
             return;
         }
-
-        // Rebuild the full CompoundTag from the tree (like NBTEdit's tree.toCompound())
-        CompoundTag rebuilt = rootNode.toCompoundTag();
-
-        // Deserialize back to ItemStack via CODEC
-        var opt = NbtHelper.deserializeItemStack(rebuilt);
+        CompoundTag rebuilt = this.rootNode.toCompoundTag();
+        Optional<ItemStack> opt = NbtHelper.deserializeItemStack(rebuilt);
         if (opt.isEmpty()) {
-            setStatus(Component.translatable("ankinbt.status.save_error").getString(), ERROR_C);
+            this.setStatus(Component.translatable((String)"ankinbt.status.save_error").getString(), -1096636);
             return;
         }
-
         ItemStack newStack = opt.get();
-        if (inventorySlot >= 0) {
-            mc.player.getInventory().setItem(inventorySlot, newStack.copy());
-            int packetSlot = inventorySlot < 9 ? 36 + inventorySlot : inventorySlot;
+        if (this.inventorySlot >= 0) {
+            mc.player.getInventory().setItem(this.inventorySlot, newStack.copy());
+            int packetSlot = this.inventorySlot < 9 ? 36 + this.inventorySlot : this.inventorySlot;
             mc.gameMode.handleCreativeModeItemAdd(newStack.copy(), packetSlot);
         } else {
             int slot = VersionCompat.get().getSelectedSlot(mc.player.getInventory());
             mc.player.getInventory().setItem(slot, newStack.copy());
             mc.gameMode.handleCreativeModeItemAdd(newStack.copy(), 36 + slot);
         }
-
-        dirty = false;
-        setStatus(Component.translatable("ankinbt.status.saved").getString(), SUCCESS);
+        this.dirty = false;
+        this.setStatus(Component.translatable((String)"ankinbt.status.saved").getString(), -14498466);
     }
 
     private void switchToSimple() {
         AnkiConfig.setPreferredItemEditor("simple");
-        Minecraft.getInstance().setScreen(new SimpleEditorScreen(originalStack, inventorySlot));
+        Minecraft.getInstance().setScreen((Screen)new SimpleEditorScreen(this.originalStack, this.inventorySlot));
     }
 
     private void exportNbt() {
-        String itemId = resolveItemPath(originalStack);
-        long ts = System.currentTimeMillis() / 1000;
-        String fileName = itemId + "_" + ts;
-        CompoundTag rebuilt = rootNode.toCompoundTag();
         Path path;
-        if (hasTinyFd()) {
-            String picked = tinyFdSavePath(AnkiConfig.getExportPath().resolve(fileName + ".nbt").toString());
-            if (picked == null || picked.isBlank()) return;
-            path = NbtFileIO.exportNbtToPath(rebuilt, Path.of(picked));
+        String itemId = this.resolveItemPath(this.originalStack);
+        long ts = System.currentTimeMillis() / 1000L;
+        String fileName = itemId + "_" + ts;
+        CompoundTag rebuilt = this.rootNode.toCompoundTag();
+        if (this.hasTinyFd()) {
+            String picked = this.tinyFdSavePath(AnkiConfig.getExportPath().resolve(fileName + ".nbt").toString());
+            if (picked == null || picked.isBlank()) {
+                return;
+            }
+            path = NbtFileIO.exportNbtToPath(rebuilt, Path.of(picked, new String[0]));
         } else {
             path = NbtFileIO.exportNbt(rebuilt, fileName);
         }
         if (path != null) {
-            setStatus(Component.translatable("ankinbt.export.success").getString(), SUCCESS);
+            this.setStatus(Component.translatable((String)"ankinbt.export.success").getString(), -14498466);
         } else {
-            setStatus(Component.translatable("ankinbt.export.failed").getString(), ERROR_C);
+            this.setStatus(Component.translatable((String)"ankinbt.export.failed").getString(), -1096636);
         }
     }
 
     private String resolveItemId(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return "minecraft:air";
+        if (stack == null || stack.isEmpty()) {
+            return "minecraft:air";
+        }
         try {
-            Object holder = stack.getItem().builtInRegistryHolder();
-            Object key = holder.getClass().getMethod("key").invoke(holder);
+            Holder.Reference holder = stack.getItem().builtInRegistryHolder();
+            Object key = holder.getClass().getMethod("key", new Class[0]).invoke(holder, new Object[0]);
             try {
-                Object loc = key.getClass().getMethod("location").invoke(key);
-                if (loc != null) return loc.toString();
-            } catch (Throwable ignored) {}
+                Object loc = key.getClass().getMethod("location", new Class[0]).invoke(key, new Object[0]);
+                if (loc != null) {
+                    return loc.toString();
+                }
+            }
+            catch (Throwable loc) {
+                // empty catch block
+            }
             try {
-                Object id = key.getClass().getMethod("identifier").invoke(key);
-                if (id != null) return id.toString();
-            } catch (Throwable ignored) {}
-        } catch (Throwable ignored) {}
+                Object id = key.getClass().getMethod("identifier", new Class[0]).invoke(key, new Object[0]);
+                if (id != null) {
+                    return id.toString();
+                }
+            }
+            catch (Throwable throwable) {}
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
         return stack.getItem().toString();
     }
 
     private String resolveItemPath(ItemStack stack) {
-        String id = resolveItemId(stack);
-        int idx = id.indexOf(':');
+        String id = this.resolveItemId(stack);
+        int idx = id.indexOf(58);
         return idx >= 0 && idx + 1 < id.length() ? id.substring(idx + 1) : id;
     }
 
     private void importNbt() {
-        CompoundTag tag;
         String loadedName;
-        if (hasTinyFd()) {
-            String picked = tinyFdOpenPath(AnkiConfig.getExportPath().toString());
-            if (picked == null || picked.isBlank()) return;
-            tag = NbtFileIO.importNbt(Path.of(picked));
-            loadedName = Path.of(picked).getFileName().toString();
-        } else {
-            var files = NbtFileIO.listNbtFiles();
-            if (files.isEmpty()) {
-                setStatus(Component.translatable("ankinbt.import.no_files").getString(), ERROR_C);
+        CompoundTag tag;
+        if (this.hasTinyFd()) {
+            String picked = this.tinyFdOpenPath(AnkiConfig.getExportPath().toString());
+            if (picked == null || picked.isBlank()) {
                 return;
             }
-            var latest = files.get(0);
+            tag = NbtFileIO.importNbt(Path.of(picked, new String[0]));
+            loadedName = Path.of(picked, new String[0]).getFileName().toString();
+        } else {
+            List<NbtFileIO.NbtFileEntry> files = NbtFileIO.listNbtFiles();
+            if (files.isEmpty()) {
+                this.setStatus(Component.translatable((String)"ankinbt.import.no_files").getString(), -1096636);
+                return;
+            }
+            NbtFileIO.NbtFileEntry latest = files.get(0);
             tag = NbtFileIO.importNbt(latest.path());
             loadedName = latest.name();
         }
         if (tag != null) {
             this.fullItemTag = tag;
-            rebuildTree();
-            dirty = true;
-            setStatus(Component.translatable("ankinbt.import.success").getString() + " (" + loadedName + ")", SUCCESS);
+            this.rebuildTree();
+            this.dirty = true;
+            this.setStatus(Component.translatable((String)"ankinbt.import.success").getString() + " (" + loadedName + ")", -14498466);
         } else {
-            setStatus(Component.translatable("ankinbt.import.load_failed").getString(), ERROR_C);
+            this.setStatus(Component.translatable((String)"ankinbt.import.load_failed").getString(), -1096636);
         }
     }
 
     private boolean hasTinyFd() {
+        if (!AnkiConfig.isNativeFileDialogEnabled()) {
+            return false;
+        }
         try {
             Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
             return true;
-        } catch (Throwable ignored) {
+        }
+        catch (Throwable ignored) {
             return false;
         }
     }
 
     private String tinyFdSavePath(String defaultPath) {
-        return tinyFdDialog("tinyfd_saveFileDialog", defaultPath, false);
+        return this.tinyFdDialog("tinyfd_saveFileDialog", defaultPath, false);
     }
 
     private String tinyFdOpenPath(String defaultPath) {
-        return tinyFdDialog("tinyfd_openFileDialog", defaultPath, true);
+        return this.tinyFdDialog("tinyfd_openFileDialog", defaultPath, true);
     }
 
     private String tinyFdDialog(String methodName, String defaultPath, boolean isOpen) {
+        long now = System.currentTimeMillis();
+        if (this.nativeDialogOpen || now - this.lastNativeDialogAt < 600L) {
+            return null;
+        }
+        this.nativeDialogOpen = true;
         try {
             Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
             for (Method m : clazz.getMethods()) {
-                if (!m.getName().equals(methodName)) continue;
-                Object out = m.invoke(null, tinyFdArgs(m.getParameterTypes(), defaultPath, isOpen));
-                if (out instanceof CharSequence cs) return cs.toString();
+                Object out;
+                if (!m.getName().equals(methodName) || !((out = m.invoke(null, this.tinyFdArgs(m.getParameterTypes(), defaultPath, isOpen))) instanceof CharSequence)) continue;
+                CharSequence cs = (CharSequence)out;
+                return cs.toString();
             }
-        } catch (Throwable ignored) {}
+        }
+        catch (Throwable throwable) {
+            // empty catch block
+        }
+        finally {
+            this.lastNativeDialogAt = System.currentTimeMillis();
+            this.nativeDialogOpen = false;
+        }
         return null;
     }
 
     private Object[] tinyFdArgs(Class<?>[] parameterTypes, String defaultPath, boolean isOpen) {
         Object[] args = new Object[parameterTypes.length];
         int stringIndex = 0;
-        for (int i = 0; i < parameterTypes.length; i++) {
+        for (int i = 0; i < parameterTypes.length; ++i) {
             Class<?> pt = parameterTypes[i];
             if (CharSequence.class.isAssignableFrom(pt) || pt == String.class) {
-                if (stringIndex == 0) {
-                    args[i] = isOpen
-                            ? Component.translatable("ankinbt.simple.import_nbt").getString()
-                            : Component.translatable("ankinbt.simple.export_nbt").getString();
-                } else if (stringIndex == 1) {
-                    args[i] = defaultPath;
-                } else {
-                    args[i] = "NBT files (*.nbt)";
-                }
-                stringIndex++;
-            } else if (pt == String[].class) {
-                args[i] = new String[] { "*.nbt" };
-            } else if (pt == boolean.class || pt == Boolean.class) {
-                args[i] = false;
-            } else if (pt == int.class || pt == Integer.class) {
-                args[i] = 1;
-            } else if (pt.getName().equals("org.lwjgl.PointerBuffer")) {
-                args[i] = null;
-            } else {
-                args[i] = null;
+                args[i] = stringIndex == 0 ? (isOpen ? Component.translatable((String)"ankinbt.simple.import_nbt").getString() : Component.translatable((String)"ankinbt.simple.export_nbt").getString()) : (stringIndex == 1 ? defaultPath : "NBT files (*.nbt)");
+                ++stringIndex;
+                continue;
             }
+            args[i] = pt == String[].class ? new String[]{"*.nbt"} : (pt == Boolean.TYPE || pt == Boolean.class ? Boolean.FALSE : (pt == Integer.TYPE || pt == Integer.class ? Integer.valueOf(1) : (pt.getName().equals("org.lwjgl.PointerBuffer") ? null : null)));
         }
         return args;
     }
 
     private void tryClose() {
-        if (dirty && com.ankinbt.config.AnkiConfig.isConfirmOnClose()) { confirmClose = true; } else { onClose(); }
+        if (this.dirty && AnkiConfig.isConfirmOnClose()) {
+            this.confirmClose = true;
+        } else {
+            this.onClose();
+        }
     }
 
     public void onNodeEdited() {
-        dirty = true;
-        refreshVisible();
-        setStatus(Component.translatable("ankinbt.status.edited").getString(), C2);
+        this.dirty = true;
+        this.refreshVisible();
+        this.setStatus(Component.translatable((String)"ankinbt.status.edited").getString(), -7035976);
     }
 
     private void setStatus(String msg, int color) {
-        statusMsg = msg; statusColor = color; statusTime = System.currentTimeMillis();
+        this.statusMsg = msg;
+        this.statusColor = color;
+        this.statusTime = System.currentTimeMillis();
     }
 
-    // ==================== UTIL ====================
-
     private void ensureVis(int idx) {
-        if (idx < scrollOff) scrollOff = idx;
-        if (idx >= scrollOff + maxRows) scrollOff = idx - maxRows + 1;
-        clampScroll();
+        if (idx < this.scrollOff) {
+            this.scrollOff = idx;
+        }
+        if (idx >= this.scrollOff + this.maxRows) {
+            this.scrollOff = idx - this.maxRows + 1;
+        }
+        this.clampScroll();
     }
 
     private void clampScroll() {
-        int max = Math.max(0, visibleNodes.size() - maxRows);
-        scrollOff = Math.max(0, Math.min(scrollOff, max));
+        int max = Math.max(0, this.visibleNodes.size() - this.maxRows);
+        this.scrollOff = Math.max(0, Math.min(this.scrollOff, max));
     }
 
-    private void expandAll(NbtTreeNode n) { n.setExpanded(true); for (var c : n.getChildren()) expandAll(c); }
-    private void collapseAll(NbtTreeNode n) { n.setExpanded(false); for (var c : n.getChildren()) collapseAll(c); }
+    private void expandAll(NbtTreeNode n) {
+        n.setExpanded(true);
+        for (NbtTreeNode c : n.getChildren()) {
+            this.expandAll(c);
+        }
+    }
+
+    private void collapseAll(NbtTreeNode n) {
+        n.setExpanded(false);
+        for (NbtTreeNode c : n.getChildren()) {
+            this.collapseAll(c);
+        }
+    }
 
     private void drawBorder(GuiGraphics g, int x, int y, int w, int h, int c) {
-        g.fill(x, y, x + w, y + 1, c); g.fill(x, y + h - 1, x + w, y + h, c);
-        g.fill(x, y, x + 1, y + h, c); g.fill(x + w - 1, y, x + w, y + h, c);
+        g.fill(x, y, x + w, y + 1, c);
+        g.fill(x, y + h - 1, x + w, y + h, c);
+        g.fill(x, y, x + 1, y + h, c);
+        g.fill(x + w - 1, y, x + w, y + h, c);
     }
 
-    @Override public boolean isPauseScreen() { return false; }
+    public boolean isPauseScreen() {
+        return false;
+    }
 
-    public CompoundTag getFullItemTag() { return fullItemTag; }
-
-    // ==================== BTN ====================
+    public CompoundTag getFullItemTag() {
+        return this.fullItemTag;
+    }
 
     static class Btn {
-        final int x, y, w, h; final String label; final Component tooltip; final Runnable action;
+        final int x;
+        final int y;
+        final int w;
+        final int h;
+        final String label;
+        final Component tooltip;
+        final Runnable action;
+
         Btn(int x, int y, int w, int h, String label, Component tooltip, Runnable action) {
-            this.x = x; this.y = y; this.w = w; this.h = h; this.label = label; this.tooltip = tooltip; this.action = action;
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.label = label;
+            this.tooltip = tooltip;
+            this.action = action;
         }
-        boolean isHover(int mx, int my) { return mx >= x && mx < x + w && my >= y && my < y + h; }
-        void render(GuiGraphics g, net.minecraft.client.gui.Font f, int mx, int my) {
-            boolean h = isHover(mx, my);
-            g.fill(x, y, x + w, this.y + this.h, h ? BTN_HOVER : BTN_BG);
-            VersionCompat.get().drawString(g, f, label, x + (w - f.width(label)) / 2, y + (this.h - 8) / 2, C1, false);
-            if (h && tooltip != null) VersionCompat.get().renderTooltip(g, f, tooltip, mx, my);
+
+        boolean isHover(int mx, int my) {
+            return mx >= this.x && mx < this.x + this.w && my >= this.y && my < this.y + this.h;
+        }
+
+        void render(GuiGraphics g, Font f, int mx, int my) {
+            boolean h = this.isHover(mx, my);
+            g.fill(this.x, this.y, this.x + this.w, this.y + this.h, h ? 0x50FFFFFF : 0x30FFFFFF);
+            g.drawString(f, this.label, this.x + (this.w - f.width(this.label)) / 2, this.y + (this.h - 8) / 2, -1906448, false);
+            if (h && this.tooltip != null) {
+                VersionCompat.get().renderTooltip(g, f, this.tooltip, mx, my);
+            }
         }
     }
 }
+
+
+

@@ -78,6 +78,8 @@ public class NbtEditorScreen extends Screen {
     private long statusTime = 0;
     private int statusColor = C3;
     private boolean dirty = false;
+    private boolean nativeDialogOpen = false;
+    private long lastNativeDialogAt = 0L;
     private boolean confirmClose = false;
     private float openAnim = 0f;
 
@@ -219,8 +221,9 @@ public class NbtEditorScreen extends Screen {
         // Header
         g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
         g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
-        g.drawString(font, Component.translatable("ankinbt.title"), px + 10, py + 12, C1, false);
-        if (dirty) g.drawString(font, "*", px + 10 + font.width(Component.translatable("ankinbt.title")), py + 12, ERROR_C, false);
+        g.drawString(font, "ANBT", px + 16, py + 11, 0xFFE2E8F0, false);
+        g.drawString(font, "高级模式", px + 46, py + 11, 0xFFFF2D7A, false);
+        if (dirty) g.drawString(font, "*", px + 116, py + 12, ERROR_C, false);
 
         for (Btn b : buttons) b.render(g, font, mx, my);
 
@@ -653,6 +656,9 @@ public class NbtEditorScreen extends Screen {
     }
 
     private String tinyFdDialog(String methodName, String defaultPath, boolean isOpen) {
+        long now = System.currentTimeMillis();
+        if (nativeDialogOpen || now - lastNativeDialogAt < 600L) return null;
+        nativeDialogOpen = true;
         try {
             Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
             for (Method m : clazz.getMethods()) {
@@ -661,6 +667,10 @@ public class NbtEditorScreen extends Screen {
                 if (out instanceof CharSequence cs) return cs.toString();
             }
         } catch (Throwable ignored) {}
+        finally {
+            lastNativeDialogAt = System.currentTimeMillis();
+            nativeDialogOpen = false;
+        }
         return null;
     }
 
@@ -768,4 +778,18 @@ public class NbtEditorScreen extends Screen {
         return super.mouseClicked(event, isDoubleClick);
     }
 
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (keyPressed(event.key(), event.scancode(), event.modifiers())) return true;
+        return super.keyPressed(event);
+    }
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        if (charTyped((char) event.codepoint(), event.modifiers())) return true;
+        return super.charTyped(event);
+    }
 }
+
+
+
+

@@ -211,7 +211,7 @@ public class VillagerTradeEditorScreen extends Screen {
     }
 
     private int tradeFieldLeft() {
-        return px + 42;
+        return px + 48;
     }
 
     private int tradeFieldRight() {

@@ -39,6 +39,8 @@ public class AnkiConfig {
     private static String lastNbtFile = "";
     private static boolean confirmOnClose = true;
     private static String lastExportCategory = "";
+    private static boolean nativeFileDialogEnabled;
+    private static boolean attributeNotesEnabled;
 
     private static boolean smartEntityEditorKey = true;
     private static boolean villagerRequireProfession = true;
@@ -100,6 +102,8 @@ public class AnkiConfig {
             if (obj.has("lastNbtFile")) lastNbtFile = obj.get("lastNbtFile").getAsString();
             if (obj.has("confirmOnClose")) confirmOnClose = obj.get("confirmOnClose").getAsBoolean();
             if (obj.has("lastExportCategory")) lastExportCategory = obj.get("lastExportCategory").getAsString();
+            if (obj.has("nativeFileDialogEnabled")) nativeFileDialogEnabled = obj.get("nativeFileDialogEnabled").getAsBoolean();
+            if (obj.has("attributeNotesEnabled")) attributeNotesEnabled = obj.get("attributeNotesEnabled").getAsBoolean();
 
             if (obj.has("smartEntityEditorKey")) smartEntityEditorKey = obj.get("smartEntityEditorKey").getAsBoolean();
             if (obj.has("villagerRequireProfession")) villagerRequireProfession = obj.get("villagerRequireProfession").getAsBoolean();
@@ -161,6 +165,8 @@ public class AnkiConfig {
             obj.addProperty("lastNbtFile", lastNbtFile);
             obj.addProperty("confirmOnClose", confirmOnClose);
             obj.addProperty("lastExportCategory", lastExportCategory);
+            obj.addProperty("nativeFileDialogEnabled", nativeFileDialogEnabled);
+            obj.addProperty("attributeNotesEnabled", attributeNotesEnabled);
 
             obj.addProperty("smartEntityEditorKey", smartEntityEditorKey);
             obj.addProperty("villagerRequireProfession", villagerRequireProfession);
@@ -203,6 +209,8 @@ public class AnkiConfig {
     public static String getLastNbtFile() { ensureLoaded(); return lastNbtFile; }
     public static boolean isConfirmOnClose() { ensureLoaded(); return confirmOnClose; }
     public static String getLastExportCategory() { ensureLoaded(); return lastExportCategory; }
+    public static boolean isNativeFileDialogEnabled() { ensureLoaded(); return nativeFileDialogEnabled; }
+    public static boolean isAttributeNotesEnabled() { ensureLoaded(); return attributeNotesEnabled; }
 
     public static boolean isSmartEntityEditorKey() { ensureLoaded(); return smartEntityEditorKey; }
     public static boolean isVillagerRequireProfession() { ensureLoaded(); return villagerRequireProfession; }
@@ -254,6 +262,8 @@ public class AnkiConfig {
     public static void setLastNbtFile(String v) { lastNbtFile = v; save(); }
     public static void setConfirmOnClose(boolean v) { confirmOnClose = v; save(); }
     public static void setLastExportCategory(String v) { lastExportCategory = v; save(); }
+    public static void setNativeFileDialogEnabled(boolean v) { nativeFileDialogEnabled = v; save(); }
+    public static void setAttributeNotesEnabled(boolean v) { attributeNotesEnabled = v; save(); }
 
     public static void setSmartEntityEditorKey(boolean v) { smartEntityEditorKey = v; save(); }
     public static void setVillagerRequireProfession(boolean v) { villagerRequireProfession = v; save(); }

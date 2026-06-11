@@ -4657,7 +4657,13 @@ public class SimpleEditorScreen extends Screen {
         private boolean focusLevel = false;
 
         EnchantPickerSubEditor() {
-            allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
+            try {
+                allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
+            } catch (Throwable ignored) {
+            }
+            if (allEnchants.isEmpty()) {
+                allEnchants.addAll(ENCHANT_ZH.keySet());
+            }
             Collections.sort(allEnchants);
             filtered = new ArrayList<>(allEnchants);
         }
@@ -4808,7 +4814,13 @@ public class SimpleEditorScreen extends Screen {
         private static final String[] SLOT_KEYS = { "any", "mainhand", "offhand", "head", "chest", "legs", "feet", "hand", "armor" };
 
         AttributePickerSubEditor() {
-            allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
+            try {
+                allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
+            } catch (Throwable ignored) {
+            }
+            if (allAttrs.isEmpty()) {
+                allAttrs.addAll(ATTR_ZH.keySet());
+            }
             Collections.sort(allAttrs);
             filtered = new ArrayList<>(allAttrs);
         }

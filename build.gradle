@@ -4,7 +4,7 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.139'
 }
 
-version = '1.0.0'
+version = project.mod_version
 group = 'com.ankinbt'
 
 base {

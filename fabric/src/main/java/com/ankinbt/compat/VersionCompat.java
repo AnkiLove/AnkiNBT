@@ -3,32 +3,33 @@ package com.ankinbt.compat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.*;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.network.chat.Component;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
+import java.util.stream.Stream;
 
-/**
- * VersionCompat for Fabric MC 1.21.1 (Mojang mappings).
- * Identical API surface to NeoForge 1.21.1 VersionCompat.
- */
 public class VersionCompat {
 
     private static VersionCompat INSTANCE;
-    private static final java.lang.reflect.Method ITEMSTACK_GET_COMPONENT_METHOD =
+    private static final Method ITEMSTACK_GET_COMPONENT_METHOD =
             findItemStackComponentMethod("get", "method_57824", "method_58694");
-    private static final java.lang.reflect.Method ITEMSTACK_HAS_COMPONENT_METHOD =
+    private static final Method ITEMSTACK_HAS_COMPONENT_METHOD =
             findItemStackComponentMethod("has", "method_57826");
-    private static final java.lang.reflect.Method ITEMSTACK_REMOVE_COMPONENT_METHOD =
+    private static final Method ITEMSTACK_REMOVE_COMPONENT_METHOD =
             findItemStackComponentMethod("remove", "method_57381");
-    private static final java.lang.reflect.Method ITEMSTACK_SET_COMPONENT_METHOD =
+    private static final Method ITEMSTACK_SET_COMPONENT_METHOD =
             findItemStackSetComponentMethod("set", "method_57379");
 
     public static VersionCompat get() {
@@ -36,21 +37,21 @@ public class VersionCompat {
         return INSTANCE;
     }
 
-
-    // --- Platform paths ---
     public java.nio.file.Path getConfigDir() {
         return net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
     }
+
     public java.nio.file.Path getGameDir() {
         return net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir();
     }
-        public String getKeyDisplayName(int keyCode) {
+
+    public String getKeyDisplayName(int keyCode) {
         if (keyCode == com.mojang.blaze3d.platform.InputConstants.KEY_COMMA) return ",";
         if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_A && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_Z) {
-            return Character.toString((char) ('A' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_A)));
+            return Character.toString((char)('A' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_A)));
         }
         if (keyCode >= com.mojang.blaze3d.platform.InputConstants.KEY_0 && keyCode <= com.mojang.blaze3d.platform.InputConstants.KEY_9) {
-            return Character.toString((char) ('0' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_0)));
+            return Character.toString((char)('0' + (keyCode - com.mojang.blaze3d.platform.InputConstants.KEY_0)));
         }
         try {
             String name = com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString();
@@ -58,196 +59,337 @@ public class VersionCompat {
         } catch (Throwable ignored) {}
         return "KEY(" + keyCode + ")";
     }
-    // --- Registry ---
+
     public List<String> getAllEnchantIds() {
-        List<String> ids = new ArrayList<>();
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null) {
-            Registry<Enchantment> reg = mc.level.registryAccess().registryOrThrow(Registries.ENCHANTMENT);
-            reg.holders().forEach(h -> ids.add(h.key().location().toString()));
-        }
-        return ids;
+        return getAllRegistryIds(Registries.ENCHANTMENT);
     }
+
     public List<String> getAllAttributeIds() {
-        List<String> ids = new ArrayList<>();
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null) {
-            Registry<Attribute> reg = mc.level.registryAccess().registryOrThrow(Registries.ATTRIBUTE);
-            reg.holders().forEach(h -> ids.add(h.key().location().toString()));
-        }
-        return ids;
+        return getAllRegistryIds(Registries.ATTRIBUTE);
     }
+
+    @SuppressWarnings("unchecked")
     public Optional<Holder.Reference<Enchantment>> getEnchantHolder(String id) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return Optional.empty();
-        Registry<Enchantment> reg = mc.level.registryAccess().registryOrThrow(Registries.ENCHANTMENT);
-        ResourceLocation loc = ResourceLocation.tryParse(id);
-        if (loc == null) return Optional.empty();
-        return reg.getHolder(loc);
+        return (Optional<Holder.Reference<Enchantment>>)(Optional<?>)getHolder(Registries.ENCHANTMENT, id);
     }
+
+    @SuppressWarnings("unchecked")
     public Optional<Holder.Reference<Attribute>> getAttributeHolder(String id) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return Optional.empty();
-        Registry<Attribute> reg = mc.level.registryAccess().registryOrThrow(Registries.ATTRIBUTE);
-        ResourceLocation loc = ResourceLocation.tryParse(id);
-        if (loc == null) return Optional.empty();
-        return reg.getHolder(loc);
+        return (Optional<Holder.Reference<Attribute>>)(Optional<?>)getHolder(Registries.ATTRIBUTE, id);
     }
 
-    // --- Fire resistant ---
-    public boolean isFireResistant(ItemStack stack) { return hasComponent(stack, DataComponents.FIRE_RESISTANT); }
+    public boolean isFireResistant(ItemStack stack) {
+        DataComponentType<?> type = component("DAMAGE_RESISTANT", "FIRE_RESISTANT");
+        return type != null && hasComponent(stack, type);
+    }
+
     public void setFireResistant(ItemStack stack, boolean value) {
-        if (value) setComponent(stack, DataComponents.FIRE_RESISTANT, net.minecraft.util.Unit.INSTANCE);
-        else removeComponent(stack, DataComponents.FIRE_RESISTANT);
+        DataComponentType<?> type = component("DAMAGE_RESISTANT", "FIRE_RESISTANT");
+        if (type == null) return;
+        if (!value) {
+            removeComponent(stack, type);
+            return;
+        }
+        Object resistant = constructDamageResistant();
+        setComponentUnchecked(stack, type, resistant != null ? resistant : unitInstance());
     }
 
-    // --- Custom model data ---
     public int getCustomModelData(ItemStack stack) {
-        var cmd = getComponent(stack, DataComponents.CUSTOM_MODEL_DATA);
-        return cmd != null ? cmd.value() : 0;
+        Object cmd = getComponent(stack, DataComponents.CUSTOM_MODEL_DATA);
+        if (cmd == null) return 0;
+        Object value = invokeAny(cmd, "value", "comp_2382");
+        if (value instanceof Number number) return number.intValue();
+        Object floats = invokeAny(cmd, "floats");
+        if (floats instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
     }
+
     public void setCustomModelData(ItemStack stack, int value) {
-        setComponent(stack, DataComponents.CUSTOM_MODEL_DATA, new net.minecraft.world.item.component.CustomModelData(value));
+        Object cmd = constructCustomModelData(value);
+        if (cmd != null) {
+            setComponentUnchecked(stack, DataComponents.CUSTOM_MODEL_DATA, cmd);
+        }
     }
 
-    // --- Food ---
-    public boolean hasFood(ItemStack stack) { return getComponent(stack, DataComponents.FOOD) != null; }
+    public boolean hasFood(ItemStack stack) {
+        return getComponent(stack, DataComponents.FOOD) != null;
+    }
+
     public int getFoodNutrition(ItemStack stack) {
-        var food = getComponent(stack, DataComponents.FOOD); return food != null ? food.nutrition() : 0;
+        Object food = getComponent(stack, DataComponents.FOOD);
+        Object value = invokeAny(food, "nutrition", "comp_2491");
+        return value instanceof Number number ? number.intValue() : 0;
     }
+
     public float getFoodSaturation(ItemStack stack) {
-        var food = getComponent(stack, DataComponents.FOOD); return food != null ? food.saturation() : 0f;
+        Object food = getComponent(stack, DataComponents.FOOD);
+        Object value = invokeAny(food, "saturation", "comp_2492");
+        return value instanceof Number number ? number.floatValue() : 0.0f;
     }
+
     public void setFoodNutrition(ItemStack stack, int nutrition) {
-        var food = getComponent(stack, DataComponents.FOOD);
-        if (food != null) setComponent(stack, DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
-                nutrition, food.saturation(), food.canAlwaysEat(), food.eatSeconds(), food.usingConvertsTo(), food.effects()));
+        Object food = getComponent(stack, DataComponents.FOOD);
+        Object replacement = constructFood(food, nutrition, getFoodSaturation(stack));
+        if (replacement != null) {
+            setComponentUnchecked(stack, DataComponents.FOOD, replacement);
+        }
     }
+
     public void setFoodSaturation(ItemStack stack, float saturation) {
-        var food = getComponent(stack, DataComponents.FOOD);
-        if (food != null) setComponent(stack, DataComponents.FOOD, new net.minecraft.world.food.FoodProperties(
-                food.nutrition(), saturation, food.canAlwaysEat(), food.eatSeconds(), food.usingConvertsTo(), food.effects()));
+        Object food = getComponent(stack, DataComponents.FOOD);
+        Object replacement = constructFood(food, getFoodNutrition(stack), saturation);
+        if (replacement != null) {
+            setComponentUnchecked(stack, DataComponents.FOOD, replacement);
+        }
     }
 
-    // --- NBT accessors ---
-    public Set<String> getCompoundKeys(CompoundTag tag) { return tag.getAllKeys(); }
-    public String getTagAsString(Tag tag) { return tag.getAsString(); }
-    public byte getByteValue(ByteTag tag) { return tag.getAsByte(); }
-    public short getShortValue(ShortTag tag) { return tag.getAsShort(); }
-    public int getIntValue(IntTag tag) { return tag.getAsInt(); }
-    public long getLongValue(LongTag tag) { return tag.getAsLong(); }
-    public float getFloatValue(FloatTag tag) { return tag.getAsFloat(); }
-    public double getDoubleValue(DoubleTag tag) { return tag.getAsDouble(); }
-    public String getStringValue(StringTag tag) { return tag.getAsString(); }
-    public String compoundGetString(CompoundTag tag, String key) { return tag.getString(key); }
-    public int compoundGetInt(CompoundTag tag, String key) { return tag.getInt(key); }
+    public Set<String> getCompoundKeys(CompoundTag tag) {
+        Object keys = invokeAny(tag, "getAllKeys", "keySet", "method_10541");
+        if (keys instanceof Set<?> set) {
+            LinkedHashSet<String> out = new LinkedHashSet<>();
+            for (Object key : set) out.add(String.valueOf(key));
+            return out;
+        }
+        return Collections.emptySet();
+    }
 
-    // --- Inventory ---
-    public int getSelectedSlot(net.minecraft.world.entity.player.Inventory inv) { return inv.selected; }
+    public String getTagAsString(Tag tag) {
+        Object value = invokeAny(tag, "getAsString", "method_10714");
+        return value != null ? String.valueOf(value) : String.valueOf(tag);
+    }
 
-    // --- Hide tooltip ---
-    public boolean isHideTooltip(ItemStack stack) { return hasComponent(stack, DataComponents.HIDE_TOOLTIP); }
+    public byte getByteValue(ByteTag tag) {
+        Object value = invokeAny(tag, "getAsByte", "value", "method_10698");
+        return value instanceof Number number ? number.byteValue() : 0;
+    }
+
+    public short getShortValue(ShortTag tag) {
+        Object value = invokeAny(tag, "getAsShort", "value", "method_10696");
+        return value instanceof Number number ? number.shortValue() : 0;
+    }
+
+    public int getIntValue(IntTag tag) {
+        Object value = invokeAny(tag, "getAsInt", "value", "method_10701");
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    public long getLongValue(LongTag tag) {
+        Object value = invokeAny(tag, "getAsLong", "value", "method_10699");
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    public float getFloatValue(FloatTag tag) {
+        Object value = invokeAny(tag, "getAsFloat", "value", "method_10700");
+        return value instanceof Number number ? number.floatValue() : 0.0f;
+    }
+
+    public double getDoubleValue(DoubleTag tag) {
+        Object value = invokeAny(tag, "getAsDouble", "value", "method_10697");
+        return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    public String getStringValue(StringTag tag) {
+        Object value = invokeAny(tag, "getAsString", "value", "method_10714");
+        return value != null ? String.valueOf(value) : "";
+    }
+
+    public String compoundGetString(CompoundTag tag, String key) {
+        Object value = invokeNamed(tag, "getString", key);
+        if (value instanceof Optional<?> optional) return optional.map(String::valueOf).orElse("");
+        return value != null ? String.valueOf(value) : "";
+    }
+
+    public int compoundGetInt(CompoundTag tag, String key) {
+        Object value = invokeNamed(tag, "getInt", key);
+        if (value instanceof Optional<?> optional) value = optional.isPresent() ? optional.get() : 0;
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    public int getSelectedSlot(Inventory inv) {
+        Object value = invokeAny(inv, "getSelectedSlot");
+        if (value instanceof Number number) return number.intValue();
+        try {
+            Field selected = Inventory.class.getDeclaredField("selected");
+            selected.setAccessible(true);
+            return selected.getInt(inv);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    public boolean isHideTooltip(ItemStack stack) {
+        DataComponentType<?> type = component("HIDE_TOOLTIP");
+        return type != null && hasComponent(stack, type);
+    }
+
     public void setHideTooltip(ItemStack stack, boolean value) {
-        if (value) setComponent(stack, DataComponents.HIDE_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
-        else removeComponent(stack, DataComponents.HIDE_TOOLTIP);
+        setOptionalUnitComponent(stack, value, "HIDE_TOOLTIP");
     }
-    public boolean isHideAdditional(ItemStack stack) { return hasComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP); }
+
+    public boolean isHideAdditional(ItemStack stack) {
+        DataComponentType<?> type = component("HIDE_ADDITIONAL_TOOLTIP");
+        return type != null && hasComponent(stack, type);
+    }
+
     public void setHideAdditional(ItemStack stack, boolean value) {
-        if (value) setComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP, net.minecraft.util.Unit.INSTANCE);
-        else removeComponent(stack, DataComponents.HIDE_ADDITIONAL_TOOLTIP);
+        setOptionalUnitComponent(stack, value, "HIDE_ADDITIONAL_TOOLTIP");
     }
-    public boolean hasHideTooltipFeature() { return true; }
-    public boolean hasHideAdditionalFeature() { return true; }
 
-    // --- Unbreakable ---
+    public boolean hasHideTooltipFeature() {
+        return component("HIDE_TOOLTIP") != null;
+    }
+
+    public boolean hasHideAdditionalFeature() {
+        return component("HIDE_ADDITIONAL_TOOLTIP") != null;
+    }
+
     public void setUnbreakable(ItemStack stack, boolean value) {
-        if (value) setComponent(stack, DataComponents.UNBREAKABLE, new net.minecraft.world.item.component.Unbreakable(true));
-        else removeComponent(stack, DataComponents.UNBREAKABLE);
+        if (!value) {
+            removeComponent(stack, DataComponents.UNBREAKABLE);
+            return;
+        }
+        Object unbreakable = constructFirst("net.minecraft.world.item.component.Unbreakable",
+                new Class<?>[]{boolean.class}, true);
+        setComponentUnchecked(stack, DataComponents.UNBREAKABLE, unbreakable != null ? unbreakable : unitInstance());
     }
 
-    // --- DyedItemColor ---
     public void setDyedColor(ItemStack stack, int rgb) {
-        setComponent(stack, DataComponents.DYED_COLOR, new net.minecraft.world.item.component.DyedItemColor(rgb, true));
+        Object color = constructFirst("net.minecraft.world.item.component.DyedItemColor",
+                new Class<?>[]{int.class, boolean.class}, rgb, true);
+        if (color == null) {
+            color = constructFirst("net.minecraft.world.item.component.DyedItemColor",
+                    new Class<?>[]{int.class}, rgb);
+        }
+        if (color != null) {
+            setComponentUnchecked(stack, DataComponents.DYED_COLOR, color);
+        }
     }
 
-    // --- AttributeModifiers ---
     public ItemAttributeModifiers withEntries(List<ItemAttributeModifiers.Entry> entries, ItemAttributeModifiers old) {
-        return new ItemAttributeModifiers(entries, old.showInTooltip());
+        Object keepTooltip = invokeAny(old, "showInTooltip");
+        Object withTooltip = keepTooltip instanceof Boolean b
+                ? constructItemAttributeModifiers(new Class<?>[]{List.class, boolean.class}, entries, b)
+                : null;
+        if (withTooltip instanceof ItemAttributeModifiers modifiers) return modifiers;
+        Object plain = constructItemAttributeModifiers(new Class<?>[]{List.class}, entries);
+        return plain instanceof ItemAttributeModifiers modifiers ? modifiers : old;
     }
 
-    // --- Tooltip rendering ---
     public void renderTooltip(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font f, Component tooltip, int mx, int my) {
-        java.lang.reflect.Method simple = findGuiGraphicsMethod(
-                net.minecraft.client.gui.Font.class,
-                net.minecraft.network.chat.Component.class,
-                int.class,
-                int.class);
-        if (simple != null) {
-            try {
-                simple.invoke(g, f, tooltip, mx, my);
-                return;
-            } catch (Throwable ignored) {}
+        if (invokeGui(g, "renderTooltip", f, tooltip, mx, my)) return;
+        List<?> lines = f.split(tooltip, 200);
+        ArrayList<Object> components = new ArrayList<>();
+        for (Object line : lines) {
+            Object clientLine = constructFirst("net.minecraft.client.gui.screens.inventory.tooltip.ClientTextTooltip",
+                    new Class<?>[]{line.getClass()}, line);
+            components.add(clientLine != null ? clientLine : line);
         }
-
-        var lines = f.split(tooltip, 200);
-        var components = new java.util.ArrayList<net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent>();
-        for (var line : lines) {
-            components.add(new net.minecraft.client.gui.screens.inventory.tooltip.ClientTextTooltip(line));
+        if (invokeGui(g, "renderTooltip", f, components, mx, my,
+                net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, null)) {
+            return;
         }
-
-        java.lang.reflect.Method expanded = findGuiGraphicsMethod(
-                net.minecraft.client.gui.Font.class,
-                java.util.List.class,
-                int.class,
-                int.class,
-                net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner.class,
-                net.minecraft.resources.ResourceLocation.class);
-        if (expanded != null) {
-            try {
-                expanded.invoke(g, f, components, mx, my,
-                        net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, null);
-            } catch (Throwable ignored) {}
-        }
+        invokeGui(g, "renderComponentTooltip", f, lines, mx, my);
     }
-    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, net.minecraft.network.chat.Component text, int x, int y, int color, boolean shadow) {
+
+    public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, Component text, int x, int y, int color, boolean shadow) {
         if (text == null) return drawString(g, font, "", x, y, color, shadow);
-        java.lang.reflect.Method m = findGuiGraphicsMethod(
-                net.minecraft.client.gui.Font.class,
-                net.minecraft.network.chat.Component.class,
-                int.class,
-                int.class,
-                int.class,
-                boolean.class);
-        if (m != null) {
-            try {
-                Object out = m.invoke(g, font, text, x, y, color, shadow);
-                if (out instanceof Number n) return n.intValue();
-                return font.width(text);
-            } catch (Throwable ignored) {}
-        }
+        Object out = invokeGuiWithResult(g, "drawString", font, text, x, y, color, shadow);
+        if (out instanceof Number number) return number.intValue();
         return drawString(g, font, text.getString(), x, y, color, shadow);
     }
 
     public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, String text, int x, int y, int color, boolean shadow) {
         String resolved = text == null ? "" : text;
-        java.lang.reflect.Method m = findGuiGraphicsMethod(
-                net.minecraft.client.gui.Font.class,
-                String.class,
-                int.class,
-                int.class,
-                int.class,
-                boolean.class);
-        if (m != null) {
-            try {
-                Object out = m.invoke(g, font, resolved, x, y, color, shadow);
-                if (out instanceof Number n) return n.intValue();
-            } catch (Throwable ignored) {}
-        }
+        Object out = invokeGuiWithResult(g, "drawString", font, resolved, x, y, color, shadow);
+        if (out instanceof Number number) return number.intValue();
+        try {
+            g.drawString(font, resolved, x, y, color, shadow);
+        } catch (Throwable ignored) {}
         return font.width(resolved);
     }
 
+    private List<String> getAllRegistryIds(Object registryKey) {
+        ArrayList<String> ids = new ArrayList<>();
+        Object registry = getRegistry(registryKey);
+        if (registry == null) return ids;
+        Object holders = invokeAny(registry, "holders");
+        if (holders instanceof Stream<?> stream) {
+            stream.forEach(holder -> {
+                Object key = invokeAny(holder, "key", "unwrapKey");
+                if (key instanceof Optional<?> optional) key = optional.orElse(null);
+                String id = idFromKey(key);
+                if (!id.isBlank()) ids.add(id);
+            });
+            return ids;
+        }
+        Object keys = invokeAny(registry, "listElementIds");
+        if (keys instanceof Iterable<?> iterable) {
+            for (Object key : iterable) {
+                String id = idFromKey(key);
+                if (!id.isBlank()) ids.add(id);
+            }
+        }
+        return ids;
+    }
+
+    private Optional<?> getHolder(Object registryKey, String id) {
+        Object registry = getRegistry(registryKey);
+        Object location = parseResourceId(id);
+        if (registry == null || location == null) return Optional.empty();
+        Object holder = invokeRegistryLookup(registry, location, "getHolder", "get");
+        if (holder instanceof Optional<?> optional) return optional;
+        return holder != null ? Optional.of(holder) : Optional.empty();
+    }
+
+    private Object getRegistry(Object registryKey) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+        Object access = mc.level.registryAccess();
+        return invokeRegistryLookup(access, registryKey, "registryOrThrow", "lookupOrThrow", "method_30530");
+    }
+
+    private Object invokeRegistryLookup(Object target, Object argument, String... names) {
+        if (target == null || argument == null) return null;
+        Set<String> allowed = new HashSet<>(Arrays.asList(names));
+        for (Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 1) continue;
+            Class<?> parameter = method.getParameterTypes()[0];
+            if (!parameter.isAssignableFrom(argument.getClass())) continue;
+            try {
+                return method.invoke(target, argument);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private String idFromKey(Object key) {
+        if (key == null) return "";
+        Object id = invokeAny(key, "location", "identifier", "method_29177");
+        return id != null ? String.valueOf(id) : String.valueOf(key);
+    }
+
+    private Object parseResourceId(String id) {
+        Object loc = parseResourceIdWith("net.minecraft.resources.ResourceLocation", id);
+        return loc != null ? loc : parseResourceIdWith("net.minecraft.resources.Identifier", id);
+    }
+
+    private Object parseResourceIdWith(String className, String id) {
+        try {
+            Class<?> cls = Class.forName(className);
+            for (String methodName : List.of("tryParse", "parse", "method_12829")) {
+                try {
+                    Method method = cls.getMethod(methodName, String.class);
+                    return method.invoke(null, id);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     @SuppressWarnings("unchecked")
-    private <T> T getComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<T> type) {
+    private <T> T getComponent(ItemStack stack, DataComponentType<T> type) {
         if (ITEMSTACK_GET_COMPONENT_METHOD == null) return null;
         try {
             return (T) ITEMSTACK_GET_COMPONENT_METHOD.invoke(stack, type);
@@ -256,7 +398,7 @@ public class VersionCompat {
         }
     }
 
-    private boolean hasComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<?> type) {
+    private boolean hasComponent(ItemStack stack, DataComponentType<?> type) {
         if (ITEMSTACK_HAS_COMPONENT_METHOD == null) return false;
         try {
             Object out = ITEMSTACK_HAS_COMPONENT_METHOD.invoke(stack, type);
@@ -266,47 +408,197 @@ public class VersionCompat {
         }
     }
 
-    private <T> void setComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<T> type, T value) {
-        if (ITEMSTACK_SET_COMPONENT_METHOD == null) return;
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void setComponentUnchecked(ItemStack stack, DataComponentType<?> type, Object value) {
+        if (ITEMSTACK_SET_COMPONENT_METHOD == null || value == null) return;
         try {
-            ITEMSTACK_SET_COMPONENT_METHOD.invoke(stack, type, value);
+            ITEMSTACK_SET_COMPONENT_METHOD.invoke(stack, (DataComponentType)type, value);
         } catch (Throwable ignored) {}
     }
 
-    private void removeComponent(ItemStack stack, net.minecraft.core.component.DataComponentType<?> type) {
-        if (ITEMSTACK_REMOVE_COMPONENT_METHOD == null) return;
+    private void removeComponent(ItemStack stack, DataComponentType<?> type) {
+        if (ITEMSTACK_REMOVE_COMPONENT_METHOD == null || type == null) return;
         try {
             ITEMSTACK_REMOVE_COMPONENT_METHOD.invoke(stack, type);
         } catch (Throwable ignored) {}
     }
 
-    private java.lang.reflect.Method findGuiGraphicsMethod(Class<?>... parameterTypes) {
-        for (java.lang.reflect.Method method : net.minecraft.client.gui.GuiGraphics.class.getMethods()) {
-            if (java.util.Arrays.equals(method.getParameterTypes(), parameterTypes)) {
-                return method;
-            }
-        }
-        return null;
-    }
-
-    private static java.lang.reflect.Method findItemStackComponentMethod(String... names) {
+    private DataComponentType<?> component(String... names) {
         for (String name : names) {
             try {
-                return net.minecraft.world.item.ItemStack.class.getMethod(name, net.minecraft.core.component.DataComponentType.class);
+                Field field = DataComponents.class.getField(name);
+                Object value = field.get(null);
+                if (value instanceof DataComponentType<?> type) return type;
             } catch (Throwable ignored) {}
         }
         return null;
     }
 
-    private static java.lang.reflect.Method findItemStackSetComponentMethod(String... names) {
-        java.util.Set<String> nameSet = new java.util.HashSet<>(java.util.Arrays.asList(names));
-        for (java.lang.reflect.Method method : net.minecraft.world.item.ItemStack.class.getMethods()) {
+    private void setOptionalUnitComponent(ItemStack stack, boolean value, String componentName) {
+        DataComponentType<?> type = component(componentName);
+        if (type == null) return;
+        if (value) setComponentUnchecked(stack, type, unitInstance());
+        else removeComponent(stack, type);
+    }
+
+    private Object unitInstance() {
+        try {
+            return net.minecraft.util.Unit.INSTANCE;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private Object constructDamageResistant() {
+        try {
+            Class<?> cls = Class.forName("net.minecraft.world.item.component.DamageResistant");
+            Object tag = Class.forName("net.minecraft.tags.DamageTypeTags").getField("IS_FIRE").get(null);
+            for (Constructor<?> ctor : cls.getConstructors()) {
+                if (ctor.getParameterCount() == 1 && ctor.getParameterTypes()[0].isAssignableFrom(tag.getClass())) {
+                    return ctor.newInstance(tag);
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private Object constructCustomModelData(int value) {
+        Object legacy = constructFirst("net.minecraft.world.item.component.CustomModelData", new Class<?>[]{int.class}, value);
+        if (legacy != null) return legacy;
+        return constructFirst("net.minecraft.world.item.component.CustomModelData",
+                new Class<?>[]{List.class, List.class, List.class, List.class},
+                List.of((float)value), List.of(), List.of(), List.of());
+    }
+
+    private Object constructFood(Object current, int nutrition, float saturation) {
+        Object canAlwaysEat = invokeAny(current, "canAlwaysEat", "comp_2493");
+        boolean eatAnytime = canAlwaysEat instanceof Boolean b && b;
+        Object six = constructFirst("net.minecraft.world.food.FoodProperties",
+                new Class<?>[]{int.class, float.class, boolean.class, float.class, Optional.class, List.class},
+                nutrition, saturation, eatAnytime,
+                numberOrDefault(invokeAny(current, "eatSeconds"), 1.6f),
+                optionalOrEmpty(invokeAny(current, "usingConvertsTo")),
+                listOrEmpty(invokeAny(current, "effects")));
+        if (six != null) return six;
+        return constructFirst("net.minecraft.world.food.FoodProperties",
+                new Class<?>[]{int.class, float.class, boolean.class}, nutrition, saturation, eatAnytime);
+    }
+
+    private float numberOrDefault(Object value, float fallback) {
+        return value instanceof Number number ? number.floatValue() : fallback;
+    }
+
+    private Optional<?> optionalOrEmpty(Object value) {
+        return value instanceof Optional<?> optional ? optional : Optional.empty();
+    }
+
+    private List<?> listOrEmpty(Object value) {
+        return value instanceof List<?> list ? list : List.of();
+    }
+
+    private Object constructItemAttributeModifiers(Class<?>[] types, Object... args) {
+        try {
+            Constructor<ItemAttributeModifiers> ctor = ItemAttributeModifiers.class.getConstructor(types);
+            return ctor.newInstance(args);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private Object constructFirst(String className, Class<?>[] parameterTypes, Object... args) {
+        try {
+            Class<?> cls = Class.forName(className);
+            Constructor<?> ctor = cls.getConstructor(parameterTypes);
+            return ctor.newInstance(args);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private Object invokeAny(Object target, String... names) {
+        if (target == null) return null;
+        Set<String> allowed = new HashSet<>(Arrays.asList(names));
+        for (Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 0) continue;
+            try {
+                return method.invoke(target);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private Object invokeNamed(Object target, String name, Object... args) {
+        if (target == null) return null;
+        for (Method method : target.getClass().getMethods()) {
+            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            try {
+                return method.invoke(target, args);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private boolean invokeGui(Object target, String name, Object... args) {
+        return invokeGuiWithResult(target, name, args) != InvokeMiss.INSTANCE;
+    }
+
+    private Object invokeGuiWithResult(Object target, String name, Object... args) {
+        if (target == null) return InvokeMiss.INSTANCE;
+        for (Method method : target.getClass().getMethods()) {
+            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            if (!parametersMatch(method.getParameterTypes(), args)) continue;
+            try {
+                Object out = method.invoke(target, args);
+                return out == null ? Boolean.TRUE : out;
+            } catch (Throwable ignored) {}
+        }
+        return InvokeMiss.INSTANCE;
+    }
+
+    private boolean parametersMatch(Class<?>[] types, Object[] args) {
+        for (int i = 0; i < types.length; i++) {
+            if (args[i] == null) continue;
+            Class<?> type = wrap(types[i]);
+            if (!type.isAssignableFrom(args[i].getClass())) return false;
+        }
+        return true;
+    }
+
+    private Class<?> wrap(Class<?> type) {
+        if (!type.isPrimitive()) return type;
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == float.class) return Float.class;
+        if (type == double.class) return Double.class;
+        if (type == boolean.class) return Boolean.class;
+        if (type == byte.class) return Byte.class;
+        if (type == short.class) return Short.class;
+        if (type == char.class) return Character.class;
+        return type;
+    }
+
+    private static Method findItemStackComponentMethod(String... names) {
+        for (String name : names) {
+            try {
+                return ItemStack.class.getMethod(name, DataComponentType.class);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private static Method findItemStackSetComponentMethod(String... names) {
+        Set<String> nameSet = new HashSet<>(Arrays.asList(names));
+        for (Method method : ItemStack.class.getMethods()) {
             Class<?>[] parameterTypes = method.getParameterTypes();
             if (!nameSet.contains(method.getName())) continue;
             if (parameterTypes.length != 2) continue;
-            if (parameterTypes[0] != net.minecraft.core.component.DataComponentType.class) continue;
+            if (parameterTypes[0] != DataComponentType.class) continue;
             return method;
         }
         return null;
+    }
+
+    private enum InvokeMiss {
+        INSTANCE
     }
 }

@@ -78,7 +78,7 @@ public class ItemPickerScreen extends Screen {
             refreshFiltered();
         });
         addRenderableWidget(searchBox);
-
+        focusSearchBox();
         refreshFiltered();
     }
 
@@ -246,6 +246,10 @@ public class ItemPickerScreen extends Screen {
     }
 
     private boolean handleMouseClick(double mx, double my, int button) {
+        if (button == 0 && isInSearchBox(mx, my)) {
+            focusSearchBox();
+            return true;
+        }
         for (UiBtn btn : buttons) {
             if (btn.click((int) mx, (int) my)) {
                 initGroups();
@@ -265,8 +269,23 @@ public class ItemPickerScreen extends Screen {
             }
         }
 
-        if (searchBox != null) searchBox.setFocused(false);
+        unfocusSearchBox();
         return false;
+    }
+
+    private boolean isInSearchBox(double mx, double my) {
+        return searchBox != null && mx >= px + 18 && mx < px + pw - 18 && my >= searchY && my < searchY + 20;
+    }
+
+    private void focusSearchBox() {
+        if (searchBox == null) return;
+        searchBox.setFocused(true);
+        setFocused(searchBox);
+    }
+
+    private void unfocusSearchBox() {
+        if (searchBox == null) return;
+        searchBox.setFocused(false);
     }
 
     private boolean handleKeyPressed(KeyEvent event) {
@@ -438,7 +457,14 @@ public class ItemPickerScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         double mx = event.x();
         double my = event.y();
-        if (searchBox != null && searchBox.mouseClicked(event, isDoubleClick)) return true;
+        if (searchBox != null && searchBox.mouseClicked(event, isDoubleClick)) {
+            focusSearchBox();
+            return true;
+        }
+        if (isInSearchBox(mx, my)) {
+            focusSearchBox();
+            return true;
+        }
         if (handleMouseClick(mx, my, event.button())) return true;
         if (minecraft != null) {
             double sw = minecraft.getWindow().getScreenWidth();
@@ -446,6 +472,10 @@ public class ItemPickerScreen extends Screen {
             if (sw > 0.0 && sh > 0.0) {
                 double sx = mx * width / sw;
                 double sy = my * height / sh;
+                if (isInSearchBox(sx, sy)) {
+                    focusSearchBox();
+                    return true;
+                }
                 if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && handleMouseClick(sx, sy, event.button())) {
                     return true;
                 }

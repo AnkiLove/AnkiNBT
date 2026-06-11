@@ -1,5 +1,6 @@
 package com.ankinbt.nbt;
 
+import com.mojang.serialization.Codec;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.*;
@@ -7,6 +8,7 @@ import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.item.ItemStack;
 
 import com.ankinbt.compat.VersionCompat;
+import com.ankinbt.util.DebugLog;
 import java.util.Optional;
 
 /**
@@ -30,7 +32,7 @@ public final class NbtHelper {
         RegistryOps<Tag> ops = access.createSerializationContext(NbtOps.INSTANCE);
         return ItemStack.CODEC.encodeStart(ops, stack)
                 .map(t -> (CompoundTag) t)
-                .resultOrPartial();
+                .resultOrPartial(err -> DebugLog.warn("ItemStack serialize failed: {}", err));
     }
 
     /**
@@ -40,7 +42,26 @@ public final class NbtHelper {
         RegistryAccess access = getRegistryAccess();
         if (access == null) return Optional.empty();
         RegistryOps<Tag> ops = access.createSerializationContext(NbtOps.INSTANCE);
-        return ItemStack.CODEC.parse(ops, tag).resultOrPartial();
+        return ItemStack.CODEC.parse(ops, tag)
+                .resultOrPartial(err -> DebugLog.warn("ItemStack deserialize failed: {}", err));
+    }
+
+    public static <T> Optional<CompoundTag> encodeWithCodec(Codec<T> codec, T value) {
+        RegistryAccess access = getRegistryAccess();
+        if (access == null || codec == null || value == null) return Optional.empty();
+        RegistryOps<Tag> ops = access.createSerializationContext(NbtOps.INSTANCE);
+        return codec.encodeStart(ops, value)
+                .resultOrPartial(err -> DebugLog.warn("Codec encode failed: {}", err))
+                .filter(CompoundTag.class::isInstance)
+                .map(CompoundTag.class::cast);
+    }
+
+    public static <T> Optional<T> decodeWithCodec(Codec<T> codec, CompoundTag tag) {
+        RegistryAccess access = getRegistryAccess();
+        if (access == null || codec == null || tag == null) return Optional.empty();
+        RegistryOps<Tag> ops = access.createSerializationContext(NbtOps.INSTANCE);
+        return codec.parse(ops, tag)
+                .resultOrPartial(err -> DebugLog.warn("Codec decode failed: {}", err));
     }
 
     private static RegistryAccess getRegistryAccess() {
