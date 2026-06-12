@@ -16,6 +16,7 @@ import net.minecraft.class_342;
 
 public class FlatEditBox
 extends class_342 {
+    private static final int TEXT_PAD_X = 4;
     private int bgColor = 1075059755;
     private int borderColor = -13878436;
     private int focusedBorderColor = -10262799;
@@ -60,7 +61,18 @@ extends class_342 {
         g.method_25294(x, y + h - 1, x + w, y + h, edge);
         g.method_25294(x, y, x + 1, y + h, edge);
         g.method_25294(x + w - 1, y, x + w, y + h, edge);
-        super.method_48579(g, mx, my, partialTick);
+        int textY = y + Math.max(1, (h - 8) / 2);
+        try {
+            this.method_46421(x + TEXT_PAD_X);
+            this.method_46419(textY);
+            this.method_25358(Math.max(1, w - TEXT_PAD_X * 2));
+            super.method_48579(g, mx, my, partialTick);
+        }
+        finally {
+            this.method_46421(x);
+            this.method_46419(y);
+            this.method_25358(w);
+        }
     }
 }
 

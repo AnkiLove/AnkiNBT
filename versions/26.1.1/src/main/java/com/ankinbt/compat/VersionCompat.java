@@ -63,40 +63,19 @@ public class VersionCompat {
     }
 
     public List<String> getAllEnchantIds() {
-        List<String> ids = new ArrayList<>();
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null) {
-            Registry<Enchantment> reg = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
-            reg.listElementIds().forEach(key -> ids.add(key.identifier().toString()));
-        }
-        return ids;
+        return getAllRegistryIds(Registries.ENCHANTMENT);
     }
     public List<String> getAllAttributeIds() {
-        List<String> ids = new ArrayList<>();
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null) {
-            Registry<Attribute> reg = mc.level.registryAccess().lookupOrThrow(Registries.ATTRIBUTE);
-            reg.listElementIds().forEach(key -> ids.add(key.identifier().toString()));
-        }
-        return ids;
+        return getAllRegistryIds(Registries.ATTRIBUTE);
     }
+    @SuppressWarnings("unchecked")
     public Optional<Holder.Reference<Enchantment>> getEnchantHolder(String id) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return Optional.empty();
-        Registry<Enchantment> reg = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
-        Identifier loc = Identifier.tryParse(id);
-        if (loc == null) return Optional.empty();
-        return reg.get(loc);
+        return (Optional<Holder.Reference<Enchantment>>)(Optional<?>)getHolder(Registries.ENCHANTMENT, id);
     }
+    @SuppressWarnings("unchecked")
     public Optional<Holder.Reference<Attribute>> getAttributeHolder(String id) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return Optional.empty();
-        Registry<Attribute> reg = mc.level.registryAccess().lookupOrThrow(Registries.ATTRIBUTE);
-        Identifier loc = Identifier.tryParse(id);
-        if (loc == null) return Optional.empty();
-        return reg.get(loc);
+        return (Optional<Holder.Reference<Attribute>>)(Optional<?>)getHolder(Registries.ATTRIBUTE, id);
     }
-
     public boolean isFireResistant(ItemStack stack) { return stack.has(DataComponents.DAMAGE_RESISTANT); }
     public void setFireResistant(ItemStack stack, boolean value) {
         if (value) {
@@ -201,6 +180,120 @@ public class VersionCompat {
         g.drawString(font, resolved, x, y, color, shadow);
         return font.width(resolved);
     }
+    private List<String> getAllRegistryIds(Object registryKey) {
+        ArrayList<String> ids = new ArrayList<>();
+        Object registry = getRegistry(registryKey);
+        if (registry == null) return ids;
+        Object holders = invokeAny(registry, "holders");
+        if (holders instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(holder -> {
+                Object key = invokeAny(holder, "key", "unwrapKey");
+                if (key instanceof Optional<?> optional) key = optional.orElse(null);
+                addId(ids, idFromKey(key));
+            });
+        }
+        Object elementIds = invokeAny(registry, "listElementIds");
+        if (elementIds instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(key -> addId(ids, idFromKey(key)));
+        } else if (elementIds instanceof Iterable<?> iterable) {
+            for (Object key : iterable) addId(ids, idFromKey(key));
+        }
+        Object keySet = invokeAny(registry, "keySet");
+        if (keySet instanceof Iterable<?> iterable) {
+            for (Object key : iterable) addId(ids, idFromKey(key));
+        }
+        return ids;
+    }
+
+    private Optional<?> getHolder(Object registryKey, String id) {
+        Object registry = getRegistry(registryKey);
+        Object location = parseResourceId(id);
+        if (registry == null || location == null) return Optional.empty();
+        Object holder = invokeRegistryLookup(registry, location, "getHolder", "get");
+        if (holder == null) {
+            holder = invokeRegistryLookup(registry, createElementKey(registryKey, location), "getHolder", "get");
+        }
+        if (holder instanceof Optional<?> optional) return optional;
+        return holder != null ? Optional.of(holder) : Optional.empty();
+    }
+
+    private Object getRegistry(Object registryKey) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+        Object access = mc.level.registryAccess();
+        return invokeRegistryLookup(access, registryKey, "registryOrThrow", "lookupOrThrow");
+    }
+
+    private Object invokeRegistryLookup(Object target, Object argument, String... names) {
+        if (target == null || argument == null) return null;
+        Set<String> allowed = new HashSet<>(Arrays.asList(names));
+        for (java.lang.reflect.Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 1) continue;
+            Class<?> parameter = method.getParameterTypes()[0];
+            if (!parameter.isAssignableFrom(argument.getClass())) continue;
+            try {
+                return method.invoke(target, argument);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private Object invokeAny(Object target, String... names) {
+        if (target == null) return null;
+        Set<String> allowed = new HashSet<>(Arrays.asList(names));
+        for (java.lang.reflect.Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 0) continue;
+            try {
+                return method.invoke(target);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private Object parseResourceId(String id) {
+        Object loc = parseResourceIdWith("net.minecraft.resources.ResourceLocation", id);
+        return loc != null ? loc : parseResourceIdWith("net.minecraft.resources.Identifier", id);
+    }
+
+    private Object parseResourceIdWith(String className, String id) {
+        try {
+            Class<?> cls = Class.forName(className);
+            for (String methodName : List.of("tryParse", "parse", "method_12829")) {
+                try {
+                    java.lang.reflect.Method method = cls.getMethod(methodName, String.class);
+                    return method.invoke(null, id);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private Object createElementKey(Object registryKey, Object location) {
+        Object key = createElementKeyWith("net.minecraft.resources.ResourceKey", registryKey, location);
+        return key != null ? key : createElementKeyWith("net.minecraft.registry.RegistryKey", registryKey, location);
+    }
+
+    private Object createElementKeyWith(String className, Object registryKey, Object location) {
+        try {
+            Class<?> cls = Class.forName(className);
+            for (java.lang.reflect.Method method : cls.getMethods()) {
+                if (!List.of("create", "of", "method_29179", "method_29180").contains(method.getName()) || method.getParameterCount() != 2) continue;
+                Class<?>[] params = method.getParameterTypes();
+                if (!params[0].isAssignableFrom(registryKey.getClass()) || !params[1].isAssignableFrom(location.getClass())) continue;
+                try {
+                    return method.invoke(null, registryKey, location);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+    private String idFromKey(Object key) {
+        if (key == null) return "";
+        Object id = invokeAny(key, "location");
+        return id != null ? String.valueOf(id) : String.valueOf(key);
+    }
+
+    private void addId(List<String> ids, String id) {
+        if (id != null && !id.isBlank() && !ids.contains(id)) ids.add(id);
+    }
 }
-
-

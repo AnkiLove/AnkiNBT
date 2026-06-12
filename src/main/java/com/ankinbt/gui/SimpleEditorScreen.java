@@ -47,9 +47,9 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.UiTheme;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
+import com.ankinbt.util.FlatEditBox;
 import com.ankinbt.util.ItemEditorVisuals;
 import com.ankinbt.util.ItemRegistryHelper;
-import com.ankinbt.util.MultiLineTextEditBuffer;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -217,8 +217,8 @@ extends Screen {
         this.drawBorder(g, this.px, this.py, this.pw, this.ph, border);
         g.fill(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 32, header);
         g.fill(this.px + 1, this.py + 32, this.px + this.pw - 1, this.py + 32 + 1, border);
-        g.drawString(this.font, "ANBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
-        g.drawString(this.font, "简单模式", this.px + 46, this.py + 11, 0xFF38BDF8, false);
+        g.drawString(this.font, "AnkiNBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
+        g.drawString(this.font, "简单模式", this.px + 64, this.py + 11, 0xFF38BDF8, false);
         if (this.dirty) {
             g.drawString(this.font, "*", this.px + 116, this.py + 12, -1096636, false);
         }
@@ -1676,16 +1676,18 @@ extends Screen {
     class InlineFieldEditor
     implements SubEditor {
         final String field;
-        String input;
-        int cursor;
+        final FlatEditBox inputBox;
         String error = null;
         final boolean isLore;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field;
             this.isLore = isLore;
-            this.input = currentValue != null ? currentValue : "";
-            this.cursor = this.input.length();
+            this.inputBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 22, Component.empty());
+            this.inputBox.setMaxLength(2048);
+            this.inputBox.setValue(currentValue != null ? currentValue : "");
+            this.inputBox.setResponder(value -> this.error = null);
+            this.inputBox.setFocused(true);
         }
 
         @Override
@@ -1703,16 +1705,14 @@ extends Screen {
             int iy = dy + 30;
             int iw = dw - 20;
             int ih = 22;
-            g.fill(ix, iy, ix + iw, iy + ih, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, ix, iy, iw, ih, -10262799);
-            Object disp = this.input;
-            if (font.width((String)disp) > iw - 12) {
-                int start = Math.max(0, this.cursor - 30);
-                disp = ".." + this.input.substring(start);
-            }
-            g.drawString(font, (String)disp + (System.currentTimeMillis() % 1000L < 500L ? "_" : ""), ix + 4, iy + 7, -1906448, false);
-            if (this.isLore && !this.input.isEmpty()) {
-                Component preview = SimpleEditorScreen.colorCodedToComponent(this.input);
+            this.inputBox.setX(ix);
+            this.inputBox.setY(iy);
+            this.inputBox.setWidth(iw);
+            this.inputBox.setFocused(true);
+            this.inputBox.render(g, mx, my, 0.0f);
+            String input = this.inputBox.getValue();
+            if (this.isLore && !input.isEmpty()) {
+                Component preview = SimpleEditorScreen.colorCodedToComponent(input);
                 g.drawString(font, SimpleEditorScreen.tr("ankinbt.simple.preview") + ": ", ix, iy + ih + 4, -10193781, false);
                 int previewX = ix + font.width(SimpleEditorScreen.tr("ankinbt.simple.preview") + ": ");
                 g.drawString(font, preview, previewX, iy + ih + 4, -1906448, false);
@@ -1768,6 +1768,16 @@ extends Screen {
                 this.apply();
                 return true;
             }
+            int ix = dx + 10;
+            int iy = dy + 30;
+            int iw = dw - 20;
+            this.inputBox.setX(ix);
+            this.inputBox.setY(iy);
+            this.inputBox.setWidth(iw);
+            if (this.inputBox.mouseClicked(mx, my, btn)) {
+                this.inputBox.setFocused(true);
+                return true;
+            }
             return true;
         }
 
@@ -1777,67 +1787,26 @@ extends Screen {
                 this.apply();
                 return true;
             }
-            if (key == 259 && this.cursor > 0) {
-                this.input = this.input.substring(0, this.cursor - 1) + this.input.substring(this.cursor);
-                --this.cursor;
-                this.error = null;
-                return true;
-            }
-            if (key == 261 && this.cursor < this.input.length()) {
-                this.input = this.input.substring(0, this.cursor) + this.input.substring(this.cursor + 1);
-                this.error = null;
-                return true;
-            }
-            if (key == 263 && this.cursor > 0) {
-                --this.cursor;
-                return true;
-            }
-            if (key == 262 && this.cursor < this.input.length()) {
-                ++this.cursor;
-                return true;
-            }
-            if (key == 268) {
-                this.cursor = 0;
-                return true;
-            }
-            if (key == 269) {
-                this.cursor = this.input.length();
-                return true;
-            }
-            if (key == 86 && (mod & 2) != 0) {
-                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
-                if (clip != null) {
-                    this.input = this.input.substring(0, this.cursor) + clip + this.input.substring(this.cursor);
-                    this.cursor += clip.length();
-                    this.error = null;
-                }
-                return true;
-            }
+            this.inputBox.keyPressed(key, scan, mod);
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (c >= ' ') {
-                this.input = this.input.substring(0, this.cursor) + c + this.input.substring(this.cursor);
-                ++this.cursor;
-                this.error = null;
-                return true;
-            }
-            return false;
+            return this.inputBox.charTyped(c, mod);
         }
 
         void insertAtCursor(String text) {
-            this.input = this.input.substring(0, this.cursor) + text + this.input.substring(this.cursor);
-            this.cursor += text.length();
+            this.inputBox.insertText(text);
         }
 
         private void apply() {
-            if (this.input.isEmpty() && !this.field.equals("rename") && !this.field.equals("lore_add") && !this.field.startsWith("lore:")) {
+            String input = this.inputBox.getValue();
+            if (input.isEmpty() && !this.field.equals("rename") && !this.field.equals("lore_add") && !this.field.startsWith("lore:")) {
                 this.error = SimpleEditorScreen.tr("ankinbt.simple.invalid_number");
                 return;
             }
-            SimpleEditorScreen.this.applyInlineEdit(this.field, this.input, this.isLore);
+            SimpleEditorScreen.this.applyInlineEdit(this.field, input, this.isLore);
         }
 
         private String getFieldLabel(String f) {
@@ -3218,7 +3187,7 @@ extends Screen {
         private final List<String> allAttrs = new ArrayList<String>();
         private List<String> filtered = new ArrayList<String>();
         private String searchQ = "";
-        private int searchCursor = 0;
+        private final FlatEditBox searchBox;
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
@@ -3230,6 +3199,14 @@ extends Screen {
         private static final String[] SLOT_KEYS = new String[]{"any", "mainhand", "offhand", "head", "chest", "legs", "feet", "hand", "armor"};
 
         AttributePickerSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
+            this.searchBox.setMaxLength(128);
+            this.searchBox.setHint(Component.translatable("ankinbt.search.hint"));
+            this.searchBox.setResponder(value -> {
+                this.searchQ = value == null ? "" : value;
+                this.filter();
+            });
+            this.searchBox.setFocused(true);
             try {
                 this.allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
             } catch (Throwable ignored) {
@@ -3265,10 +3242,11 @@ extends Screen {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            g.fill(sx, sy, sx + sw, sy + sh, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, sx, sy, sw, sh, this.focusField == 0 ? -10262799 : -14540234);
-            String sd = this.searchQ.isEmpty() ? SimpleEditorScreen.tr("ankinbt.search.hint") : this.searchQ;
-            g.drawString(font, sd + (this.focusField == 0 && System.currentTimeMillis() % 1000L < 500L ? "_" : ""), sx + 4, sy + 5, this.searchQ.isEmpty() ? -10193781 : -1906448, false);
+            this.searchBox.setX(sx);
+            this.searchBox.setY(sy);
+            this.searchBox.setWidth(sw);
+            this.searchBox.setFocused(this.focusField == 0);
+            this.searchBox.render(g, mx, my, 0.0f);
             int ly = sy + sh + 4;
             int listH = h - 140;
             int maxItems = listH / 16;
@@ -3350,8 +3328,12 @@ extends Screen {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            if (mx >= (double)sx && mx < (double)(sx + sw) && my >= (double)sy && my < (double)(sy + sh)) {
+            this.searchBox.setX(sx);
+            this.searchBox.setY(sy);
+            this.searchBox.setWidth(sw);
+            if (this.searchBox.mouseClicked(mx, my, btn)) {
                 this.focusField = 0;
+                this.searchBox.setFocused(true);
                 return true;
             }
             int bottomY = y + h - 90;
@@ -3422,18 +3404,8 @@ extends Screen {
                     return true;
                 }
             } else {
-                if (key == 259 && this.searchCursor > 0 && !this.searchQ.isEmpty()) {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor - 1) + this.searchQ.substring(this.searchCursor);
-                    --this.searchCursor;
-                    this.filter();
-                    return true;
-                }
-                if (key == 263 && this.searchCursor > 0) {
-                    --this.searchCursor;
-                    return true;
-                }
-                if (key == 262 && this.searchCursor < this.searchQ.length()) {
-                    ++this.searchCursor;
+                if (this.searchBox.keyPressed(key, scan, mod)) {
+                    this.searchQ = this.searchBox.getValue();
                     return true;
                 }
             }
@@ -3449,9 +3421,8 @@ extends Screen {
                         ++this.amountCursor;
                     }
                 } else {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor) + c + this.searchQ.substring(this.searchCursor);
-                    ++this.searchCursor;
-                    this.filter();
+                    this.searchBox.charTyped(c, mod);
+                    this.searchQ = this.searchBox.getValue();
                 }
                 return true;
             }
@@ -3504,22 +3475,24 @@ extends Screen {
 
     class LoreTextEditorSubEditor
     implements SubEditor {
-        private final MultiLineTextEditBuffer buffer;
+        private final List<String> lines = new ArrayList<String>();
+        private final List<FlatEditBox> lineBoxes = new ArrayList<FlatEditBox>();
+        private int activeLine = 0;
         private int scrollOff = 0;
-        private boolean showRawCodes = false;
-        private boolean draggingText = false;
+        private boolean showRawCodes = true;
 
         LoreTextEditorSubEditor() {
-            ArrayList<String> initial = new ArrayList<String>();
             List<Component> lore = SimpleEditorScreen.this.getLore();
             if (lore.isEmpty()) {
-                initial.add("");
+                this.lines.add("");
             } else {
                 for (int i = 0; i < lore.size(); ++i) {
-                    initial.add(SimpleEditorScreen.this.getLoreRawText(i));
+                    this.lines.add(SimpleEditorScreen.this.getLoreRawText(i));
                 }
             }
-            this.buffer = new MultiLineTextEditBuffer(initial);
+            this.activeLine = Math.max(0, this.lines.size() - 1);
+            this.rebuildLineBoxes();
+            this.activeBox().setCursorPosition(this.activeBox().getValue().length());
         }
 
         @Override
@@ -3550,36 +3523,29 @@ extends Screen {
             g.fill(textX - 2, textY - 2, textX + textW + 2, textY + textH + 2, -15592930);
             SimpleEditorScreen.this.drawBorder(g, textX - 2, textY - 2, textW + 4, textH + 4, -14540234);
             g.enableScissor(textX, textY, textX + textW, textY + textH);
-            int end = Math.min(this.scrollOff + maxVisLines, this.buffer.lines().size());
+            int end = Math.min(this.scrollOff + maxVisLines, this.lines.size());
             for (int i = this.scrollOff; i < end; ++i) {
                 int ly = textY + (i - this.scrollOff) * lineH;
-                String line = this.buffer.lines().get(i);
+                String line = this.lines.get(i);
+                FlatEditBox box = this.lineBoxes.get(i);
                 g.drawString(font, String.valueOf(i + 1), textX, ly + 2, -10193781, false);
-                if (i == this.buffer.cursorLine()) {
+                if (i == this.activeLine) {
                     g.fill(contentX - 2, ly, textX + textW, ly + lineH, 0x18FFFFFF);
                 }
-                if (this.buffer.lineHasSelection(i)) {
-                    int sx = contentX + this.textWidthForColumn(font, line, this.buffer.selectionStartCol(i));
-                    int ex = contentX + this.textWidthForColumn(font, line, this.buffer.selectionEndCol(i));
-                    g.fill(sx, ly + 1, Math.max(sx + 1, ex), ly + lineH - 1, 1715176182);
-                }
+                this.configureLineBox(box, contentX, ly, textW - 28, lineH, i == this.activeLine);
                 if (this.showRawCodes) {
-                    g.drawString(font, line, contentX, ly + 2, -1906448, false);
+                    box.render(g, mx, my, 0.0f);
                 } else {
                     g.drawString(font, SimpleEditorScreen.colorCodedToComponent(line), contentX, ly + 2, -1906448, false);
                 }
-                if (!this.buffer.hasSelection() && i == this.buffer.cursorLine() && System.currentTimeMillis() % 1000L < 500L) {
-                    int cx = contentX + this.textWidthForColumn(font, line, this.buffer.cursorCol());
-                    g.fill(cx, ly + 1, cx + 1, ly + lineH - 1, -1906448);
-                }
             }
             g.disableScissor();
-            if (this.buffer.lines().size() > maxVisLines) {
+            if (this.lines.size() > maxVisLines) {
                 int sbx = textX + textW - 4;
                 g.fill(sbx, textY, sbx + 4, textY + textH, 0x30FFFFFF);
-                float ratio = (float)maxVisLines / (float)this.buffer.lines().size();
+                float ratio = (float)maxVisLines / (float)this.lines.size();
                 int thumbH = Math.max(8, (int)((float)textH * ratio));
-                float sr = (float)this.scrollOff / (float)Math.max(1, this.buffer.lines().size() - maxVisLines);
+                float sr = (float)this.scrollOff / (float)Math.max(1, this.lines.size() - maxVisLines);
                 int thumbY = textY + (int)((float)(textH - thumbH) * sr);
                 g.fill(sbx, thumbY, sbx + 4, thumbY + thumbH, 0x70FFFFFF);
             }
@@ -3600,60 +3566,91 @@ extends Screen {
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
             g.fill(okX, by, okX + bw, by + bh2, oh ? -10262799 : -11581723);
             g.drawString(font, SimpleEditorScreen.tr("ankinbt.edit.apply"), okX + (bw - font.width(SimpleEditorScreen.tr("ankinbt.edit.apply"))) / 2, by + 6, -1906448, false);
-            String state = this.buffer.cursorLine() + 1 + ":" + this.buffer.cursorCol() + " | " + this.buffer.lines().size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix");
+            String state = this.activeLine + 1 + ":" + this.cursorCol() + " | " + this.lines.size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix");
             g.drawString(font, state, dx + dw - font.width(state) - 10, by + 6, -10193781, false);
         }
 
         private void scrollToCursor(int maxVisLines) {
-            if (this.buffer.cursorLine() < this.scrollOff) {
-                this.scrollOff = this.buffer.cursorLine();
+            if (this.activeLine < this.scrollOff) {
+                this.scrollOff = this.activeLine;
             }
-            if (this.buffer.cursorLine() >= this.scrollOff + maxVisLines) {
-                this.scrollOff = this.buffer.cursorLine() - maxVisLines + 1;
+            if (this.activeLine >= this.scrollOff + maxVisLines) {
+                this.scrollOff = this.activeLine - maxVisLines + 1;
             }
-            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.buffer.lines().size() - maxVisLines)));
+            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - maxVisLines)));
         }
 
-        private int textWidthForColumn(Font font, String line, int col) {
-            int safeCol = Math.max(0, Math.min(col, line.length()));
-            if (this.showRawCodes) {
-                return font.width(line.substring(0, safeCol));
-            }
-            return font.width(this.stripColorCodes(line.substring(0, safeCol)));
+        private FlatEditBox activeBox() {
+            this.ensureLineBoxes();
+            return this.lineBoxes.get(Math.max(0, Math.min(this.activeLine, this.lineBoxes.size() - 1)));
         }
 
-        private int columnFromMouse(Font font, String line, double mx, int contentX) {
-            int local = Math.max(0, (int)mx - contentX);
-            int best = 0;
-            int bestDist = Integer.MAX_VALUE;
-            for (int i = 0; i <= line.length(); ++i) {
-                int x = this.textWidthForColumn(font, line, i);
-                int dist = Math.abs(x - local);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    best = i;
-                }
+        private void ensureLineBoxes() {
+            while (this.lineBoxes.size() < this.lines.size()) {
+                this.lineBoxes.add(this.newLineBox(this.lines.get(this.lineBoxes.size())));
             }
-            return best;
+            while (this.lineBoxes.size() > this.lines.size()) {
+                this.lineBoxes.remove(this.lineBoxes.size() - 1);
+            }
         }
 
-        private String stripColorCodes(String s) {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < s.length(); ++i) {
-                if (s.charAt(i) == '&' && i + 1 < s.length()) {
-                    char next = s.charAt(i + 1);
-                    if (next == '#' && i + 7 < s.length()) {
-                        i += 7;
-                        continue;
-                    }
-                    if ("0123456789abcdefklmnorABCDEFKLMNOR".indexOf(next) >= 0) {
-                        ++i;
-                        continue;
-                    }
-                }
-                sb.append(s.charAt(i));
+        private FlatEditBox newLineBox(String value) {
+            FlatEditBox box = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 14, Component.empty());
+            box.setMaxLength(2048);
+            box.setBordered(false);
+            box.setValue(value == null ? "" : value);
+            return box;
+        }
+
+        private void rebuildLineBoxes() {
+            this.lineBoxes.clear();
+            for (String line : this.lines) {
+                this.lineBoxes.add(this.newLineBox(line));
             }
-            return sb.toString();
+            this.focusActiveBox();
+        }
+
+        private void configureLineBox(FlatEditBox box, int x, int y, int w, int h, boolean focused) {
+            box.setX(x);
+            box.setY(y);
+            box.setWidth(Math.max(1, w));
+            box.setFocused(focused);
+        }
+
+        private void focusActiveBox() {
+            this.ensureLineBoxes();
+            for (int i = 0; i < this.lineBoxes.size(); ++i) {
+                this.lineBoxes.get(i).setFocused(i == this.activeLine);
+            }
+        }
+
+        private int cursorCol() {
+            FlatEditBox box = this.activeBox();
+            return Math.max(0, Math.min(box.getCursorPosition(), box.getValue().length()));
+        }
+
+        private void syncLine(int index) {
+            if (index >= 0 && index < this.lines.size() && index < this.lineBoxes.size()) {
+                this.lines.set(index, this.lineBoxes.get(index).getValue());
+            }
+        }
+
+        private void syncAllLines() {
+            this.ensureLineBoxes();
+            for (int i = 0; i < this.lines.size(); ++i) {
+                this.syncLine(i);
+            }
+        }
+
+        private void setActiveLine(int line) {
+            this.syncLine(this.activeLine);
+            this.activeLine = Math.max(0, Math.min(line, this.lines.size() - 1));
+            this.focusActiveBox();
+        }
+
+        private boolean hasLineSelection(FlatEditBox box) {
+            String selected = box.getHighlighted();
+            return selected != null && !selected.isEmpty();
         }
 
         @Override
@@ -3674,7 +3671,7 @@ extends Screen {
             int bh2 = 20;
             int palX = dx + 10;
             if (mx >= (double)palX && mx < (double)(palX + 62) && my >= (double)by && my < (double)(by + bh2)) {
-                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.buffer.lines().get(this.buffer.cursorLine()), true);
+                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.activeBox().getValue(), true);
                 SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this, tempEditor);
                 return true;
             }
@@ -3693,81 +3690,136 @@ extends Screen {
             int textW = dw - 20;
             int textH = dh - 74;
             if (mx >= (double)textX && mx < (double)(textX + textW) && my >= (double)textY && my < (double)(textY + textH)) {
-                this.moveCursorFromMouse(mx, my, textX, textY, textW, textH, Screen.hasShiftDown());
-                this.draggingText = btn == 0;
+                int lineH = 14;
+                int clickedLine = (int)((my - (double)textY) / (double)lineH) + this.scrollOff;
+                if (clickedLine >= 0 && clickedLine < this.lines.size()) {
+                    int contentX = textX + 24;
+                    int ly = textY + (clickedLine - this.scrollOff) * lineH;
+                    FlatEditBox box = this.lineBoxes.get(clickedLine);
+                    this.configureLineBox(box, contentX, ly, textW - 28, lineH, true);
+                    this.setActiveLine(clickedLine);
+                    if (this.showRawCodes) {
+                        box.mouseClicked(mx, my, btn);
+                    } else {
+                        box.setCursorPosition(box.getValue().length());
+                    }
+                }
                 return true;
             }
-            this.draggingText = false;
             return true;
         }
 
         @Override
         public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY, int x, int y, int w, int h) {
-            if (!this.draggingText || button != 0) {
-                return false;
-            }
-            int dw = Math.min(w - 10, Math.max(320, Math.min(500, w - 24)));
-            int dh = Math.min(h - 10, Math.max(220, Math.min(340, h - 16)));
-            int dx = x + (w - dw) / 2;
-            int dy = y + (h - dh) / 2;
-            this.moveCursorFromMouse(mx, my, dx + 10, dy + 30, dw - 20, dh - 74, true);
-            return true;
-        }
-
-        private void moveCursorFromMouse(double mx, double my, int textX, int textY, int textW, int textH, boolean selecting) {
-            int lineH = 14;
-            int maxVisLines = Math.max(1, textH / lineH);
-            int clickedLine = (int)((my - (double)textY) / (double)lineH) + this.scrollOff;
-            clickedLine = Math.max(0, Math.min(clickedLine, this.buffer.lines().size() - 1));
-            int contentX = textX + 24;
-            int col = this.columnFromMouse(SimpleEditorScreen.this.font, this.buffer.lines().get(clickedLine), mx, contentX);
-            this.buffer.moveTo(clickedLine, col, selecting);
-            this.scrollToCursor(maxVisLines);
+            return false;
         }
 
         @Override
         public boolean keyPressed(int key, int scan, int mod) {
+            FlatEditBox box = this.activeBox();
             if (key == 257 || key == 335) {
-                this.buffer.insertNewLine();
+                this.syncLine(this.activeLine);
+                int col = this.cursorCol();
+                String line = this.lines.get(this.activeLine);
+                this.lines.set(this.activeLine, line.substring(0, col));
+                this.lines.add(this.activeLine + 1, line.substring(col));
+                this.rebuildLineBoxes();
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().setCursorPosition(0);
                 return true;
             }
-            if (this.buffer.keyPressed(key, mod)) {
+            if (key == 259 && this.cursorCol() == 0 && !this.hasLineSelection(box) && this.activeLine > 0) {
+                this.syncLine(this.activeLine);
+                String line = this.lines.remove(this.activeLine);
+                int prev = this.activeLine - 1;
+                int col = this.lines.get(prev).length();
+                this.lines.set(prev, this.lines.get(prev) + line);
+                this.rebuildLineBoxes();
+                this.setActiveLine(prev);
+                this.activeBox().setCursorPosition(col);
                 return true;
             }
+            if (key == 261 && this.cursorCol() == box.getValue().length() && !this.hasLineSelection(box) && this.activeLine < this.lines.size() - 1) {
+                this.syncLine(this.activeLine);
+                this.lines.set(this.activeLine, this.lines.get(this.activeLine) + this.lines.remove(this.activeLine + 1));
+                this.rebuildLineBoxes();
+                this.setActiveLine(this.activeLine);
+                return true;
+            }
+            if (key == 265 && this.activeLine > 0) {
+                int col = this.cursorCol();
+                this.setActiveLine(this.activeLine - 1);
+                this.activeBox().setCursorPosition(Math.min(col, this.activeBox().getValue().length()));
+                return true;
+            }
+            if (key == 264 && this.activeLine < this.lines.size() - 1) {
+                int col = this.cursorCol();
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().setCursorPosition(Math.min(col, this.activeBox().getValue().length()));
+                return true;
+            }
+            if (key == 263 && this.cursorCol() == 0 && this.activeLine > 0 && !this.hasLineSelection(box)) {
+                this.setActiveLine(this.activeLine - 1);
+                this.activeBox().setCursorPosition(this.activeBox().getValue().length());
+                return true;
+            }
+            if (key == 262 && this.cursorCol() == box.getValue().length() && this.activeLine < this.lines.size() - 1 && !this.hasLineSelection(box)) {
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().setCursorPosition(0);
+                return true;
+            }
+            if (box.keyPressed(key, scan, mod)) {
+                this.syncLine(this.activeLine);
+                return true;
+            }
+            this.syncLine(this.activeLine);
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            return this.buffer.charTyped(c);
+            FlatEditBox box = this.activeBox();
+            if (box.charTyped(c, mod)) {
+                this.syncLine(this.activeLine);
+                return true;
+            }
+            this.syncLine(this.activeLine);
+            return true;
         }
 
         @Override
         public boolean mouseScrolled(double sx, double sy) {
             this.scrollOff -= (int)sy * 3;
-            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.buffer.lines().size() - 5)));
+            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - 5)));
             return true;
         }
 
         void insertAtCursor(String text) {
             String suffix = text != null && text.length() == 2 && text.charAt(0) == '&' && "0123456789abcdefABCDEF".indexOf(text.charAt(1)) >= 0 ? "&r" : "";
-            this.buffer.wrapSelectionOrInsert(text, suffix);
+            FlatEditBox box = this.activeBox();
+            String selected = box.getHighlighted();
+            if (selected != null && !selected.isEmpty() && !suffix.isEmpty()) {
+                box.insertText((text == null ? "" : text) + selected + suffix);
+            } else {
+                box.insertText(text == null ? "" : text);
+            }
+            this.syncLine(this.activeLine);
         }
 
         private void applyAll() {
-            List<String> lines = this.buffer.lines();
-            while (lines.size() > 1 && lines.get(lines.size() - 1).isEmpty()) {
-                lines.remove(lines.size() - 1);
+            this.syncAllLines();
+            while (this.lines.size() > 1 && this.lines.get(this.lines.size() - 1).isEmpty()) {
+                this.lines.remove(this.lines.size() - 1);
             }
             ArrayList<Component> loreComponents = new ArrayList<Component>();
-            for (String line : lines) {
-                if (!line.isEmpty() || lines.size() == 1) {
+            for (String line : this.lines) {
+                if (!line.isEmpty() || this.lines.size() == 1) {
                     loreComponents.add(SimpleEditorScreen.colorCodedToComponent(line));
                     continue;
                 }
                 loreComponents.add((Component)Component.empty());
             }
-            if (loreComponents.size() == 1 && lines.get(0).isEmpty()) {
+            if (loreComponents.size() == 1 && this.lines.get(0).isEmpty()) {
                 SimpleEditorScreen.this.editStack.remove(DataComponents.LORE);
             } else {
                 SimpleEditorScreen.this.setLore(loreComponents);
@@ -3782,7 +3834,7 @@ extends Screen {
         private final List<String> allEnchants = new ArrayList<String>();
         private List<String> filtered = new ArrayList<String>();
         private String searchQ = "";
-        private int searchCursor = 0;
+        private final FlatEditBox searchBox;
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
@@ -3791,6 +3843,14 @@ extends Screen {
         private boolean focusLevel = false;
 
         EnchantPickerSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
+            this.searchBox.setMaxLength(128);
+            this.searchBox.setHint(Component.translatable("ankinbt.search.hint"));
+            this.searchBox.setResponder(value -> {
+                this.searchQ = value == null ? "" : value;
+                this.filter();
+            });
+            this.searchBox.setFocused(true);
             try {
                 this.allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
             } catch (Throwable ignored) {
@@ -3825,10 +3885,11 @@ extends Screen {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            g.fill(sx, sy, sx + sw, sy + sh, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, sx, sy, sw, sh, this.focusLevel ? -14540234 : -10262799);
-            String sd = this.searchQ.isEmpty() ? SimpleEditorScreen.tr("ankinbt.search.hint") : this.searchQ;
-            g.drawString(font, sd + (!this.focusLevel && System.currentTimeMillis() % 1000L < 500L ? "_" : ""), sx + 4, sy + 5, this.searchQ.isEmpty() ? -10193781 : -1906448, false);
+            this.searchBox.setX(sx);
+            this.searchBox.setY(sy);
+            this.searchBox.setWidth(sw);
+            this.searchBox.setFocused(!this.focusLevel);
+            this.searchBox.render(g, mx, my, 0.0f);
             int ly = sy + sh + 4;
             int listH = h - 80;
             int maxItems = listH / 16;
@@ -3875,8 +3936,12 @@ extends Screen {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            if (mx >= (double)sx && mx < (double)(sx + sw) && my >= (double)sy && my < (double)(sy + sh)) {
+            this.searchBox.setX(sx);
+            this.searchBox.setY(sy);
+            this.searchBox.setWidth(sw);
+            if (this.searchBox.mouseClicked(mx, my, btn)) {
                 this.focusLevel = false;
+                this.searchBox.setFocused(true);
                 return true;
             }
             int by = y + h - 30;
@@ -3922,18 +3987,8 @@ extends Screen {
                     return true;
                 }
             } else {
-                if (key == 259 && this.searchCursor > 0 && !this.searchQ.isEmpty()) {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor - 1) + this.searchQ.substring(this.searchCursor);
-                    --this.searchCursor;
-                    this.filter();
-                    return true;
-                }
-                if (key == 263 && this.searchCursor > 0) {
-                    --this.searchCursor;
-                    return true;
-                }
-                if (key == 262 && this.searchCursor < this.searchQ.length()) {
-                    ++this.searchCursor;
+                if (this.searchBox.keyPressed(key, scan, mod)) {
+                    this.searchQ = this.searchBox.getValue();
                     return true;
                 }
             }
@@ -3949,9 +4004,8 @@ extends Screen {
                         ++this.levelCursor;
                     }
                 } else {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor) + c + this.searchQ.substring(this.searchCursor);
-                    ++this.searchCursor;
-                    this.filter();
+                    this.searchBox.charTyped(c, mod);
+                    this.searchQ = this.searchBox.getValue();
                 }
                 return true;
             }

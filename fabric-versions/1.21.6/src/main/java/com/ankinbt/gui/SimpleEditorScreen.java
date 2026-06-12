@@ -45,8 +45,8 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.UiTheme;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
+import com.ankinbt.util.FlatEditBox;
 import com.ankinbt.util.ItemRegistryHelper;
-import com.ankinbt.util.TextEditBuffer;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -238,8 +238,8 @@ extends class_437 {
         this.drawBorder(g, this.px, this.py, this.pw, this.ph, border);
         g.method_25294(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 32, header);
         g.method_25294(this.px + 1, this.py + 32, this.px + this.pw - 1, this.py + 32 + 1, border);
-        VersionCompat.get().drawString(g, this.field_22793, "ANBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
-        VersionCompat.get().drawString(g, this.field_22793, "简单模式", this.px + 46, this.py + 11, 0xFF38BDF8, false);
+        VersionCompat.get().drawString(g, this.field_22793, "AnkiNBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
+        VersionCompat.get().drawString(g, this.field_22793, "简单模式", this.px + 64, this.py + 11, 0xFF38BDF8, false);
         if (this.dirty) {
             VersionCompat.get().drawString(g, this.field_22793, "*", this.px + 116, this.py + 12, -1096636, false);
         }
@@ -2207,20 +2207,22 @@ extends class_437 {
     class InlineFieldEditor
     implements SubEditor {
         final String field;
-        final TextEditBuffer input;
+        final FlatEditBox inputBox;
         String error = null;
         final boolean isLore;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field;
             this.isLore = isLore;
-            this.input = new TextEditBuffer(currentValue);
+            this.inputBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 22, (class_2561)class_2561.method_43473());
+            this.inputBox.method_1852(2048);
+            this.inputBox.method_1852(currentValue == null ? "" : currentValue);
+            this.inputBox.method_1863(value -> this.error = null);
+            this.inputBox.method_25365(true);
         }
 
         @Override
         public void render(class_332 g, class_327 font, int mx, int my, int x, int y, int w, int h) {
-            int selEnd;
-            int selStart;
             boolean colorEditable = this.isLore || this.field.equals("rename");
             int dw = Math.min(w - 20, 360);
             int dh = colorEditable ? 148 : 104;
@@ -2235,23 +2237,13 @@ extends class_437 {
             int iy = dy + 30;
             int iw = dw - 20;
             int ih = 22;
-            g.method_25294(ix, iy, ix + iw, iy + ih, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, ix, iy, iw, ih, -10262799);
-            int maxTextW = iw - 10;
-            int viewStart = SimpleEditorScreen.this.textViewStart(font, this.input.value(), this.input.cursor(), maxTextW);
-            String disp = SimpleEditorScreen.this.visibleText(font, this.input.value(), viewStart, maxTextW);
-            if (this.input.hasSelection() && (selStart = Math.max(this.input.selectionStart(), viewStart)) < (selEnd = Math.min(this.input.selectionEnd(), viewStart + disp.length()))) {
-                int sx = ix + 4 + font.method_1727(this.input.value().substring(viewStart, selStart));
-                int ex = ix + 4 + font.method_1727(this.input.value().substring(viewStart, selEnd));
-                g.method_25294(sx, iy + 4, ex, iy + ih - 4, 1715176182);
-            }
-            VersionCompat.get().drawString(g, font, disp, ix + 4, iy + 7, -1906448, false);
-            if (!this.input.hasSelection() && System.currentTimeMillis() % 1000L < 500L) {
-                int cursorX = ix + 4 + font.method_1727(this.input.value().substring(viewStart, Math.max(viewStart, Math.min(this.input.cursor(), this.input.value().length()))));
-                g.method_25294(cursorX, iy + 4, cursorX + 1, iy + ih - 4, -1906448);
-            }
-            if (colorEditable && !this.input.value().isEmpty()) {
-                class_2561 preview = SimpleEditorScreen.colorCodedToComponent(this.input.value());
+            this.inputBox.method_46421(ix);
+            this.inputBox.method_46419(iy);
+            this.inputBox.method_25358(iw);
+            this.inputBox.method_25365(true);
+            this.inputBox.method_25394(g, mx, my, 0.0f);
+            if (colorEditable && !this.inputBox.method_1882().isEmpty()) {
+                class_2561 preview = SimpleEditorScreen.colorCodedToComponent(this.inputBox.method_1882());
                 VersionCompat.get().drawString(g, font, SimpleEditorScreen.tr("ankinbt.simple.preview") + ": ", ix, iy + ih + 4, -10193781, false);
                 int previewX = ix + font.method_1727(SimpleEditorScreen.tr("ankinbt.simple.preview") + ": ");
                 VersionCompat.get().drawString(g, font, preview, previewX, iy + ih + 4, -1906448, false);
@@ -2298,11 +2290,11 @@ extends class_437 {
             int ix = dx + 10;
             int iy = dy + 30;
             int iw = dw - 20;
-            int ih = 22;
-            if (mx >= (double)ix && mx < (double)(ix + iw) && my >= (double)iy && my < (double)(iy + ih)) {
-                int maxTextW = iw - 10;
-                int viewStart = SimpleEditorScreen.this.textViewStart(SimpleEditorScreen.this.field_22793, this.input.value(), this.input.cursor(), maxTextW);
-                this.input.moveTo(SimpleEditorScreen.this.plainCursorFromMouse(SimpleEditorScreen.this.field_22793, this.input.value(), viewStart, (int)mx - ix - 4, maxTextW), false);
+            this.inputBox.method_46421(ix);
+            this.inputBox.method_46419(iy);
+            this.inputBox.method_25358(iw);
+            if (this.inputBox.method_25402(mx, my, btn)) {
+                this.inputBox.method_25365(true);
                 return true;
             }
             int by = dy + dh - 28;
@@ -2327,11 +2319,8 @@ extends class_437 {
                 this.apply();
                 return true;
             }
-            String before = this.input.value();
-            if (this.input.keyPressed(key, mod)) {
-                if (!before.equals(this.input.value())) {
-                    this.error = null;
-                }
+            if (this.inputBox.method_25404(key, scan, mod)) {
+                this.error = null;
                 return true;
             }
             return true;
@@ -2339,7 +2328,7 @@ extends class_437 {
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (this.input.charTyped(c)) {
+            if (this.inputBox.method_25400(c, mod)) {
                 this.error = null;
                 return true;
             }
@@ -2347,16 +2336,15 @@ extends class_437 {
         }
 
         void insertAtCursor(String text) {
-            boolean wrapsSelection = this.input.hasSelection() && (text == null || !text.endsWith("r"));
-            this.input.wrapSelectionOrInsert(text, wrapsSelection ? "&r" : "");
+            this.inputBox.method_1853(text == null ? "" : text);
         }
 
         private void apply() {
-            if (this.input.value().isEmpty() && !this.field.equals("rename") && !this.field.equals("lore_add") && !this.field.startsWith("lore:")) {
+            if (this.inputBox.method_1882().isEmpty() && !this.field.equals("rename") && !this.field.equals("lore_add") && !this.field.startsWith("lore:")) {
                 this.error = SimpleEditorScreen.tr("ankinbt.simple.invalid_number");
                 return;
             }
-            SimpleEditorScreen.this.applyInlineEdit(this.field, this.input.value(), this.isLore);
+            SimpleEditorScreen.this.applyInlineEdit(this.field, this.inputBox.method_1882(), this.isLore);
         }
 
         private String getFieldLabel(String f) {
@@ -3856,7 +3844,7 @@ extends class_437 {
         private final List<String> allAttrs = new ArrayList<String>();
         private List<String> filtered = new ArrayList<String>();
         private String searchQ = "";
-        private int searchCursor = 0;
+        private final FlatEditBox searchBox;
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
@@ -3868,6 +3856,14 @@ extends class_437 {
         private static final String[] SLOT_KEYS = new String[]{"any", "mainhand", "offhand", "head", "chest", "legs", "feet", "hand", "armor"};
 
         AttributePickerSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 18, (class_2561)class_2561.method_43473());
+            this.searchBox.method_1852(128);
+            this.searchBox.method_47404((class_2561)class_2561.method_43471((String)"ankinbt.search.hint"));
+            this.searchBox.method_1863(value -> {
+                this.searchQ = value == null ? "" : value;
+                this.filter();
+            });
+            this.searchBox.method_25365(true);
             try {
                 this.allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
             } catch (Throwable ignored) {
@@ -3904,9 +3900,11 @@ extends class_437 {
             int sw = w - 16;
             int sh = 18;
             g.method_25294(sx, sy, sx + sw, sy + sh, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, sx, sy, sw, sh, this.focusField == 0 ? -10262799 : -14540234);
-            String sd = this.searchQ.isEmpty() ? SimpleEditorScreen.tr("ankinbt.search.hint") : this.searchQ;
-            VersionCompat.get().drawString(g, font, sd + (this.focusField == 0 && System.currentTimeMillis() % 1000L < 500L ? "_" : ""), sx + 4, sy + 5, this.searchQ.isEmpty() ? -10193781 : -1906448, false);
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            this.searchBox.method_25365(this.focusField == 0);
+            this.searchBox.method_25394(g, mx, my, 0.0f);
             int ly = sy + sh + 4;
             boolean showNotes = AnkiConfig.isAttributeNotesEnabled();
             int listH = h - (showNotes ? 162 : 140);
@@ -4001,8 +3999,12 @@ extends class_437 {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            if (mx >= (double)sx && mx < (double)(sx + sw) && my >= (double)sy && my < (double)(sy + sh)) {
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            if (this.searchBox.method_25402(mx, my, btn)) {
                 this.focusField = 0;
+                this.searchBox.method_25365(true);
                 return true;
             }
             int bottomY = y + h - 90;
@@ -4073,18 +4075,8 @@ extends class_437 {
                     return true;
                 }
             } else {
-                if (key == 259 && this.searchCursor > 0 && !this.searchQ.isEmpty()) {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor - 1) + this.searchQ.substring(this.searchCursor);
-                    --this.searchCursor;
-                    this.filter();
-                    return true;
-                }
-                if (key == 263 && this.searchCursor > 0) {
-                    --this.searchCursor;
-                    return true;
-                }
-                if (key == 262 && this.searchCursor < this.searchQ.length()) {
-                    ++this.searchCursor;
+                if (this.searchBox.method_25404(key, scan, mod)) {
+                    this.searchQ = this.searchBox.method_1882();
                     return true;
                 }
             }
@@ -4100,9 +4092,8 @@ extends class_437 {
                         ++this.amountCursor;
                     }
                 } else {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor) + c + this.searchQ.substring(this.searchCursor);
-                    ++this.searchCursor;
-                    this.filter();
+                    this.searchBox.method_25400(c, mod);
+                    this.searchQ = this.searchBox.method_1882();
                 }
                 return true;
             }
@@ -4156,13 +4147,10 @@ extends class_437 {
     class LoreTextEditorSubEditor
     implements SubEditor {
         private final List<String> lines = new ArrayList<String>();
-        private int cursorLine = 0;
-        private int cursorCol = 0;
-        private int anchorLine = 0;
-        private int anchorCol = 0;
+        private final List<FlatEditBox> lineBoxes = new ArrayList<FlatEditBox>();
+        private int activeLine = 0;
         private int scrollOff = 0;
-        private boolean showRawCodes = false;
-        private boolean previewMode = false;
+        private boolean showRawCodes = true;
 
         LoreTextEditorSubEditor() {
             List<class_2561> lore = SimpleEditorScreen.this.getLore();
@@ -4173,14 +4161,13 @@ extends class_437 {
                     this.lines.add(SimpleEditorScreen.this.getLoreRawText(i));
                 }
             }
-            this.cursorLine = this.lines.size() - 1;
-            this.cursorCol = this.lines.get(this.cursorLine).length();
-            this.clearTextSelection();
+            this.activeLine = Math.max(0, this.lines.size() - 1);
+            this.rebuildLineBoxes();
+            this.activeBox().method_1883(this.activeBox().method_1882().length(), false);
         }
 
         @Override
         public void render(class_332 g, class_327 font, int mx, int my, int x, int y, int w, int h) {
-            boolean previewBtnHover;
             int dw = Math.min(w - 10, 420);
             int dh = Math.min(h - 10, 320);
             int dx = x + (w - dw) / 2;
@@ -4188,68 +4175,40 @@ extends class_437 {
             g.method_25294(dx, dy, dx + dw, dy + dh, -267909104);
             SimpleEditorScreen.this.drawBorder(g, dx, dy, dw, dh, -10262799);
             VersionCompat.get().drawString(g, font, SimpleEditorScreen.tr("ankinbt.simple.lore_text_editor"), dx + 10, dy + 8, -1906448, false);
-            String previewLabel = this.previewMode ? SimpleEditorScreen.tr("ankinbt.simple.lore_edit_mode") : SimpleEditorScreen.tr("ankinbt.simple.lore_preview_mode");
-            int previewBtnW = font.method_1727(previewLabel) + 10;
-            int previewBtnX = dx + dw - previewBtnW - 10;
-            boolean bl = previewBtnHover = mx >= previewBtnX && mx < previewBtnX + previewBtnW && my >= dy + 4 && my < dy + 18;
-            g.method_25294(previewBtnX, dy + 4, previewBtnX + previewBtnW, dy + 18, this.previewMode ? -14498466 : (previewBtnHover ? 0x50FFFFFF : 0x30FFFFFF));
-            VersionCompat.get().drawString(g, font, previewLabel, previewBtnX + 5, dy + 8, previewBtnHover ? -1906448 : -7035976, false);
             String rawLabel = this.showRawCodes ? SimpleEditorScreen.tr("ankinbt.simple.lore_show_preview") : SimpleEditorScreen.tr("ankinbt.simple.lore_show_raw");
             int rawBtnW = font.method_1727(rawLabel) + 10;
-            int rawBtnX = previewBtnX - rawBtnW - 6;
-            if (!this.previewMode) {
-                boolean rawBtnHover = mx >= rawBtnX && mx < rawBtnX + rawBtnW && my >= dy + 4 && my < dy + 18;
-                g.method_25294(rawBtnX, dy + 4, rawBtnX + rawBtnW, dy + 18, rawBtnHover ? 0x50FFFFFF : 0x30FFFFFF);
-                VersionCompat.get().drawString(g, font, rawLabel, rawBtnX + 5, dy + 8, rawBtnHover ? -1906448 : -7035976, false);
-            }
+            int rawBtnX = dx + dw - rawBtnW - 10;
+            boolean rawBtnHover = mx >= rawBtnX && mx < rawBtnX + rawBtnW && my >= dy + 4 && my < dy + 18;
+            g.method_25294(rawBtnX, dy + 4, rawBtnX + rawBtnW, dy + 18, rawBtnHover ? 0x50FFFFFF : 0x30FFFFFF);
+            VersionCompat.get().drawString(g, font, rawLabel, rawBtnX + 5, dy + 8, rawBtnHover ? -1906448 : -7035976, false);
             g.method_25294(dx + 1, dy + 22, dx + dw - 1, dy + 23, -14540234);
+
             int textX = dx + 10;
             int textY = dy + 28;
             int textW = dw - 20;
             int textH = dh - 90;
+            int contentX = textX + 24;
+            int lineH = 14;
+            int maxVisLines = Math.max(1, textH / lineH);
+            this.scrollToCursor(maxVisLines);
             g.method_25294(textX - 2, textY - 2, textX + textW + 2, textY + textH + 2, -15592930);
             SimpleEditorScreen.this.drawBorder(g, textX - 2, textY - 2, textW + 4, textH + 4, -14540234);
-            int lineH = 14;
-            int maxVisLines = textH / lineH;
-            if (this.cursorLine < this.scrollOff) {
-                this.scrollOff = this.cursorLine;
-            }
-            if (this.cursorLine >= this.scrollOff + maxVisLines) {
-                this.scrollOff = this.cursorLine - maxVisLines + 1;
-            }
             g.method_44379(textX, textY, textX + textW, textY + textH);
-            for (int i = this.scrollOff; i < Math.min(this.scrollOff + maxVisLines, this.lines.size()); ++i) {
-                int[] sel;
+            int end = Math.min(this.scrollOff + maxVisLines, this.lines.size());
+            for (int i = this.scrollOff; i < end; ++i) {
                 int ly = textY + (i - this.scrollOff) * lineH;
-                String lineNum = String.valueOf(i + 1);
-                VersionCompat.get().drawString(g, font, lineNum, textX, ly + 2, -10193781, false);
-                int contentX = textX + 20;
-                if (i == this.cursorLine) {
+                String line = this.lines.get(i);
+                FlatEditBox box = this.lineBoxes.get(i);
+                VersionCompat.get().drawString(g, font, String.valueOf(i + 1), textX, ly + 2, -10193781, false);
+                if (i == this.activeLine) {
                     g.method_25294(contentX - 2, ly, textX + textW, ly + lineH, 0x18FFFFFF);
                 }
-                String line = this.lines.get(i);
-                if (!this.previewMode && this.hasTextSelection() && i >= (sel = this.selectionRange())[0] && i <= sel[2]) {
-                    int startCol = i == sel[0] ? sel[1] : 0;
-                    int endCol = i == sel[2] ? sel[3] : line.length();
-                    if ((startCol = Math.max(0, Math.min(startCol, line.length()))) < (endCol = Math.max(0, Math.min(endCol, line.length()))) || sel[0] != sel[2] && i < sel[2]) {
-                        int sx = contentX + SimpleEditorScreen.this.renderedWidthBeforeCursor(font, line, startCol, this.showRawCodes);
-                        int ex = contentX + SimpleEditorScreen.this.renderedWidthBeforeCursor(font, line, endCol, this.showRawCodes);
-                        if (startCol == endCol) {
-                            ex = Math.min(textX + textW, sx + 4);
-                        }
-                        g.method_25294(sx, ly + 1, ex, ly + lineH - 1, 1715176182);
-                    }
-                }
-                if (this.previewMode || !this.showRawCodes) {
-                    class_2561 preview = SimpleEditorScreen.colorCodedToComponent(line);
-                    VersionCompat.get().drawString(g, font, preview, contentX, ly + 2, -1906448, false);
+                this.configureLineBox(box, contentX, ly, textW - 28, i == this.activeLine);
+                if (this.showRawCodes) {
+                    box.method_25394(g, mx, my, 0.0f);
                 } else {
-                    VersionCompat.get().drawString(g, font, line, contentX, ly + 2, -1906448, false);
+                    VersionCompat.get().drawString(g, font, SimpleEditorScreen.colorCodedToComponent(line), contentX, ly + 2, -1906448, false);
                 }
-                if (this.previewMode || i != this.cursorLine || System.currentTimeMillis() % 1000L >= 500L) continue;
-                String beforeCursor = line.substring(0, Math.min(this.cursorCol, line.length()));
-                int cx = contentX + SimpleEditorScreen.this.renderedWidthBeforeCursor(font, beforeCursor, beforeCursor.length(), this.showRawCodes);
-                g.method_25294(cx, ly + 1, cx + 1, ly + lineH - 1, -1906448);
             }
             g.method_44380();
             if (this.lines.size() > maxVisLines) {
@@ -4261,6 +4220,7 @@ extends class_437 {
                 int thumbY = textY + (int)((float)(textH - thumbH) * sr);
                 g.method_25294(sbx, thumbY, sbx + 4, thumbY + thumbH, 0x70FFFFFF);
             }
+
             int prevY = textY + textH + 8;
             VersionCompat.get().drawString(g, font, SimpleEditorScreen.tr("ankinbt.simple.preview") + ":", dx + 10, prevY, -7035976, false);
             prevY += 12;
@@ -4272,6 +4232,7 @@ extends class_437 {
             if (this.lines.size() > 3) {
                 VersionCompat.get().drawString(g, font, "... +" + (this.lines.size() - 3), dx + 14, prevY + 33, -10193781, false);
             }
+
             int by = dy + dh - 28;
             int bw = 70;
             int bh2 = 20;
@@ -4287,26 +4248,90 @@ extends class_437 {
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
             g.method_25294(okX, by, okX + bw, by + bh2, oh ? -10262799 : -11581723);
             VersionCompat.get().drawString(g, font, SimpleEditorScreen.tr("ankinbt.edit.apply"), okX + (bw - font.method_1727(SimpleEditorScreen.tr("ankinbt.edit.apply"))) / 2, by + 6, -1906448, false);
-            VersionCompat.get().drawString(g, font, this.cursorLine + 1 + ":" + this.cursorCol + " | " + this.lines.size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix"), dx + dw - 100, by + 6, -10193781, false);
+            String state = this.activeLine + 1 + ":" + this.cursorCol() + " | " + this.lines.size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix");
+            VersionCompat.get().drawString(g, font, state, dx + dw - font.method_1727(state) - 10, by + 6, -10193781, false);
         }
 
-        private String stripColorCodes(String s) {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < s.length(); ++i) {
-                if (s.charAt(i) == '&' && i + 1 < s.length()) {
-                    char next = s.charAt(i + 1);
-                    if (next == '#' && i + 7 < s.length()) {
-                        i += 7;
-                        continue;
-                    }
-                    if ("0123456789abcdefklmnorABCDEFKLMNOR".indexOf(next) >= 0) {
-                        ++i;
-                        continue;
-                    }
-                }
-                sb.append(s.charAt(i));
+        private void scrollToCursor(int maxVisLines) {
+            if (this.activeLine < this.scrollOff) {
+                this.scrollOff = this.activeLine;
             }
-            return sb.toString();
+            if (this.activeLine >= this.scrollOff + maxVisLines) {
+                this.scrollOff = this.activeLine - maxVisLines + 1;
+            }
+            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - maxVisLines)));
+        }
+
+        private FlatEditBox activeBox() {
+            this.ensureLineBoxes();
+            return this.lineBoxes.get(Math.max(0, Math.min(this.activeLine, this.lineBoxes.size() - 1)));
+        }
+
+        private void ensureLineBoxes() {
+            while (this.lineBoxes.size() < this.lines.size()) {
+                this.lineBoxes.add(this.newLineBox(this.lines.get(this.lineBoxes.size())));
+            }
+            while (this.lineBoxes.size() > this.lines.size()) {
+                this.lineBoxes.remove(this.lineBoxes.size() - 1);
+            }
+        }
+
+        private FlatEditBox newLineBox(String value) {
+            FlatEditBox box = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 14, (class_2561)class_2561.method_43473());
+            box.method_1852(2048);
+            box.method_1852(value == null ? "" : value);
+            return box;
+        }
+
+        private void rebuildLineBoxes() {
+            this.lineBoxes.clear();
+            for (String line : this.lines) {
+                this.lineBoxes.add(this.newLineBox(line));
+            }
+            this.focusActiveBox();
+        }
+
+        private void configureLineBox(FlatEditBox box, int x, int y, int w, boolean focused) {
+            box.method_46421(x);
+            box.method_46419(y);
+            box.method_25358(Math.max(1, w));
+            box.method_25365(focused);
+        }
+
+        private void focusActiveBox() {
+            this.ensureLineBoxes();
+            for (int i = 0; i < this.lineBoxes.size(); ++i) {
+                this.lineBoxes.get(i).method_25365(i == this.activeLine);
+            }
+        }
+
+        private int cursorCol() {
+            FlatEditBox box = this.activeBox();
+            return Math.max(0, Math.min(box.method_1881(), box.method_1882().length()));
+        }
+
+        private void syncLine(int index) {
+            if (index >= 0 && index < this.lines.size() && index < this.lineBoxes.size()) {
+                this.lines.set(index, this.lineBoxes.get(index).method_1882());
+            }
+        }
+
+        private void syncAllLines() {
+            this.ensureLineBoxes();
+            for (int i = 0; i < this.lines.size(); ++i) {
+                this.syncLine(i);
+            }
+        }
+
+        private void setActiveLine(int line) {
+            this.syncLine(this.activeLine);
+            this.activeLine = Math.max(0, Math.min(line, this.lines.size() - 1));
+            this.focusActiveBox();
+        }
+
+        private boolean hasLineSelection(FlatEditBox box) {
+            String selected = box.method_1866();
+            return selected != null && !selected.isEmpty();
         }
 
         @Override
@@ -4315,29 +4340,19 @@ extends class_437 {
             int dh = Math.min(h - 10, 320);
             int dx = x + (w - dw) / 2;
             int dy = y + (h - dh) / 2;
-            String previewLabel = this.previewMode ? SimpleEditorScreen.tr("ankinbt.simple.lore_edit_mode") : SimpleEditorScreen.tr("ankinbt.simple.lore_preview_mode");
-            int previewBtnW = SimpleEditorScreen.this.field_22793.method_1727(previewLabel) + 10;
-            int previewBtnX = dx + dw - previewBtnW - 10;
-            if (mx >= (double)previewBtnX && mx < (double)(previewBtnX + previewBtnW) && my >= (double)(dy + 4) && my < (double)(dy + 18)) {
-                this.previewMode = !this.previewMode;
+            String rawLabel = this.showRawCodes ? SimpleEditorScreen.tr("ankinbt.simple.lore_show_preview") : SimpleEditorScreen.tr("ankinbt.simple.lore_show_raw");
+            int rawBtnW = SimpleEditorScreen.this.field_22793.method_1727(rawLabel) + 10;
+            int rawBtnX = dx + dw - rawBtnW - 10;
+            if (mx >= (double)rawBtnX && mx < (double)(rawBtnX + rawBtnW) && my >= (double)(dy + 4) && my < (double)(dy + 18)) {
+                this.showRawCodes = !this.showRawCodes;
                 return true;
-            }
-            if (!this.previewMode) {
-                String rawLabel = this.showRawCodes ? SimpleEditorScreen.tr("ankinbt.simple.lore_show_preview") : SimpleEditorScreen.tr("ankinbt.simple.lore_show_raw");
-                int rawBtnW = SimpleEditorScreen.this.field_22793.method_1727(rawLabel) + 10;
-                int rawBtnX = previewBtnX - rawBtnW - 6;
-                if (mx >= (double)rawBtnX && mx < (double)(rawBtnX + rawBtnW) && my >= (double)(dy + 4) && my < (double)(dy + 18)) {
-                    this.showRawCodes = !this.showRawCodes;
-                    return true;
-                }
             }
             int by = dy + dh - 28;
             int bw = 70;
             int bh2 = 20;
             int palX = dx + 10;
             if (mx >= (double)palX && mx < (double)(palX + 50) && my >= (double)by && my < (double)(by + bh2)) {
-                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.lines.get(this.cursorLine), true);
-                tempEditor.input.moveTo(this.cursorCol, false);
+                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.activeBox().method_1882(), true);
                 SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this, tempEditor);
                 return true;
             }
@@ -4359,12 +4374,15 @@ extends class_437 {
                 int lineH = 14;
                 int clickedLine = (int)((my - (double)textY) / (double)lineH) + this.scrollOff;
                 if (clickedLine >= 0 && clickedLine < this.lines.size()) {
-                    boolean shift = false;
-                    this.cursorLine = clickedLine;
-                    int relX = Math.max(0, (int)mx - (textX + 20));
-                    this.cursorCol = SimpleEditorScreen.this.renderedCursorFromMouse(SimpleEditorScreen.this.field_22793, this.lines.get(this.cursorLine), relX, this.showRawCodes);
-                    if (!shift) {
-                        this.clearTextSelection();
+                    int contentX = textX + 24;
+                    int ly = textY + (clickedLine - this.scrollOff) * lineH;
+                    FlatEditBox box = this.lineBoxes.get(clickedLine);
+                    this.configureLineBox(box, contentX, ly, textW - 28, true);
+                    this.setActiveLine(clickedLine);
+                    if (this.showRawCodes) {
+                        box.method_25402(mx, my, btn);
+                    } else {
+                        box.method_1883(box.method_1882().length(), false);
                     }
                 }
                 return true;
@@ -4372,232 +4390,81 @@ extends class_437 {
             return true;
         }
 
-        private boolean hasTextSelection() {
-            return this.cursorLine != this.anchorLine || this.cursorCol != this.anchorCol;
-        }
-
-        private void clearTextSelection() {
-            this.anchorLine = this.cursorLine;
-            this.anchorCol = this.cursorCol;
-        }
-
-        private int comparePos(int lineA, int colA, int lineB, int colB) {
-            if (lineA != lineB) {
-                return Integer.compare(lineA, lineB);
-            }
-            return Integer.compare(colA, colB);
-        }
-
-        private int[] selectionRange() {
-            if (this.comparePos(this.anchorLine, this.anchorCol, this.cursorLine, this.cursorCol) <= 0) {
-                return new int[]{this.anchorLine, this.anchorCol, this.cursorLine, this.cursorCol};
-            }
-            return new int[]{this.cursorLine, this.cursorCol, this.anchorLine, this.anchorCol};
-        }
-
-        private void moveTextCursor(int line, int col, boolean selecting) {
-            int oldLine = this.cursorLine;
-            int oldCol = this.cursorCol;
-            this.cursorLine = Math.max(0, Math.min(line, this.lines.size() - 1));
-            this.cursorCol = Math.max(0, Math.min(col, this.lines.get(this.cursorLine).length()));
-            if (selecting) {
-                if (!this.hasTextSelection()) {
-                    this.anchorLine = oldLine;
-                    this.anchorCol = oldCol;
-                }
-            } else {
-                this.clearTextSelection();
-            }
-        }
-
-        private String selectedText() {
-            if (!this.hasTextSelection()) {
-                return "";
-            }
-            int[] s = this.selectionRange();
-            if (s[0] == s[2]) {
-                return this.lines.get(s[0]).substring(s[1], s[3]);
-            }
-            StringBuilder out = new StringBuilder();
-            out.append(this.lines.get(s[0]).substring(s[1]));
-            for (int i = s[0] + 1; i < s[2]; ++i) {
-                out.append('\n').append(this.lines.get(i));
-            }
-            out.append('\n').append(this.lines.get(s[2]), 0, s[3]);
-            return out.toString();
-        }
-
-        private boolean deleteTextSelection() {
-            if (!this.hasTextSelection()) {
-                return false;
-            }
-            int[] s = this.selectionRange();
-            String first = this.lines.get(s[0]).substring(0, s[1]);
-            String last = this.lines.get(s[2]).substring(s[3]);
-            for (int i = s[2]; i > s[0]; --i) {
-                this.lines.remove(i);
-            }
-            this.lines.set(s[0], first + last);
-            this.cursorLine = s[0];
-            this.cursorCol = s[1];
-            this.clearTextSelection();
-            return true;
-        }
-
-        private void insertText(String text) {
-            if (text == null || text.isEmpty()) {
-                return;
-            }
-            this.deleteTextSelection();
-            String line = this.lines.get(this.cursorLine);
-            String before = line.substring(0, Math.min(this.cursorCol, line.length()));
-            String after = line.substring(Math.min(this.cursorCol, line.length()));
-            String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
-            String[] parts = normalized.split("\n", -1);
-            if (parts.length == 1) {
-                this.lines.set(this.cursorLine, before + parts[0] + after);
-                this.cursorCol = (before + parts[0]).length();
-            } else {
-                this.lines.set(this.cursorLine, before + parts[0]);
-                for (int i = 1; i < parts.length - 1; ++i) {
-                    this.lines.add(this.cursorLine + i, parts[i]);
-                }
-                this.lines.add(this.cursorLine + parts.length - 1, parts[parts.length - 1] + after);
-                this.cursorLine += parts.length - 1;
-                this.cursorCol = parts[parts.length - 1].length();
-            }
-            this.clearTextSelection();
-        }
-
-        private void applyTextCode(String code) {
-            if (this.hasTextSelection()) {
-                this.insertText(code + this.selectedText() + "&r");
-            } else {
-                this.insertText(code);
-            }
+        @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY, int x, int y, int w, int h) {
+            return false;
         }
 
         @Override
         public boolean keyPressed(int key, int scan, int mod) {
-            if (this.previewMode) {
-                return true;
-            }
-            boolean ctrl = (mod & 2) != 0;
-            boolean shift = (mod & 1) != 0;
-            String line = this.lines.get(this.cursorLine);
-            if (ctrl && key == 65) {
-                this.anchorLine = 0;
-                this.anchorCol = 0;
-                this.cursorLine = this.lines.size() - 1;
-                this.cursorCol = this.lines.get(this.cursorLine).length();
-                return true;
-            }
-            if (ctrl && key == 67) {
-                if (this.hasTextSelection()) {
-                    class_310.method_1551().field_1774.method_1455(this.selectedText());
-                }
-                return true;
-            }
-            if (ctrl && key == 88) {
-                if (this.hasTextSelection()) {
-                    class_310.method_1551().field_1774.method_1455(this.selectedText());
-                    this.deleteTextSelection();
-                }
-                return true;
-            }
-            if (ctrl && key == 86) {
-                String clip = class_310.method_1551().field_1774.method_1460();
-                if (clip != null && !clip.isEmpty()) {
-                    this.insertText(clip);
-                }
-                return true;
-            }
+            FlatEditBox box = this.activeBox();
             if (key == 257 || key == 335) {
-                this.insertText("\n");
+                this.syncLine(this.activeLine);
+                int col = this.cursorCol();
+                String line = this.lines.get(this.activeLine);
+                this.lines.set(this.activeLine, line.substring(0, col));
+                this.lines.add(this.activeLine + 1, line.substring(col));
+                this.rebuildLineBoxes();
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().method_1883(0, false);
                 return true;
             }
-            if (key == 259) {
-                if (this.deleteTextSelection()) {
-                    return true;
-                }
-                if (this.cursorCol > 0) {
-                    this.lines.set(this.cursorLine, line.substring(0, this.cursorCol - 1) + line.substring(this.cursorCol));
-                    --this.cursorCol;
-                } else if (this.cursorLine > 0) {
-                    String prev = this.lines.get(this.cursorLine - 1);
-                    this.cursorCol = prev.length();
-                    this.lines.set(this.cursorLine - 1, prev + line);
-                    this.lines.remove(this.cursorLine);
-                    --this.cursorLine;
-                }
+            if (key == 259 && this.cursorCol() == 0 && !this.hasLineSelection(box) && this.activeLine > 0) {
+                this.syncLine(this.activeLine);
+                String line = this.lines.remove(this.activeLine);
+                int prev = this.activeLine - 1;
+                int col = this.lines.get(prev).length();
+                this.lines.set(prev, this.lines.get(prev) + line);
+                this.rebuildLineBoxes();
+                this.setActiveLine(prev);
+                this.activeBox().method_1883(col, false);
                 return true;
             }
-            if (key == 261) {
-                if (this.deleteTextSelection()) {
-                    return true;
-                }
-                if (this.cursorCol < line.length()) {
-                    this.lines.set(this.cursorLine, line.substring(0, this.cursorCol) + line.substring(this.cursorCol + 1));
-                } else if (this.cursorLine < this.lines.size() - 1) {
-                    this.lines.set(this.cursorLine, line + this.lines.get(this.cursorLine + 1));
-                    this.lines.remove(this.cursorLine + 1);
-                }
+            if (key == 261 && this.cursorCol() == box.method_1882().length() && !this.hasLineSelection(box) && this.activeLine < this.lines.size() - 1) {
+                this.syncLine(this.activeLine);
+                this.lines.set(this.activeLine, this.lines.get(this.activeLine) + this.lines.remove(this.activeLine + 1));
+                this.rebuildLineBoxes();
+                this.setActiveLine(this.activeLine);
                 return true;
             }
-            if (key == 263) {
-                if (this.hasTextSelection() && !shift) {
-                    int[] s = this.selectionRange();
-                    this.moveTextCursor(s[0], s[1], false);
-                } else if (this.cursorCol > 0) {
-                    this.moveTextCursor(this.cursorLine, this.cursorCol - 1, shift);
-                } else if (this.cursorLine > 0) {
-                    this.moveTextCursor(this.cursorLine - 1, this.lines.get(this.cursorLine - 1).length(), shift);
-                }
+            if (key == 265 && this.activeLine > 0) {
+                int col = this.cursorCol();
+                this.setActiveLine(this.activeLine - 1);
+                this.activeBox().method_1883(Math.min(col, this.activeBox().method_1882().length()), false);
                 return true;
             }
-            if (key == 262) {
-                if (this.hasTextSelection() && !shift) {
-                    int[] s = this.selectionRange();
-                    this.moveTextCursor(s[2], s[3], false);
-                } else if (this.cursorCol < line.length()) {
-                    this.moveTextCursor(this.cursorLine, this.cursorCol + 1, shift);
-                } else if (this.cursorLine < this.lines.size() - 1) {
-                    this.moveTextCursor(this.cursorLine + 1, 0, shift);
-                }
+            if (key == 264 && this.activeLine < this.lines.size() - 1) {
+                int col = this.cursorCol();
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().method_1883(Math.min(col, this.activeBox().method_1882().length()), false);
                 return true;
             }
-            if (key == 265) {
-                if (this.cursorLine > 0) {
-                    this.moveTextCursor(this.cursorLine - 1, Math.min(this.cursorCol, this.lines.get(this.cursorLine - 1).length()), shift);
-                }
+            if (key == 263 && this.cursorCol() == 0 && this.activeLine > 0 && !this.hasLineSelection(box)) {
+                this.setActiveLine(this.activeLine - 1);
+                this.activeBox().method_1883(this.activeBox().method_1882().length(), false);
                 return true;
             }
-            if (key == 264) {
-                if (this.cursorLine < this.lines.size() - 1) {
-                    this.moveTextCursor(this.cursorLine + 1, Math.min(this.cursorCol, this.lines.get(this.cursorLine + 1).length()), shift);
-                }
+            if (key == 262 && this.cursorCol() == box.method_1882().length() && this.activeLine < this.lines.size() - 1 && !this.hasLineSelection(box)) {
+                this.setActiveLine(this.activeLine + 1);
+                this.activeBox().method_1883(0, false);
                 return true;
             }
-            if (key == 268) {
-                this.moveTextCursor(this.cursorLine, 0, shift);
+            if (box.method_25404(key, scan, mod)) {
+                this.syncLine(this.activeLine);
                 return true;
             }
-            if (key == 269) {
-                this.moveTextCursor(this.cursorLine, this.lines.get(this.cursorLine).length(), shift);
-                return true;
-            }
+            this.syncLine(this.activeLine);
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (this.previewMode) {
+            FlatEditBox box = this.activeBox();
+            if (box.method_25400(c, mod)) {
+                this.syncLine(this.activeLine);
                 return true;
             }
-            if (c >= ' ') {
-                this.insertText(Character.toString(c));
-                return true;
-            }
+            this.syncLine(this.activeLine);
             return true;
         }
 
@@ -4609,10 +4476,19 @@ extends class_437 {
         }
 
         void insertAtCursor(String text) {
-            this.applyTextCode(text);
+            String suffix = text != null && text.length() == 2 && text.charAt(0) == '&' && "0123456789abcdefABCDEF".indexOf(text.charAt(1)) >= 0 ? "&r" : "";
+            FlatEditBox box = this.activeBox();
+            String selected = box.method_1866();
+            if (selected != null && !selected.isEmpty() && !suffix.isEmpty()) {
+                box.method_1853((text == null ? "" : text) + selected + suffix);
+            } else {
+                box.method_1853(text == null ? "" : text);
+            }
+            this.syncLine(this.activeLine);
         }
 
         private void applyAll() {
+            this.syncAllLines();
             while (this.lines.size() > 1 && this.lines.get(this.lines.size() - 1).isEmpty()) {
                 this.lines.remove(this.lines.size() - 1);
             }
@@ -4639,7 +4515,7 @@ extends class_437 {
         private final List<String> allEnchants = new ArrayList<String>();
         private List<String> filtered = new ArrayList<String>();
         private String searchQ = "";
-        private int searchCursor = 0;
+        private final FlatEditBox searchBox;
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
@@ -4648,6 +4524,14 @@ extends class_437 {
         private boolean focusLevel = false;
 
         EnchantPickerSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 18, (class_2561)class_2561.method_43473());
+            this.searchBox.method_1852(128);
+            this.searchBox.method_47404((class_2561)class_2561.method_43471((String)"ankinbt.search.hint"));
+            this.searchBox.method_1863(value -> {
+                this.searchQ = value == null ? "" : value;
+                this.filter();
+            });
+            this.searchBox.method_25365(true);
             try {
                 this.allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
             } catch (Throwable ignored) {
@@ -4683,9 +4567,11 @@ extends class_437 {
             int sw = w - 16;
             int sh = 18;
             g.method_25294(sx, sy, sx + sw, sy + sh, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, sx, sy, sw, sh, this.focusLevel ? -14540234 : -10262799);
-            String sd = this.searchQ.isEmpty() ? SimpleEditorScreen.tr("ankinbt.search.hint") : this.searchQ;
-            VersionCompat.get().drawString(g, font, sd + (!this.focusLevel && System.currentTimeMillis() % 1000L < 500L ? "_" : ""), sx + 4, sy + 5, this.searchQ.isEmpty() ? -10193781 : -1906448, false);
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            this.searchBox.method_25365(!this.focusLevel);
+            this.searchBox.method_25394(g, mx, my, 0.0f);
             int ly = sy + sh + 4;
             int listH = h - 80;
             int maxItems = listH / 16;
@@ -4726,8 +4612,12 @@ extends class_437 {
             int sy = y + 18;
             int sw = w - 16;
             int sh = 18;
-            if (mx >= (double)sx && mx < (double)(sx + sw) && my >= (double)sy && my < (double)(sy + sh)) {
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            if (this.searchBox.method_25402(mx, my, btn)) {
                 this.focusLevel = false;
+                this.searchBox.method_25365(true);
                 return true;
             }
             int by = y + h - 30;
@@ -4773,18 +4663,8 @@ extends class_437 {
                     return true;
                 }
             } else {
-                if (key == 259 && this.searchCursor > 0 && !this.searchQ.isEmpty()) {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor - 1) + this.searchQ.substring(this.searchCursor);
-                    --this.searchCursor;
-                    this.filter();
-                    return true;
-                }
-                if (key == 263 && this.searchCursor > 0) {
-                    --this.searchCursor;
-                    return true;
-                }
-                if (key == 262 && this.searchCursor < this.searchQ.length()) {
-                    ++this.searchCursor;
+                if (this.searchBox.method_25404(key, scan, mod)) {
+                    this.searchQ = this.searchBox.method_1882();
                     return true;
                 }
             }
@@ -4800,9 +4680,8 @@ extends class_437 {
                         ++this.levelCursor;
                     }
                 } else {
-                    this.searchQ = this.searchQ.substring(0, this.searchCursor) + c + this.searchQ.substring(this.searchCursor);
-                    ++this.searchCursor;
-                    this.filter();
+                    this.searchBox.method_25400(c, mod);
+                    this.searchQ = this.searchBox.method_1882();
                 }
                 return true;
             }
@@ -4836,9 +4715,9 @@ extends class_437 {
 
     class PotionEffectSubEditor
     implements SubEditor {
-        private final TextEditBuffer search = new TextEditBuffer("");
-        private final TextEditBuffer duration = new TextEditBuffer("600");
-        private final TextEditBuffer amplifier = new TextEditBuffer("0");
+        private final FlatEditBox searchBox;
+        private final FlatEditBox durationBox;
+        private final FlatEditBox amplifierBox;
         private final List<String> filtered = new ArrayList<String>();
         private int focusField = 0;
         private int hoverIdx = -1;
@@ -4850,11 +4729,24 @@ extends class_437 {
         private boolean icon = true;
 
         PotionEffectSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 18, (class_2561)class_2561.method_43473());
+            this.searchBox.method_1852(128);
+            this.searchBox.method_47404((class_2561)class_2561.method_43471((String)"ankinbt.search.hint"));
+            this.searchBox.method_1863(value -> this.filter());
+            this.durationBox = this.numericBox("600");
+            this.amplifierBox = this.numericBox("0");
             this.filter();
         }
 
+        private FlatEditBox numericBox(String value) {
+            FlatEditBox box = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 18, (class_2561)class_2561.method_43473());
+            box.method_1852(16);
+            box.method_1852(value);
+            return box;
+        }
+
         private void filter() {
-            String q = this.search.value().toLowerCase(Locale.ROOT);
+            String q = this.searchBox.method_1882().toLowerCase(Locale.ROOT);
             this.filtered.clear();
             for (String id : EFFECT_IDS) {
                 if (!q.isEmpty() && !id.toLowerCase(Locale.ROOT).contains(q) && !SimpleEditorScreen.this.effectDisplayName(id).toLowerCase(Locale.ROOT).contains(q)) continue;
@@ -4879,7 +4771,7 @@ extends class_437 {
             int sy = dy + 30;
             int sw = dw - 20;
             int sh = 18;
-            this.renderSmallTextBox(g, font, sx, sy, sw, sh, this.search, this.focusField == 0, SimpleEditorScreen.tr("ankinbt.search.hint"));
+            this.renderSmallFlatEditBox(g, this.searchBox, sx, sy, sw, sh, this.focusField == 0, mx, my);
             int listY = sy + sh + 6;
             int rowH = 18;
             this.visibleRows = maxItems = Math.max(4, Math.min(10, (dh - 160) / rowH));
@@ -4917,12 +4809,12 @@ extends class_437 {
             int amplifierBoxX = amplifierLabelX + font.method_1727(amplifierLabel) + 8;
             boolean compactForm = amplifierBoxX + 46 > dx + dw - 10;
             VersionCompat.get().drawString(g, font, durationLabel, dx + 10, formY + 5, -7035976, false);
-            this.renderSmallTextBox(g, font, durationBoxX, formY, 54, 18, this.duration, this.focusField == 1, "");
+            this.renderSmallFlatEditBox(g, this.durationBox, durationBoxX, formY, 54, 18, this.focusField == 1, mx, my);
             int ampY = compactForm ? formY + 24 : formY;
             int ampLabelX = compactForm ? dx + 10 : amplifierLabelX;
             int ampBoxX = compactForm ? dx + 10 + font.method_1727(amplifierLabel) + 8 : amplifierBoxX;
             VersionCompat.get().drawString(g, font, amplifierLabel, ampLabelX, ampY + 5, -7035976, false);
-            this.renderSmallTextBox(g, font, ampBoxX, ampY, 42, 18, this.amplifier, this.focusField == 2, "");
+            this.renderSmallFlatEditBox(g, this.amplifierBox, ampBoxX, ampY, 42, 18, this.focusField == 2, mx, my);
             int toggleY = compactForm ? formY + 48 : formY + 24;
             int tx = dx + 10;
             tx = this.renderToggle(g, font, mx, my, tx, toggleY, SimpleEditorScreen.tr("ankinbt.simple.effect_ambient"), this.ambient);
@@ -4945,16 +4837,12 @@ extends class_437 {
             VersionCompat.get().drawString(g, font, SimpleEditorScreen.tr("ankinbt.add.confirm"), okX + (bw - font.method_1727(SimpleEditorScreen.tr("ankinbt.add.confirm"))) / 2, by + 6, -1906448, false);
         }
 
-        private void renderSmallTextBox(class_332 g, class_327 font, int x, int y, int w, int h, TextEditBuffer buffer, boolean focused, String hint) {
-            Object text;
-            g.method_25294(x, y, x + w, y + h, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, x, y, w, h, focused ? -10262799 : -14540234);
-            String value = buffer.value();
-            Object object = text = value.isEmpty() ? hint : value;
-            if (font.method_1727((String)text) > w - 8) {
-                text = font.method_27523((String)text, w - 12) + "..";
-            }
-            VersionCompat.get().drawString(g, font, (String)text + (focused && System.currentTimeMillis() % 1000L < 500L ? "_" : ""), x + 4, y + 5, value.isEmpty() ? -10193781 : -1906448, false);
+        private void renderSmallFlatEditBox(class_332 g, FlatEditBox box, int x, int y, int w, int h, boolean focused, int mx, int my) {
+            box.method_46421(x);
+            box.method_46419(y);
+            box.method_25358(w);
+            box.method_25365(focused);
+            box.method_25394(g, mx, my, 0.0f);
         }
 
         private int renderToggle(class_332 g, class_327 font, int mx, int my, int x, int y, String label, boolean on) {
@@ -4978,10 +4866,10 @@ extends class_437 {
             int sy = dy + 30;
             int sw = dw - 20;
             int sh = 18;
-            if (mx >= (double)sx && mx < (double)(sx + sw) && my >= (double)sy && my < (double)(sy + sh)) {
-                this.focusField = 0;
-                return true;
-            }
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            if (this.searchBox.method_25402(mx, my, btn)) { this.focusField = 0; this.searchBox.method_25365(true); return true; }
             if (this.hoverIdx >= 0 && this.hoverIdx < this.filtered.size()) {
                 this.selectedIdx = this.hoverIdx;
                 return true;
@@ -4995,16 +4883,16 @@ extends class_437 {
             int amplifierLabelX = durationBoxX + 60 + 12;
             int amplifierBoxX = amplifierLabelX + SimpleEditorScreen.this.field_22793.method_1727(amplifierLabel) + 8;
             boolean bl = compactForm = amplifierBoxX + 46 > dx + dw - 10;
-            if (mx >= (double)durationBoxX && mx < (double)(durationBoxX + 54) && my >= (double)formY && my < (double)(formY + 18)) {
-                this.focusField = 1;
-                return true;
-            }
+            this.durationBox.method_46421(durationBoxX);
+            this.durationBox.method_46419(formY);
+            this.durationBox.method_25358(54);
+            if (this.durationBox.method_25402(mx, my, btn)) { this.focusField = 1; this.durationBox.method_25365(true); return true; }
             int ampY = compactForm ? formY + 24 : formY;
             int n = ampBoxX = compactForm ? dx + 10 + SimpleEditorScreen.this.field_22793.method_1727(amplifierLabel) + 8 : amplifierBoxX;
-            if (mx >= (double)ampBoxX && mx < (double)(ampBoxX + 42) && my >= (double)ampY && my < (double)(ampY + 18)) {
-                this.focusField = 2;
-                return true;
-            }
+            this.amplifierBox.method_46421(ampBoxX);
+            this.amplifierBox.method_46419(ampY);
+            this.amplifierBox.method_25358(42);
+            if (this.amplifierBox.method_25402(mx, my, btn)) { this.focusField = 2; this.amplifierBox.method_25365(true); return true; }
             int ambientX = dx + 10;
             int toggleY = compactForm ? formY + 48 : formY + 24;
             if (this.clickToggle(mx, my, ambientX, toggleY, SimpleEditorScreen.tr("ankinbt.simple.effect_ambient"))) {
@@ -5071,17 +4959,12 @@ extends class_437 {
                     }
                     return true;
                 }
-                String before = this.search.value();
-                if (this.search.keyPressed(key, mod)) {
-                    if (!before.equals(this.search.value())) {
-                        this.filter();
-                    }
+                if (this.searchBox.method_25404(key, scan, mod)) {
                     return true;
                 }
             } else {
-                TextEditBuffer buffer;
-                TextEditBuffer textEditBuffer = buffer = this.focusField == 1 ? this.duration : this.amplifier;
-                if (buffer.keyPressed(key, mod)) {
+                FlatEditBox box = this.focusField == 1 ? this.durationBox : this.amplifierBox;
+                if (box.method_25404(key, scan, mod)) {
                     return true;
                 }
             }
@@ -5091,12 +4974,9 @@ extends class_437 {
         @Override
         public boolean charTyped(char c, int mod) {
             if (this.focusField == 0) {
-                if (this.search.charTyped(c)) {
-                    this.filter();
-                    return true;
-                }
+                if (this.searchBox.method_25400(c, mod)) return true;
             } else if (c >= '0' && c <= '9' || c == '-') {
-                (this.focusField == 1 ? this.duration : this.amplifier).charTyped(c);
+                (this.focusField == 1 ? this.durationBox : this.amplifierBox).method_25400(c, mod);
                 return true;
             }
             return true;
@@ -5113,8 +4993,8 @@ extends class_437 {
             if (this.selectedIdx < 0 || this.selectedIdx >= this.filtered.size()) {
                 return;
             }
-            int dur = this.parsePotionInt(this.duration.value(), 600);
-            int amp = this.parsePotionInt(this.amplifier.value(), 0);
+            int dur = this.parsePotionInt(this.durationBox.method_1882(), 600);
+            int amp = this.parsePotionInt(this.amplifierBox.method_1882(), 0);
             SimpleEditorScreen.this.addPotionCustomEffect(this.filtered.get(this.selectedIdx), dur, amp, this.ambient, this.particles, this.icon);
             SimpleEditorScreen.this.activeSubEditor = null;
         }
@@ -5131,13 +5011,18 @@ extends class_437 {
 
     class PotionPickerSubEditor
     implements SubEditor {
-        private final TextEditBuffer search = new TextEditBuffer("");
+        private final FlatEditBox searchBox;
         private final List<String> filtered = new ArrayList<String>();
         private int hoverIdx = -1;
         private int selectedIdx = 0;
         private int scrollOff = 0;
 
         PotionPickerSubEditor() {
+            this.searchBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 18, (class_2561)class_2561.method_43473());
+            this.searchBox.method_1852(128);
+            this.searchBox.method_47404((class_2561)class_2561.method_43471((String)"ankinbt.search.hint"));
+            this.searchBox.method_1863(value -> this.filter());
+            this.searchBox.method_25365(true);
             this.filter();
             String current = SimpleEditorScreen.this.getPotionId();
             for (int i = 0; i < this.filtered.size(); ++i) {
@@ -5148,7 +5033,7 @@ extends class_437 {
         }
 
         private void filter() {
-            String q = this.search.value().toLowerCase(Locale.ROOT);
+            String q = this.searchBox.method_1882().toLowerCase(Locale.ROOT);
             this.filtered.clear();
             for (String id : POTION_IDS) {
                 if (!q.isEmpty() && !id.toLowerCase(Locale.ROOT).contains(q) && !SimpleEditorScreen.this.potionDisplayName(id).toLowerCase(Locale.ROOT).contains(q)) continue;
@@ -5172,10 +5057,11 @@ extends class_437 {
             int sy = dy + 30;
             int sw = dw - 20;
             int sh = 18;
-            g.method_25294(sx, sy, sx + sw, sy + sh, -15592930);
-            SimpleEditorScreen.this.drawBorder(g, sx, sy, sw, sh, -10262799);
-            String searchText = this.search.value().isEmpty() ? SimpleEditorScreen.tr("ankinbt.search.hint") : this.search.value();
-            VersionCompat.get().drawString(g, font, searchText + (System.currentTimeMillis() % 1000L < 500L ? "_" : ""), sx + 4, sy + 5, this.search.value().isEmpty() ? -10193781 : -1906448, false);
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            this.searchBox.method_25365(true);
+            this.searchBox.method_25394(g, mx, my, 0.0f);
             int listY = sy + sh + 6;
             int maxItems = Math.max(1, (dh - 92) / 18);
             this.hoverIdx = -1;
@@ -5221,6 +5107,16 @@ extends class_437 {
             int dh = Math.min(h - 20, 250);
             int dx = x + (w - dw) / 2;
             int dy = y + (h - dh) / 2;
+            int sx = dx + 10;
+            int sy = dy + 30;
+            int sw = dw - 20;
+            this.searchBox.method_46421(sx);
+            this.searchBox.method_46419(sy);
+            this.searchBox.method_25358(sw);
+            if (this.searchBox.method_25402(mx, my, btn)) {
+                this.searchBox.method_25365(true);
+                return true;
+            }
             int by = dy + dh - 28;
             int bw = 70;
             int bh2 = 20;
@@ -5264,11 +5160,7 @@ extends class_437 {
                 }
                 return true;
             }
-            String before = this.search.value();
-            if (this.search.keyPressed(key, mod)) {
-                if (!before.equals(this.search.value())) {
-                    this.filter();
-                }
+            if (this.searchBox.method_25404(key, scan, mod)) {
                 return true;
             }
             return true;
@@ -5276,8 +5168,7 @@ extends class_437 {
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (this.search.charTyped(c)) {
-                this.filter();
+            if (this.searchBox.method_25400(c, mod)) {
                 return true;
             }
             return true;

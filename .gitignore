@@ -13,6 +13,9 @@ out/
 .classpath
 .project
 .vscode/
+bin/
+.eclipse/
+look/
 
 # Minecraft dev
 run/

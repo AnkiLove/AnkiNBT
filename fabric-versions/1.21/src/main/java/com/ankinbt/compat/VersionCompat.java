@@ -118,51 +118,22 @@ public class VersionCompat {
     }
 
     public List<String> getAllEnchantIds() {
-        ArrayList<String> ids = new ArrayList<String>();
-        class_310 mc = class_310.method_1551();
-        if (mc.field_1687 != null) {
-            class_2378 reg = mc.field_1687.method_30349().method_30530(class_7924.field_41265);
-            reg.method_46754().forEach(key -> ids.add(key.method_29177().toString()));
-        }
-        return ids;
+        return this.getAllRegistryIds(class_7924.field_41265);
     }
 
     public List<String> getAllAttributeIds() {
-        ArrayList<String> ids = new ArrayList<String>();
-        class_310 mc = class_310.method_1551();
-        if (mc.field_1687 != null) {
-            class_2378 reg = mc.field_1687.method_30349().method_30530(class_7924.field_41251);
-            reg.method_46754().forEach(key -> ids.add(key.method_29177().toString()));
-        }
-        return ids;
+        return this.getAllRegistryIds(class_7924.field_41251);
     }
 
+    @SuppressWarnings("unchecked")
     public Optional<class_6880.class_6883<class_1887>> getEnchantHolder(String id) {
-        class_310 mc = class_310.method_1551();
-        if (mc.field_1687 == null) {
-            return Optional.empty();
-        }
-        class_2378 reg = mc.field_1687.method_30349().method_30530(class_7924.field_41265);
-        class_2960 loc = class_2960.method_12829((String)id);
-        if (loc == null) {
-            return Optional.empty();
-        }
-        return reg.method_10223(loc);
+        return (Optional<class_6880.class_6883<class_1887>>)(Optional<?>)this.getHolder(class_7924.field_41265, id);
     }
 
+    @SuppressWarnings("unchecked")
     public Optional<class_6880.class_6883<class_1320>> getAttributeHolder(String id) {
-        class_310 mc = class_310.method_1551();
-        if (mc.field_1687 == null) {
-            return Optional.empty();
-        }
-        class_2378 reg = mc.field_1687.method_30349().method_30530(class_7924.field_41251);
-        class_2960 loc = class_2960.method_12829((String)id);
-        if (loc == null) {
-            return Optional.empty();
-        }
-        return reg.method_10223(loc);
+        return (Optional<class_6880.class_6883<class_1320>>)(Optional<?>)this.getHolder(class_7924.field_41251, id);
     }
-
     public boolean isFireResistant(class_1799 stack) {
         return stack.method_57826(class_9334.field_54273);
     }
@@ -346,5 +317,123 @@ public class VersionCompat {
         g.method_51433(font, resolved, x, y, color, shadow);
         return font.method_1727(resolved);
     }
-}
+    private List<String> getAllRegistryIds(Object registryKey) {
+        ArrayList<String> ids = new ArrayList<String>();
+        Object registry = this.getRegistry(registryKey);
+        if (registry == null) {
+            return ids;
+        }
+        Object holders = this.invokeAny(registry, "holders");
+        if (holders instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(holder -> {
+                Object key = this.invokeAny(holder, "key", "unwrapKey");
+                if (key instanceof Optional<?> optional) {
+                    key = optional.orElse(null);
+                }
+                this.addId(ids, this.idFromKey(key));
+            });
+        }
+        Object elementIds = this.invokeAny(registry, "listElementIds", "method_46754");
+        if (elementIds instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(key -> this.addId(ids, this.idFromKey(key)));
+        } else if (elementIds instanceof Iterable<?> iterable) {
+            for (Object key : iterable) {
+                this.addId(ids, this.idFromKey(key));
+            }
+        }
+        Object keySet = this.invokeAny(registry, "keySet", "method_10235");
+        if (keySet instanceof Iterable<?> iterable) {
+            for (Object key : iterable) {
+                this.addId(ids, this.idFromKey(key));
+            }
+        }
+        return ids;
+    }
 
+    private Optional<?> getHolder(Object registryKey, String id) {
+        Object registry = this.getRegistry(registryKey);
+        Object location = this.parseResourceId(id);
+        if (registry == null || location == null) {
+            return Optional.empty();
+        }
+        Object holder = this.invokeRegistryLookup(registry, location, "getHolder", "get", "method_10223");
+        if (holder instanceof Optional<?> optional) {
+            return optional;
+        }
+        return holder != null ? Optional.of(holder) : Optional.empty();
+    }
+
+    private Object getRegistry(Object registryKey) {
+        class_310 mc = class_310.method_1551();
+        if (mc.field_1687 == null) {
+            return null;
+        }
+        Object access = mc.field_1687.method_30349();
+        return this.invokeRegistryLookup(access, registryKey, "registryOrThrow", "lookupOrThrow", "method_30530");
+    }
+
+    private Object invokeRegistryLookup(Object target, Object argument, String... names) {
+        if (target == null || argument == null) {
+            return null;
+        }
+        java.util.Set<String> allowed = new java.util.HashSet<String>(java.util.Arrays.asList(names));
+        for (Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 1) {
+                continue;
+            }
+            Class<?> parameter = method.getParameterTypes()[0];
+            if (!parameter.isAssignableFrom(argument.getClass())) {
+                continue;
+            }
+            try {
+                return method.invoke(target, argument);
+            }
+            catch (Throwable throwable) {
+                // empty catch block
+            }
+        }
+        return null;
+    }
+
+    private Object invokeAny(Object target, String... names) {
+        if (target == null) {
+            return null;
+        }
+        java.util.Set<String> allowed = new java.util.HashSet<String>(java.util.Arrays.asList(names));
+        for (Method method : target.getClass().getMethods()) {
+            if (!allowed.contains(method.getName()) || method.getParameterCount() != 0) {
+                continue;
+            }
+            try {
+                return method.invoke(target, new Object[0]);
+            }
+            catch (Throwable throwable) {
+                // empty catch block
+            }
+        }
+        return null;
+    }
+
+    private Object parseResourceId(String id) {
+        try {
+            return class_2960.method_12829((String)id);
+        }
+        catch (Throwable throwable) {
+            return null;
+        }
+    }
+
+    private String idFromKey(Object key) {
+        if (key == null) {
+            return "";
+        }
+        Object id = this.invokeAny(key, "location", "identifier", "method_29177");
+        return id != null ? String.valueOf(id) : String.valueOf(key);
+    }
+
+    private void addId(List<String> ids, String id) {
+        if (id != null && !id.isBlank() && !ids.contains(id)) {
+            ids.add(id);
+        }
+    }
+}

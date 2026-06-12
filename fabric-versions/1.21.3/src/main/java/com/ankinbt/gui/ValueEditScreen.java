@@ -16,7 +16,7 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.UiTheme;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
-import com.ankinbt.util.TextEditBuffer;
+import com.ankinbt.util.FlatEditBox;
 import net.minecraft.class_2520;
 import net.minecraft.class_2561;
 import net.minecraft.class_310;
@@ -38,36 +38,39 @@ extends class_437 {
     private static final int SELECT_BG = 1715176182;
     private final NbtEditorScreen parent;
     private final NbtTreeNode node;
-    private final TextEditBuffer input;
+    private final String initialValue;
+    private FlatEditBox input;
     private String error = null;
     private int px;
     private int py;
     private float openAnim = 0.0f;
-    private boolean draggingSelection;
 
     public ValueEditScreen(NbtEditorScreen parent, NbtTreeNode node) {
         super((class_2561)class_2561.method_43471((String)"ankinbt.edit.title"));
         this.parent = parent;
         this.node = node;
-        this.input = new TextEditBuffer(VersionCompat.get().getTagAsString(node.getTag()));
+        this.initialValue = VersionCompat.get().getTagAsString(node.getTag());
     }
 
     protected void method_25426() {
         super.method_25426();
         this.px = (this.field_22789 - 320) / 2;
         this.py = (this.field_22790 - 150) / 2;
+        String value = this.input == null ? this.initialValue : this.input.method_1882();
+        this.input = new FlatEditBox(this.field_22793, this.px + 12, this.py + 36, 296, 24, (class_2561)class_2561.method_43473());
+        this.input.method_1852(32767);
+        this.input.method_1852(value == null ? "" : value);
+        this.input.method_1863(v -> this.error = null);
+        this.input.method_25365(true);
     }
 
     public void method_25394(class_332 g, int mx, int my, float pt) {
-        int selEnd;
-        int selStart;
         float speed = AnkiConfig.isUiAnimationEnabled() ? AnkiConfig.getUiAnimationSpeed() : 1.0f;
         this.openAnim = UiTheme.approach(this.openAnim, 1.0f, speed);
         int scrim = this.fadeColor(Integer.MIN_VALUE, this.openAnim);
         int bg = this.fadeColor(-402126832, this.openAnim);
         int border = this.fadeColor(-14540234, this.openAnim);
         int accent = this.fadeColor(-10262799, this.openAnim);
-        int inputBg = this.fadeColor(-15592930, this.openAnim);
         int err = this.fadeColor(-1096636, this.openAnim);
         g.method_25294(0, 0, this.field_22789, this.field_22790, scrim);
         g.method_25294(this.px, this.py, this.px + 320, this.py + 150, bg);
@@ -80,22 +83,11 @@ extends class_437 {
         int iy = this.py + 36;
         int iw = 296;
         int ih = 24;
-        g.method_25294(ix, iy, ix + iw, iy + ih, inputBg);
-        this.border(g, ix, iy, iw, ih, accent);
-        int maxTextW = iw - 12;
-        int viewStart = this.textViewStart(this.input.value(), this.input.cursor(), maxTextW);
-        String disp = this.visibleText(this.input.value(), viewStart, maxTextW);
-        if (this.input.hasSelection() && (selStart = Math.max(this.input.selectionStart(), viewStart)) < (selEnd = Math.min(this.input.selectionEnd(), viewStart + disp.length()))) {
-            int sx = ix + 4 + this.field_22793.method_1727(this.input.value().substring(viewStart, selStart));
-            int ex = ix + 4 + this.field_22793.method_1727(this.input.value().substring(viewStart, selEnd));
-            g.method_25294(sx, iy + 4, ex, iy + ih - 4, 1715176182);
-        }
-        VersionCompat.get().drawString(g, this.field_22793, disp, ix + 4, iy + 8, -1906448, false);
-        if (!this.input.hasSelection() && System.currentTimeMillis() % 1000L < 500L) {
-            String before = this.input.value().substring(viewStart, Math.max(viewStart, Math.min(this.input.cursor(), this.input.value().length())));
-            int cx = ix + 4 + this.field_22793.method_1727(before);
-            g.method_25294(cx, iy + 4, cx + 1, iy + ih - 4, -1906448);
-        }
+        this.input.method_46421(ix);
+        this.input.method_46419(iy);
+        this.input.method_25358(iw);
+        this.input.method_25365(true);
+        this.input.method_25394(g, mx, my, pt);
         if (this.error != null) {
             VersionCompat.get().drawString(g, this.field_22793, this.error, ix, iy + ih + 4, err, false);
         }
@@ -130,45 +122,6 @@ extends class_437 {
         g.method_25294(x + w - 1, y, x + w, y + h, c);
     }
 
-    private int textViewStart(String value, int cursor, int maxWidth) {
-        int start;
-        if (value == null || value.isEmpty()) {
-            return 0;
-        }
-        int clampedCursor = Math.max(0, Math.min(cursor, value.length()));
-        for (start = 0; start < clampedCursor && this.field_22793.method_1727(value.substring(start, clampedCursor)) > maxWidth; ++start) {
-        }
-        return start;
-    }
-
-    private String visibleText(String value, int start, int maxWidth) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        int safeStart = Math.max(0, Math.min(start, value.length()));
-        String text = value.substring(safeStart);
-        return this.field_22793.method_1727(text) <= maxWidth ? text : this.field_22793.method_27523(text, maxWidth);
-    }
-
-    private int cursorFromMouse(String value, int start, int relX, int maxWidth) {
-        if (value == null || value.isEmpty()) {
-            return 0;
-        }
-        int safeStart = Math.max(0, Math.min(start, value.length()));
-        String shown = this.visibleText(value, safeStart, maxWidth);
-        int best = safeStart;
-        for (int i = 0; i <= shown.length(); ++i) {
-            int charW;
-            String before = shown.substring(0, i);
-            int n = charW = i < shown.length() ? this.field_22793.method_1727(String.valueOf(shown.charAt(i))) : 8;
-            if (this.field_22793.method_1727(before) + Math.max(1, charW / 2) >= relX) {
-                return safeStart + i;
-            }
-            best = safeStart + i;
-        }
-        return Math.max(0, Math.min(best, value.length()));
-    }
-
     public boolean method_25402(double mx, double my, int btn) {
         int by = this.py + 150 - 36;
         int bw = 80;
@@ -183,34 +136,14 @@ extends class_437 {
             this.apply();
             return true;
         }
-        int ix = this.px + 12;
-        int iy = this.py + 36;
-        int iw = 296;
-        int ih = 24;
-        if (mx >= (double)ix && mx < (double)(ix + iw) && my >= (double)iy && my < (double)(iy + ih)) {
-            int viewStart = this.textViewStart(this.input.value(), this.input.cursor(), iw - 12);
-            this.input.moveTo(this.cursorFromMouse(this.input.value(), viewStart, (int)mx - ix - 4, iw - 12), btn == 0 && class_437.method_25442());
-            this.draggingSelection = btn == 0;
+        this.input.method_46421(this.px + 12);
+        this.input.method_46419(this.py + 36);
+        this.input.method_25358(296);
+        if (this.input.method_25402(mx, my, btn)) {
+            this.input.method_25365(true);
             return true;
         }
-        this.draggingSelection = false;
         return super.method_25402(mx, my, btn);
-    }
-
-    public boolean method_25403(double mx, double my, int button, double dragX, double dragY) {
-        if (this.draggingSelection) {
-            int ix = this.px + 12;
-            int iw = 296;
-            int viewStart = this.textViewStart(this.input.value(), this.input.cursor(), iw - 12);
-            this.input.moveTo(this.cursorFromMouse(this.input.value(), viewStart, (int)mx - ix - 4, iw - 12), true);
-            return true;
-        }
-        return super.method_25403(mx, my, button, dragX, dragY);
-    }
-
-    public boolean method_25406(double mx, double my, int button) {
-        this.draggingSelection = false;
-        return super.method_25406(mx, my, button);
     }
 
     public boolean method_25404(int key, int scan, int mod) {
@@ -222,18 +155,15 @@ extends class_437 {
             this.apply();
             return true;
         }
-        String before = this.input.value();
-        if (this.input.keyPressed(key, mod)) {
-            if (!before.equals(this.input.value())) {
-                this.error = null;
-            }
+        if (this.input.method_25404(key, scan, mod)) {
+            this.error = null;
             return true;
         }
         return super.method_25404(key, scan, mod);
     }
 
     public boolean method_25400(char c, int mod) {
-        if (this.input.charTyped(c)) {
+        if (this.input.method_25400(c, mod)) {
             this.error = null;
             return true;
         }
@@ -241,7 +171,7 @@ extends class_437 {
     }
 
     private void apply() {
-        class_2520 newTag = NbtHelper.parseValue(this.input.value(), this.node.getTag());
+        class_2520 newTag = NbtHelper.parseValue(this.input.method_1882(), this.node.getTag());
         if (newTag == null) {
             this.error = class_2561.method_43469((String)"ankinbt.edit.error", (Object[])new Object[]{this.node.getTypeName()}).getString();
             return;

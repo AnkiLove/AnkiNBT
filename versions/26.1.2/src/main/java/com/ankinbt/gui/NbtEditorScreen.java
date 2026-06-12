@@ -8,6 +8,7 @@ import com.ankinbt.nbt.NbtTreeNode;
 import com.ankinbt.util.UiSound;
 import net.minecraft.client.Minecraft;
 import com.ankinbt.compat.GuiGraphics;
+import com.ankinbt.util.FlatEditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -70,7 +71,7 @@ public class NbtEditorScreen extends Screen {
     private int sideX, sideY, sideW, sideH;
     private int treeX, treeY, treeW, treeH;
 
-    private String searchQ = "";
+    private FlatEditBox searchBox;
     private boolean searching = false;
     private final List<Btn> buttons = new ArrayList<>();
 
@@ -114,8 +115,9 @@ public class NbtEditorScreen extends Screen {
     private void refreshVisible() {
         visibleNodes.clear();
         if (rootNode != null) rootNode.collectVisible(visibleNodes);
-        if (searching && !searchQ.isEmpty()) {
-            String q = searchQ.toLowerCase();
+        String search = searchValue();
+        if (searching && !search.isEmpty()) {
+            String q = search.toLowerCase();
             visibleNodes = visibleNodes.stream()
                     .filter(n -> n.getKey().toLowerCase().contains(q)
                             || n.getDisplayValue().toLowerCase().contains(q)
@@ -141,7 +143,37 @@ public class NbtEditorScreen extends Screen {
         treeH = ph - HEADER_H - FOOTER_H - 2;
         maxRows = treeH / ROW_H;
 
+        initSearchBox();
         buildButtons();
+    }
+
+    private void initSearchBox() {
+        String value = searchValue();
+        searchBox = new FlatEditBox(font, treeX + 2, treeY + 1, Math.max(1, treeW - 4), ROW_H - 2, Component.translatable("ankinbt.search.hint"));
+        searchBox.setMaxLength(256);
+        searchBox.setValue(value);
+        searchBox.setResponder(v -> refreshVisible());
+        searchBox.setFocused(searching);
+    }
+
+    private String searchValue() {
+        return searchBox == null ? "" : searchBox.getValue();
+    }
+
+    private void setSearching(boolean value) {
+        searching = value;
+        if (searchBox != null) {
+            if (!searching) searchBox.setValue("");
+            searchBox.setFocused(searching);
+        }
+        refreshVisible();
+    }
+
+    private void layoutSearchBox() {
+        if (searchBox == null) initSearchBox();
+        searchBox.setX(treeX + 2);
+        searchBox.setY(treeY + 1);
+        searchBox.setWidth(Math.max(1, treeW - 4));
     }
 
     private void buildButtons() {
@@ -161,7 +193,7 @@ public class NbtEditorScreen extends Screen {
         }));
         bx -= bw + gap;
         buttons.add(new Btn(bx, by, bw, bw, "S", Component.translatable("ankinbt.btn.search"), () -> {
-            searching = !searching; if (!searching) searchQ = ""; refreshVisible();
+            setSearching(!searching);
         }));
         bx -= bw + gap;
         buttons.add(new Btn(bx, by, bw, bw, "N", Component.translatable("ankinbt.btn.add"), this::addTag));
@@ -225,8 +257,8 @@ public class NbtEditorScreen extends Screen {
         // Header
         g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
         g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
-        g.drawString(font, "ANBT", px + 16, py + 11, 0xFFE2E8F0, false);
-        g.drawString(font, "高级模式", px + 46, py + 11, 0xFFFF2D7A, false);
+        g.drawString(font, "AnkiNBT", px + 16, py + 11, 0xFFE2E8F0, false);
+        g.drawString(font, "高级模式", px + 64, py + 11, 0xFFFF2D7A, false);
         if (dirty) g.drawString(font, "*", px + 116, py + 12, ERROR_C, false);
 
         for (Btn b : buttons) b.render(g, font, mx, my);
@@ -240,8 +272,9 @@ public class NbtEditorScreen extends Screen {
         if (searching) {
             g.fill(treeX, treeY, treeX + treeW, treeY + ROW_H, 0x40000000);
             drawBorder(g, treeX, treeY, treeW, ROW_H, accentFade);
-            String disp = searchQ.isEmpty() ? Component.translatable("ankinbt.search.hint").getString() : searchQ + "_";
-            g.drawString(font, disp, treeX + 4, treeY + 5, searchQ.isEmpty() ? C3 : C1, false);
+            layoutSearchBox();
+            searchBox.setFocused(true);
+            searchBox.renderWidget(g, mx, my, pt);
             atY += ROW_H + 2; atH -= ROW_H + 2;
             maxRows = atH / ROW_H;
         } else {
@@ -443,6 +476,14 @@ public class NbtEditorScreen extends Screen {
 
         for (Btn b : buttons) if (b.isHover((int) mx, (int) my)) { UiSound.playClick(); b.action.run(); return true; }
 
+        if (searching) {
+            layoutSearchBox();
+            if (searchBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) {
+                searchBox.setFocused(true);
+                return true;
+            }
+        }
+
         if (hoverIdx >= 0 && hoverIdx < visibleNodes.size()) {
             long now = System.currentTimeMillis();
             if (hoverIdx == lastClickIdx && now - lastClickTime < 400) {
@@ -472,8 +513,10 @@ public class NbtEditorScreen extends Screen {
             return true;
         }
         if (searching) {
-            if (key == 259 && !searchQ.isEmpty()) { searchQ = searchQ.substring(0, searchQ.length() - 1); refreshVisible(); return true; }
-            if (key == 256) { searching = false; searchQ = ""; refreshVisible(); return true; }
+            if (key == 256) { setSearching(false); return true; }
+            layoutSearchBox();
+            if (searchBox.keyPressed(new KeyEvent(key, scan, mod))) return true;
+            return true;
         }
         if (key == 256) { tryClose(); return true; }
         if (key == 264 && selIdx < visibleNodes.size() - 1) { selIdx++; ensureVis(selIdx); return true; }
@@ -490,7 +533,11 @@ public class NbtEditorScreen extends Screen {
     }
 
     public boolean charTyped(char c, int mod) {
-        if (searching) { searchQ += c; refreshVisible(); return true; }
+        if (searching) {
+            layoutSearchBox();
+            if (searchBox.charTyped(new CharacterEvent(c))) return true;
+            return true;
+        }
         return false;
     }
 
@@ -784,7 +831,7 @@ public class NbtEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (keyPressed(event.key(), event.scancode(), 0)) return true;
+        if (keyPressed(event.key(), event.scancode(), event.modifiers())) return true;
         return super.keyPressed(event);
     }
     @Override
@@ -793,10 +840,6 @@ public class NbtEditorScreen extends Screen {
         return super.charTyped(event);
     }
 }
-
-
-
-
 
 
 

@@ -24,7 +24,7 @@ import com.ankinbt.gui.ValueEditScreen;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
-import com.ankinbt.util.TextEditBuffer;
+import com.ankinbt.util.FlatEditBox;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -88,7 +88,7 @@ extends class_437 {
     private int treeY;
     private int treeW;
     private int treeH;
-    private final TextEditBuffer searchQ = new TextEditBuffer("");
+    private FlatEditBox searchBox;
     private boolean searching = false;
     private final List<Btn> buttons = new ArrayList<Btn>();
     private String statusMsg = null;
@@ -127,8 +127,9 @@ extends class_437 {
         if (this.rootNode != null) {
             this.rootNode.collectVisible(this.visibleNodes);
         }
-        if (this.searching && !this.searchQ.value().isEmpty()) {
-            String q = this.searchQ.value().toLowerCase();
+        String search = this.searchValue();
+        if (this.searching && !search.isEmpty()) {
+            String q = search.toLowerCase();
             this.visibleNodes = this.visibleNodes.stream().filter(n -> n.getKey().toLowerCase().contains(q) || n.getDisplayValue().toLowerCase().contains(q) || n.getTypeName().toLowerCase().contains(q)).collect(Collectors.toList());
         }
         this.clampScroll();
@@ -149,7 +150,41 @@ extends class_437 {
         this.treeW = this.pw - 140 - 6 - 6;
         this.treeH = this.ph - 32 - 20 - 2;
         this.maxRows = this.treeH / 18;
+        this.initSearchBox();
         this.buildButtons();
+    }
+
+    private void initSearchBox() {
+        String value = this.searchValue();
+        this.searchBox = new FlatEditBox(this.field_22793, this.treeX + 2, this.treeY + 1, Math.max(1, this.treeW - 4), 16, (class_2561)class_2561.method_43471((String)"ankinbt.search.hint"));
+        this.searchBox.method_1852(256);
+        this.searchBox.method_1852(value == null ? "" : value);
+        this.searchBox.method_1863(v -> this.refreshVisible());
+        this.searchBox.method_25365(this.searching);
+    }
+
+    private String searchValue() {
+        return this.searchBox == null ? "" : this.searchBox.method_1882();
+    }
+
+    private void setSearching(boolean value) {
+        this.searching = value;
+        if (this.searchBox != null) {
+            if (!this.searching) {
+                this.searchBox.method_1852("");
+            }
+            this.searchBox.method_25365(this.searching);
+        }
+        this.refreshVisible();
+    }
+
+    private void layoutSearchBox() {
+        if (this.searchBox == null) {
+            this.initSearchBox();
+        }
+        this.searchBox.method_46421(this.treeX + 2);
+        this.searchBox.method_46419(this.treeY + 1);
+        this.searchBox.method_25358(Math.max(1, this.treeW - 4));
     }
 
     private void buildButtons() {
@@ -169,12 +204,7 @@ extends class_437 {
             this.refreshVisible();
         }));
         this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "S", (class_2561)class_2561.method_43471((String)"ankinbt.btn.search"), () -> {
-            boolean bl = this.searching = !this.searching;
-            if (!this.searching) {
-                this.searchQ.setValue("");
-            }
-            this.searchQ.moveTo(this.searchQ.value().length(), false);
-            this.refreshVisible();
+            this.setSearching(!this.searching);
         }));
         this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "N", (class_2561)class_2561.method_43471((String)"ankinbt.btn.add"), this::addTag));
         int saveW = 40;
@@ -207,8 +237,8 @@ extends class_437 {
         this.drawBorder(g, this.px, this.py, this.pw, this.ph, border);
         g.method_25294(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 32, header);
         g.method_25294(this.px + 1, this.py + 32, this.px + this.pw - 1, this.py + 32 + 1, border);
-        VersionCompat.get().drawString(g, this.field_22793, "ANBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
-        VersionCompat.get().drawString(g, this.field_22793, "高级模式", this.px + 46, this.py + 11, 0xFFFF2D7A, false);
+        VersionCompat.get().drawString(g, this.field_22793, "AnkiNBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
+        VersionCompat.get().drawString(g, this.field_22793, "高级模式", this.px + 64, this.py + 11, 0xFFFF2D7A, false);
         if (this.dirty) {
             VersionCompat.get().drawString(g, this.field_22793, "*", this.px + 116, this.py + 12, -1096636, false);
         }
@@ -220,25 +250,11 @@ extends class_437 {
         int atY = this.treeY;
         int atH = this.treeH;
         if (this.searching) {
-            int selEnd;
-            int selStart;
-            String disp;
             g.method_25294(this.treeX, this.treeY, this.treeX + this.treeW, this.treeY + 18, 0x40000000);
             this.drawBorder(g, this.treeX, this.treeY, this.treeW, 18, accentFade);
-            String value = this.searchQ.value();
-            int maxSearchW = this.treeW - 8;
-            int viewStart = this.textViewStart(value, this.searchQ.cursor(), maxSearchW);
-            String string = disp = value.isEmpty() ? class_2561.method_43471((String)"ankinbt.search.hint").getString() : this.visibleText(value, viewStart, maxSearchW);
-            if (!value.isEmpty() && this.searchQ.hasSelection() && (selStart = Math.max(this.searchQ.selectionStart(), viewStart)) < (selEnd = Math.min(this.searchQ.selectionEnd(), viewStart + disp.length()))) {
-                int sx = this.treeX + 4 + this.field_22793.method_1727(value.substring(viewStart, selStart));
-                int ex = this.treeX + 4 + this.field_22793.method_1727(value.substring(viewStart, selEnd));
-                g.method_25294(sx, this.treeY + 4, ex, this.treeY + 18 - 4, 1715176182);
-            }
-            VersionCompat.get().drawString(g, this.field_22793, disp, this.treeX + 4, this.treeY + 5, value.isEmpty() ? -10193781 : -1906448, false);
-            if (!value.isEmpty() && !this.searchQ.hasSelection() && System.currentTimeMillis() % 1000L < 500L) {
-                int cx = this.treeX + 4 + this.field_22793.method_1727(value.substring(viewStart, Math.max(viewStart, Math.min(this.searchQ.cursor(), value.length()))));
-                g.method_25294(cx, this.treeY + 4, cx + 1, this.treeY + 18 - 4, -1906448);
-            }
+            this.layoutSearchBox();
+            this.searchBox.method_25365(true);
+            this.searchBox.method_25394(g, mx, my, pt);
             atY += 20;
             this.maxRows = (atH -= 20) / 18;
         } else {
@@ -448,6 +464,13 @@ extends class_437 {
             b.action.run();
             return true;
         }
+        if (this.searching) {
+            this.layoutSearchBox();
+            if (this.searchBox.method_25402(mx, my, btn)) {
+                this.searchBox.method_25365(true);
+                return true;
+            }
+        }
         if (this.hoverIdx >= 0 && this.hoverIdx < this.visibleNodes.size()) {
             long now = System.currentTimeMillis();
             if (this.hoverIdx == this.lastClickIdx && now - this.lastClickTime < 400L) {
@@ -484,20 +507,15 @@ extends class_437 {
             return true;
         }
         if (this.searching) {
-            String before = this.searchQ.value();
-            if (this.searchQ.keyPressed(key, mod)) {
-                if (!before.equals(this.searchQ.value())) {
-                    this.refreshVisible();
-                }
-                return true;
-            }
             if (key == 256) {
-                this.searching = false;
-                this.searchQ.setValue("");
-                this.searchQ.moveTo(0, false);
-                this.refreshVisible();
+                this.setSearching(false);
                 return true;
             }
+            this.layoutSearchBox();
+            if (this.searchBox.method_25404(key, scan, mod)) {
+                return true;
+            }
+            return true;
         }
         if (key == 256) {
             this.tryClose();
@@ -545,9 +563,8 @@ extends class_437 {
 
     public boolean method_25400(char c, int mod) {
         if (this.searching) {
-            if (this.searchQ.charTyped(c)) {
-                this.refreshVisible();
-            }
+            this.layoutSearchBox();
+            this.searchBox.method_25400(c, mod);
             return true;
         }
         return false;

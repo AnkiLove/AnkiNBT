@@ -319,17 +319,20 @@ public class VersionCompat {
             stream.forEach(holder -> {
                 Object key = invokeAny(holder, "key", "unwrapKey");
                 if (key instanceof Optional<?> optional) key = optional.orElse(null);
-                String id = idFromKey(key);
-                if (!id.isBlank()) ids.add(id);
+                addId(ids, idFromKey(key));
             });
-            return ids;
         }
         Object keys = invokeAny(registry, "listElementIds");
-        if (keys instanceof Iterable<?> iterable) {
+        if (keys instanceof Stream<?> stream) {
+            stream.forEach(key -> addId(ids, idFromKey(key)));
+        } else if (keys instanceof Iterable<?> iterable) {
             for (Object key : iterable) {
-                String id = idFromKey(key);
-                if (!id.isBlank()) ids.add(id);
+                addId(ids, idFromKey(key));
             }
+        }
+        Object keySet = invokeAny(registry, "keySet", "method_10235");
+        if (keySet instanceof Iterable<?> iterable) {
+            for (Object key : iterable) addId(ids, idFromKey(key));
         }
         return ids;
     }
@@ -339,6 +342,9 @@ public class VersionCompat {
         Object location = parseResourceId(id);
         if (registry == null || location == null) return Optional.empty();
         Object holder = invokeRegistryLookup(registry, location, "getHolder", "get");
+        if (holder == null) {
+            holder = invokeRegistryLookup(registry, createElementKey(registryKey, location), "getHolder", "get");
+        }
         if (holder instanceof Optional<?> optional) return optional;
         return holder != null ? Optional.of(holder) : Optional.empty();
     }
@@ -386,6 +392,30 @@ public class VersionCompat {
             }
         } catch (Throwable ignored) {}
         return null;
+    }
+
+    private Object createElementKey(Object registryKey, Object location) {
+        Object key = createElementKeyWith("net.minecraft.resources.ResourceKey", registryKey, location);
+        return key != null ? key : createElementKeyWith("net.minecraft.registry.RegistryKey", registryKey, location);
+    }
+
+    private Object createElementKeyWith(String className, Object registryKey, Object location) {
+        try {
+            Class<?> cls = Class.forName(className);
+            for (Method method : cls.getMethods()) {
+                if (!List.of("create", "of", "method_29179", "method_29180").contains(method.getName()) || method.getParameterCount() != 2) continue;
+                Class<?>[] params = method.getParameterTypes();
+                if (!params[0].isAssignableFrom(registryKey.getClass()) || !params[1].isAssignableFrom(location.getClass())) continue;
+                try {
+                    return method.invoke(null, registryKey, location);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private void addId(List<String> ids, String id) {
+        if (id != null && !id.isBlank() && !ids.contains(id)) ids.add(id);
     }
 
     @SuppressWarnings("unchecked")

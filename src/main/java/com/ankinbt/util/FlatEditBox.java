@@ -16,6 +16,7 @@ import net.minecraft.network.chat.Component;
 
 public class FlatEditBox
 extends EditBox {
+    private static final int TEXT_PAD_X = 4;
     private int bgColor = 1075059755;
     private int borderColor = -13878436;
     private int focusedBorderColor = -10262799;
@@ -60,7 +61,18 @@ extends EditBox {
         g.fill(x, y + h - 1, x + w, y + h, edge);
         g.fill(x, y, x + 1, y + h, edge);
         g.fill(x + w - 1, y, x + w, y + h, edge);
-        super.renderWidget(g, mx, my, partialTick);
+        int textY = y + Math.max(1, (h - 8) / 2);
+        try {
+            this.setX(x + TEXT_PAD_X);
+            this.setY(textY);
+            this.setWidth(Math.max(1, w - TEXT_PAD_X * 2));
+            super.renderWidget(g, mx, my, partialTick);
+        }
+        finally {
+            this.setX(x);
+            this.setY(y);
+            this.setWidth(w);
+        }
     }
 }
 
