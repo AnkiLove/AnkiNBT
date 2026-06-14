@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.fabricmc.api.ClientModInitializer
  *  org.slf4j.Logger

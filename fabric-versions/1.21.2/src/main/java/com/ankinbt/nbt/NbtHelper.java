@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  com.mojang.serialization.DynamicOps
  *  net.minecraft.class_1799

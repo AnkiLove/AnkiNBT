@@ -104,9 +104,16 @@ public class AddTagScreen extends Screen {
         g.fill(x, y, x + 1, y + h, c); g.fill(x + w - 1, y, x + w, y + h, c);
     }
 
-    @Override
+
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        double mx = event.x(); double my = event.y();
+        return handleMouseClicked(event.x(), event.y(), event.button());
+    }
+
+    public boolean mouseClicked(double mx, double my, int btn) {
+        return handleMouseClicked(mx, my, btn);
+    }
+
+    private boolean handleMouseClicked(double mx, double my, int btn) {
         int iy = py + 34 + 14 + 20 + 8 + 12;
         int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
         for (int i = 0; i < TYPE_NAMES.length; i++) {
@@ -119,12 +126,18 @@ public class AddTagScreen extends Screen {
         if (mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH) { goBack(); return true; }
         int okX = px + PW / 2 + 8;
         if (mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH) { confirm(); return true; }
-        return super.mouseClicked(event, isDoubleClick);
+        return false;
     }
 
-    @Override
     public boolean keyPressed(KeyEvent event) {
-        int key = event.key(); int scan = event.scancode(); int mod = event.modifiers();
+        return handleKeyPressed(event.key(), event.scancode(), 0);
+    }
+
+    public boolean keyPressed(int key, int scan, int mod) {
+        return handleKeyPressed(key, scan, mod);
+    }
+
+    private boolean handleKeyPressed(int key, int scan, int mod) {
         if (key == 256) { goBack(); return true; }
         if (key == 257 || key == 335) { confirm(); return true; }
         if (key == 259 && keyCursor > 0) {
@@ -133,17 +146,23 @@ public class AddTagScreen extends Screen {
         }
         if (key == 263 && keyCursor > 0) { keyCursor--; return true; }
         if (key == 262 && keyCursor < keyInput.length()) { keyCursor++; return true; }
-        return super.keyPressed(event);
+        return false;
     }
 
-    @Override
     public boolean charTyped(CharacterEvent event) {
-        char c = (char) event.codepoint();
+        return handleCharTyped((char) event.codepoint(), 0);
+    }
+
+    public boolean charTyped(char c, int mod) {
+        return handleCharTyped(c, mod);
+    }
+
+    private boolean handleCharTyped(char c, int mod) {
         if (c >= 32) {
             keyInput = keyInput.substring(0, keyCursor) + c + keyInput.substring(keyCursor);
             keyCursor++; error = null; return true;
         }
-        return super.charTyped(event);
+        return false;
     }
 
     private void confirm() {

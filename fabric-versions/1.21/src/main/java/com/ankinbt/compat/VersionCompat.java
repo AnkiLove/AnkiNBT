@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.fabricmc.loader.api.FabricLoader
  *  net.minecraft.class_10215
@@ -135,7 +135,7 @@ public class VersionCompat {
         return (Optional<class_6880.class_6883<class_1320>>)(Optional<?>)this.getHolder(class_7924.field_41251, id);
     }
     public boolean isFireResistant(class_1799 stack) {
-        return stack.method_57826(class_9334.field_54273);
+        return stack.method_57824(class_9334.field_54273) != null;
     }
 
     public void setFireResistant(class_1799 stack, boolean value) {
@@ -264,10 +264,15 @@ public class VersionCompat {
     }
 
     public void setUnbreakable(class_1799 stack, boolean value) {
+        stack.method_57381(class_9334.field_49630);
         if (value) {
             stack.method_57379(class_9334.field_49630, (Object)new class_9300(true));
-        } else {
-            stack.method_57381(class_9334.field_49630);
+        }
+    }
+
+    public void sanitizeForCreativeSave(class_1799 stack) {
+        if (stack != null && stack.method_57824(class_9334.field_49630) != null) {
+            this.setUnbreakable(stack, true);
         }
     }
 

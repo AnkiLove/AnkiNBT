@@ -21,6 +21,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Locale;
 
 public class KeyBindings {
@@ -88,7 +89,7 @@ public class KeyBindings {
                             net.minecraft.network.chat.Component.translatable("ankinbt.message.no_item"), true);
                     continue;
                 }
-                openItemEditor(held, -1);
+                openItemEditor(held, getHeldInventorySlot(client));
             }
 
             while (openEntityEditorKey.consumeClick()) {
@@ -100,7 +101,7 @@ public class KeyBindings {
 
                 ItemStack held = getHeldOrOffhand(client);
                 if (SpawnEggEditorHelper.isSpawnEgg(held)) {
-                    openSmartEntityEditor(client, null, held, -1, client.screen);
+                    openSmartEntityEditor(client, null, held, getHeldInventorySlot(client), client.screen);
                     continue;
                 }
 
@@ -120,7 +121,7 @@ public class KeyBindings {
                     Slot hoveredSlot = getHoveredSlot(containerScreen);
                     if (hoveredSlot == null || !hoveredSlot.hasItem()) return;
                     ItemStack stack = hoveredSlot.getItem();
-                    int slotIndex = hoveredSlot.getContainerSlot();
+                    int slotIndex = KeyBindings.getMenuSlotIndex(containerScreen, hoveredSlot);
 
                     if (openItemEditorKey.matches(keyEvent)) {
                         openItemEditor(stack, slotIndex);
@@ -133,6 +134,102 @@ public class KeyBindings {
                 });
             }
         });
+    }
+
+    private static int getMenuSlotIndex(AbstractContainerScreen<?> screen, Slot slot) {
+        if (slot == null) {
+            return -1;
+        }
+        int playerSlot = KeyBindings.getPlayerInventorySlot(slot);
+        if (playerSlot >= 0) {
+            return KeyBindings.creativePacketSlotFromPlayerInventory(playerSlot);
+        }
+        int menuIndex = KeyBindings.findSlotIndex(screen, slot);
+        int menuPlayerSlot = KeyBindings.playerInventorySlotFromCreativePacket(menuIndex);
+        if (menuPlayerSlot >= 0 && KeyBindings.isPlayerInventorySlot(slot, menuPlayerSlot)) {
+            return menuIndex;
+        }
+        return -1;
+    }
+
+    private static int getPlayerInventorySlot(Slot slot) {
+        int containerSlot = slot.getContainerSlot();
+        if (containerSlot < 0 || containerSlot >= 36) {
+            return -1;
+        }
+        return KeyBindings.isPlayerInventorySlot(slot, containerSlot) ? containerSlot : -1;
+    }
+
+    private static boolean isPlayerInventorySlot(Slot slot, int playerSlot) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || playerSlot < 0 || playerSlot >= 36) {
+            return false;
+        }
+        if (slot.container == mc.player.getInventory()) {
+            return true;
+        }
+        ItemStack playerStack = mc.player.getInventory().getItem(playerSlot);
+        return playerStack == slot.getItem();
+    }
+
+    private static int playerInventorySlotFromCreativePacket(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+
+    private static int creativePacketSlotFromPlayerInventory(int playerSlot) {
+        if (playerSlot >= 0 && playerSlot < 9) {
+            return 36 + playerSlot;
+        }
+        if (playerSlot >= 9 && playerSlot < 36) {
+            return playerSlot;
+        }
+        return -1;
+    }
+    private static int findSlotIndex(Object screen, Object slot) {
+        int directIndex = KeyBindings.findSlotIndexInFields(screen, slot);
+        if (directIndex >= 0) {
+            return directIndex;
+        }
+        for (Class<?> type = screen == null ? null : screen.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    int nestedIndex = KeyBindings.findSlotIndexInFields(field.get(screen), slot);
+                    if (nestedIndex >= 0) {
+                        return nestedIndex;
+                    }
+                } catch (Throwable ignored) {
+                    // Try the next field.
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findSlotIndexInFields(Object owner, Object slot) {
+        for (Class<?> type = owner == null ? null : owner.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(owner);
+                    if (value instanceof List<?> slots) {
+                        int index = slots.indexOf(slot);
+                        if (index >= 0) {
+                            return index;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // Try the next field.
+                }
+            }
+        }
+        return -1;
     }
 
     private static void openSmartEntityEditor(Minecraft client, Entity looked, ItemStack spawnEgg, int slot, net.minecraft.client.gui.screens.Screen parent) {
@@ -183,6 +280,44 @@ public class KeyBindings {
         ItemStack held = client.player.getMainHandItem();
         if (held.isEmpty()) held = client.player.getOffhandItem();
         return held;
+    }
+
+    private static int getHeldInventorySlot(Minecraft client) {
+        if (client.player == null) {
+            return -1;
+        }
+        ItemStack mainHand = client.player.getMainHandItem();
+        if (mainHand.isEmpty()) {
+            return -1;
+        }
+        net.minecraft.world.entity.player.Inventory inventory = client.player.getInventory();
+        for (int i = 0; i < 36; ++i) {
+            if (inventory.getItem(i) == mainHand) {
+                return i;
+            }
+        }
+        int matchedSlot = -1;
+        for (int i = 0; i < 36; ++i) {
+            ItemStack candidate = inventory.getItem(i);
+            if (candidate.getCount() == mainHand.getCount() && ItemStack.isSameItemSameComponents(candidate, mainHand)) {
+                if (matchedSlot >= 0) {
+                    matchedSlot = -1;
+                    break;
+                }
+                matchedSlot = i;
+            }
+        }
+        if (matchedSlot >= 0) {
+            return matchedSlot;
+        }
+        int selected = com.ankinbt.compat.VersionCompat.get().getSelectedSlot(inventory);
+        if (selected >= 0 && selected < 36) {
+            ItemStack selectedStack = inventory.getItem(selected);
+            if (selectedStack.getCount() == mainHand.getCount() && ItemStack.isSameItemSameComponents(selectedStack, mainHand)) {
+                return selected;
+            }
+        }
+        return -1;
     }
 
     private static void openItemEditor(ItemStack stack, int slot) {

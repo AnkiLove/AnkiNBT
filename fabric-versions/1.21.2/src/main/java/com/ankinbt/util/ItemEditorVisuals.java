@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.class_1799
  *  net.minecraft.class_1802

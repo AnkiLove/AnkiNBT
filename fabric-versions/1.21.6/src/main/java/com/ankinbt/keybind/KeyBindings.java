@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
  *  net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
@@ -28,6 +28,7 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.SimpleEditorScreen;
 import com.ankinbt.gui.VillagerTradeEditorScreen;
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Locale;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -92,7 +93,7 @@ public class KeyBindings {
                     client.field_1724.method_7353((class_2561)class_2561.method_43471((String)"ankinbt.message.no_item"), true);
                     continue;
                 }
-                KeyBindings.openItemEditor(held, -1);
+                KeyBindings.openItemEditor(held, getHeldInventorySlot(client));
             }
             while (openEntityEditorKey.method_1436()) {
                 class_1297 looked = KeyBindings.getLookedEntity(client);
@@ -102,7 +103,7 @@ public class KeyBindings {
                 }
                 class_1799 held = KeyBindings.getHeldOrOffhand(client);
                 if (SpawnEggEditorHelper.isSpawnEgg(held)) {
-                    KeyBindings.openSmartEntityEditor(client, null, held, -1, client.field_1755);
+                    KeyBindings.openSmartEntityEditor(client, null, held, KeyBindings.getHeldInventorySlot(client), client.field_1755);
                     continue;
                 }
                 client.field_1724.method_7353((class_2561)class_2561.method_43471((String)"ankinbt.entity.target_hint"), true);
@@ -121,7 +122,7 @@ public class KeyBindings {
                         return;
                     }
                     class_1799 stack = hoveredSlot.method_7677();
-                    int slotIndex = hoveredSlot.method_34266();
+                    int slotIndex = KeyBindings.getMenuSlotIndex(containerScreen, hoveredSlot);
                     if (openItemEditorKey.method_1417(key, scancode)) {
                         KeyBindings.openItemEditor(stack, slotIndex);
                         return;
@@ -132,6 +133,102 @@ public class KeyBindings {
                 });
             }
         });
+    }
+
+    private static int getMenuSlotIndex(class_465<?> screen, class_1735 slot) {
+        if (slot == null) {
+            return -1;
+        }
+        int playerSlot = KeyBindings.getPlayerInventorySlot(slot);
+        if (playerSlot >= 0) {
+            return KeyBindings.creativePacketSlotFromPlayerInventory(playerSlot);
+        }
+        int menuIndex = KeyBindings.findSlotIndex(screen, slot);
+        int menuPlayerSlot = KeyBindings.playerInventorySlotFromCreativePacket(menuIndex);
+        if (menuPlayerSlot >= 0 && KeyBindings.isPlayerInventorySlot(slot, menuPlayerSlot)) {
+            return menuIndex;
+        }
+        return -1;
+    }
+
+    private static int getPlayerInventorySlot(class_1735 slot) {
+        int containerSlot = slot.method_34266();
+        if (containerSlot < 0 || containerSlot >= 36) {
+            return -1;
+        }
+        return KeyBindings.isPlayerInventorySlot(slot, containerSlot) ? containerSlot : -1;
+    }
+
+    private static boolean isPlayerInventorySlot(class_1735 slot, int playerSlot) {
+        class_310 mc = class_310.method_1551();
+        if (mc.field_1724 == null || playerSlot < 0 || playerSlot >= 36) {
+            return false;
+        }
+        if (slot.field_7871 == mc.field_1724.method_31548()) {
+            return true;
+        }
+        class_1799 playerStack = mc.field_1724.method_31548().method_5438(playerSlot);
+        return playerStack == slot.method_7677();
+    }
+
+    private static int playerInventorySlotFromCreativePacket(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+
+    private static int creativePacketSlotFromPlayerInventory(int playerSlot) {
+        if (playerSlot >= 0 && playerSlot < 9) {
+            return 36 + playerSlot;
+        }
+        if (playerSlot >= 9 && playerSlot < 36) {
+            return playerSlot;
+        }
+        return -1;
+    }
+    private static int findSlotIndex(Object screen, Object slot) {
+        int directIndex = KeyBindings.findSlotIndexInFields(screen, slot);
+        if (directIndex >= 0) {
+            return directIndex;
+        }
+        for (Class<?> type = screen == null ? null : screen.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    int nestedIndex = KeyBindings.findSlotIndexInFields(field.get(screen), slot);
+                    if (nestedIndex >= 0) {
+                        return nestedIndex;
+                    }
+                } catch (Throwable ignored) {
+                    // Try the next field.
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findSlotIndexInFields(Object owner, Object slot) {
+        for (Class<?> type = owner == null ? null : owner.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(owner);
+                    if (value instanceof List<?> slots) {
+                        int index = slots.indexOf(slot);
+                        if (index >= 0) {
+                            return index;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // Try the next field.
+                }
+            }
+        }
+        return -1;
     }
 
     private static void openSmartEntityEditor(class_310 client, class_1297 looked, class_1799 spawnEgg, int slot, class_437 parent) {
@@ -188,6 +285,44 @@ public class KeyBindings {
             held = client.field_1724.method_6079();
         }
         return held;
+    }
+
+    private static int getHeldInventorySlot(class_310 client) {
+        if (client.field_1724 == null) {
+            return -1;
+        }
+        class_1799 mainHand = client.field_1724.method_6047();
+        if (mainHand.method_7960()) {
+            return -1;
+        }
+        net.minecraft.class_1661 inventory = client.field_1724.method_31548();
+        for (int i = 0; i < 36; ++i) {
+            if (inventory.method_5438(i) == mainHand) {
+                return i;
+            }
+        }
+        int matchedSlot = -1;
+        for (int i = 0; i < 36; ++i) {
+            class_1799 candidate = inventory.method_5438(i);
+            if (candidate.method_7947() == mainHand.method_7947() && class_1799.method_31577(candidate, mainHand)) {
+                if (matchedSlot >= 0) {
+                    matchedSlot = -1;
+                    break;
+                }
+                matchedSlot = i;
+            }
+        }
+        if (matchedSlot >= 0) {
+            return matchedSlot;
+        }
+        int selected = com.ankinbt.compat.VersionCompat.get().getSelectedSlot(inventory);
+        if (selected >= 0 && selected < 36) {
+            class_1799 selectedStack = inventory.method_5438(selected);
+            if (selectedStack.method_7947() == mainHand.method_7947() && class_1799.method_31577(selectedStack, mainHand)) {
+                return selected;
+            }
+        }
+        return -1;
     }
 
     private static void openItemEditor(class_1799 stack, int slot) {

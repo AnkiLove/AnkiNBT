@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.client.Minecraft
  *  net.minecraft.core.Holder$Reference
@@ -201,6 +201,28 @@ public final class SpawnEggEditorHelper {
         return s.toLowerCase();
     }
 
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot >= 36 && editedSlot < 45) {
+            return editedSlot;
+        }
+        if (editedSlot >= 0 && editedSlot < 9) {
+            return 36 + editedSlot;
+        }
+        if (editedSlot >= 9 && editedSlot < 36) {
+            return editedSlot;
+        }
+        return -1;
+    }
+
     public static boolean saveToCreativeSlot(Minecraft mc, ItemStack stack, int inventorySlot) {
         if (mc == null || mc.player == null || mc.gameMode == null) {
             return false;
@@ -209,17 +231,21 @@ public final class SpawnEggEditorHelper {
             return false;
         }
         if (inventorySlot >= 0) {
-            mc.player.getInventory().setItem(inventorySlot, stack.copy());
-            mc.gameMode.handleCreativeModeItemAdd(stack.copy(), inventorySlot);
-            if (inventorySlot < 9) {
-                mc.gameMode.handleCreativeModeItemAdd(stack.copy(), 36 + inventorySlot);
+            int creativeSlot = SpawnEggEditorHelper.creativePacketSlotFromEditedSlot(inventorySlot);
+            if (creativeSlot < 0) {
+                DebugLog.info("Skipped creative save for invalid slot {}", inventorySlot);
+                return false;
             }
-            DebugLog.info("Saved spawn egg into creative slot {}", inventorySlot);
+            int playerSlot = SpawnEggEditorHelper.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            if (playerSlot >= 0) {
+                mc.player.getInventory().setItem(playerSlot, stack.copy());
+            }
+            mc.gameMode.handleCreativeModeItemAdd(stack.copy(), creativeSlot);
+            DebugLog.info("Saved spawn egg into creative slot {}", creativeSlot);
             return true;
         }
         int selected = VersionCompat.get().getSelectedSlot(mc.player.getInventory());
         mc.player.getInventory().setItem(selected, stack.copy());
-        mc.gameMode.handleCreativeModeItemAdd(stack.copy(), selected);
         mc.gameMode.handleCreativeModeItemAdd(stack.copy(), 36 + selected);
         DebugLog.info("Saved spawn egg into selected slot {}", selected);
         return true;

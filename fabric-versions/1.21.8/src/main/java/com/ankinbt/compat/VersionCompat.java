@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.fabricmc.loader.api.FabricLoader
  *  net.minecraft.class_10215
@@ -33,7 +33,6 @@
  *  net.minecraft.class_9282
  *  net.minecraft.class_9285
  *  net.minecraft.class_9285$class_9287
- *  net.minecraft.class_9300
  *  net.minecraft.class_9334
  */
 package com.ankinbt.compat;
@@ -74,7 +73,6 @@ import net.minecraft.class_8103;
 import net.minecraft.class_9280;
 import net.minecraft.class_9282;
 import net.minecraft.class_9285;
-import net.minecraft.class_9300;
 import net.minecraft.class_9334;
 
 public class VersionCompat {
@@ -136,7 +134,7 @@ public class VersionCompat {
     }
 
     public boolean isFireResistant(class_1799 stack) {
-        return stack.method_57826(class_9334.field_54273);
+        return stack.method_57824(class_9334.field_54273) != null;
     }
 
     public void setFireResistant(class_1799 stack, boolean value) {
@@ -265,10 +263,15 @@ public class VersionCompat {
     }
 
     public void setUnbreakable(class_1799 stack, boolean value) {
+        stack.method_57381(class_9334.field_49630);
         if (value) {
-            stack.method_57379(class_9334.field_49630, (Object)new class_9300(true));
-        } else {
-            stack.method_57381(class_9334.field_49630);
+            stack.method_57379(class_9334.field_49630, (Object)class_3902.field_17274);
+        }
+    }
+
+    public void sanitizeForCreativeSave(class_1799 stack) {
+        if (stack != null && stack.method_57824(class_9334.field_49630) != null) {
+            this.setUnbreakable(stack, true);
         }
     }
 

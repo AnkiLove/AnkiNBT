@@ -117,8 +117,14 @@ public class VersionCompat {
     public boolean hasHideAdditionalFeature() { return false; }
 
     public void setUnbreakable(ItemStack stack, boolean value) {
+        stack.remove(DataComponents.UNBREAKABLE);
         if (value) stack.set(DataComponents.UNBREAKABLE, net.minecraft.util.Unit.INSTANCE);
-        else stack.remove(DataComponents.UNBREAKABLE);
+    }
+
+    public void sanitizeForCreativeSave(ItemStack stack) {
+        if (stack != null && stack.has(DataComponents.UNBREAKABLE)) {
+            setUnbreakable(stack, true);
+        }
     }
 
     public void setDyedColor(ItemStack stack, int rgb) {

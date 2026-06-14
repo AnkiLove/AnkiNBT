@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.class_1320
  *  net.minecraft.class_1322
@@ -1582,6 +1582,28 @@ extends class_437 {
         this.setStatus(class_2561.method_43469((String)"ankinbt.status.added", (Object[])new Object[]{this.getEnchantDisplayName(enchId)}).getString(), -14498466);
     }
 
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot >= 36 && editedSlot < 45) {
+            return editedSlot;
+        }
+        if (editedSlot >= 0 && editedSlot < 9) {
+            return 36 + editedSlot;
+        }
+        if (editedSlot >= 9 && editedSlot < 36) {
+            return editedSlot;
+        }
+        return -1;
+    }
+
     private void saveToItem() {
         class_310 mc = class_310.method_1551();
         if (mc.field_1724 == null) {
@@ -1591,9 +1613,18 @@ extends class_437 {
             this.setStatus(SimpleEditorScreen.tr("ankinbt.status.creative_only"), -1096636);
             return;
         }
+        VersionCompat.get().sanitizeForCreativeSave(this.editStack);
         if (this.inventorySlot >= 0) {
-            mc.field_1724.method_31548().method_5447(this.inventorySlot, this.editStack.method_7972());
-            mc.field_1761.method_2909(this.editStack.method_7972(), this.inventorySlot < 9 ? 36 + this.inventorySlot : this.inventorySlot);
+            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(this.inventorySlot);
+            if (creativeSlot < 0) {
+                this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+                return;
+            }
+            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            if (playerSlot >= 0) {
+                mc.field_1724.method_31548().method_5447(playerSlot, this.editStack.method_7972());
+            }
+            mc.field_1761.method_2909(this.editStack.method_7972(), creativeSlot);
         } else {
             int slot = VersionCompat.get().getSelectedSlot(mc.field_1724.method_31548());
             mc.field_1724.method_31548().method_5447(slot, this.editStack.method_7972());
@@ -1628,7 +1659,9 @@ extends class_437 {
 
     private int currentEditedSlot() {
         if (this.inventorySlot >= 0) {
-            return this.inventorySlot;
+            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(this.inventorySlot);
+            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            return playerSlot >= 0 ? playerSlot : this.inventorySlot;
         }
         class_310 mc = class_310.method_1551();
         if (mc.field_1724 == null) {
@@ -2210,6 +2243,7 @@ extends class_437 {
         final FlatEditBox inputBox;
         String error = null;
         final boolean isLore;
+        boolean initialCursorSynced = false;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field;
@@ -2240,6 +2274,10 @@ extends class_437 {
             this.inputBox.method_46421(ix);
             this.inputBox.method_46419(iy);
             this.inputBox.method_25358(iw);
+            if (!this.initialCursorSynced) {
+                this.inputBox.method_1883(this.inputBox.method_1882().length(), false);
+                this.initialCursorSynced = true;
+            }
             this.inputBox.method_25365(true);
             this.inputBox.method_25394(g, mx, my, 0.0f);
             if (colorEditable && !this.inputBox.method_1882().isEmpty()) {

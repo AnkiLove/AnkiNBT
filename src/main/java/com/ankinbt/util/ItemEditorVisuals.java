@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.world.item.ItemStack
  *  net.minecraft.world.item.Items

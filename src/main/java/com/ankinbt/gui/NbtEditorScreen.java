@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.client.Minecraft
  *  net.minecraft.client.gui.Font
@@ -614,6 +614,28 @@ extends Screen {
         this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{key}).getString(), -14498466);
     }
 
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot >= 36 && editedSlot < 45) {
+            return editedSlot;
+        }
+        if (editedSlot >= 0 && editedSlot < 9) {
+            return 36 + editedSlot;
+        }
+        if (editedSlot >= 9 && editedSlot < 36) {
+            return editedSlot;
+        }
+        return -1;
+    }
+
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
@@ -630,10 +652,18 @@ extends Screen {
             return;
         }
         ItemStack newStack = opt.get();
+        VersionCompat.get().sanitizeForCreativeSave(newStack);
         if (this.inventorySlot >= 0) {
-            mc.player.getInventory().setItem(this.inventorySlot, newStack.copy());
-            int packetSlot = this.inventorySlot < 9 ? 36 + this.inventorySlot : this.inventorySlot;
-            mc.gameMode.handleCreativeModeItemAdd(newStack.copy(), packetSlot);
+            int creativeSlot = NbtEditorScreen.creativePacketSlotFromEditedSlot(this.inventorySlot);
+            if (creativeSlot < 0) {
+                this.setStatus(Component.translatable((String)"ankinbt.status.save_error").getString(), -1096636);
+                return;
+            }
+            int playerSlot = NbtEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            if (playerSlot >= 0) {
+                mc.player.getInventory().setItem(playerSlot, newStack.copy());
+            }
+            mc.gameMode.handleCreativeModeItemAdd(newStack.copy(), creativeSlot);
         } else {
             int slot = VersionCompat.get().getSelectedSlot(mc.player.getInventory());
             mc.player.getInventory().setItem(slot, newStack.copy());
@@ -894,6 +924,5 @@ extends Screen {
         }
     }
 }
-
 
 

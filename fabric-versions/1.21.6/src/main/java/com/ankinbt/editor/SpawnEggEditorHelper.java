@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.class_1799
  *  net.minecraft.class_1826
@@ -202,6 +202,28 @@ public final class SpawnEggEditorHelper {
         return s.toLowerCase();
     }
 
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot >= 36 && editedSlot < 45) {
+            return editedSlot;
+        }
+        if (editedSlot >= 0 && editedSlot < 9) {
+            return 36 + editedSlot;
+        }
+        if (editedSlot >= 9 && editedSlot < 36) {
+            return editedSlot;
+        }
+        return -1;
+    }
+
     public static boolean saveToCreativeSlot(class_310 mc, class_1799 stack, int inventorySlot) {
         if (mc == null || mc.field_1724 == null || mc.field_1761 == null) {
             return false;
@@ -210,17 +232,21 @@ public final class SpawnEggEditorHelper {
             return false;
         }
         if (inventorySlot >= 0) {
-            mc.field_1724.method_31548().method_5447(inventorySlot, stack.method_7972());
-            mc.field_1761.method_2909(stack.method_7972(), inventorySlot);
-            if (inventorySlot < 9) {
-                mc.field_1761.method_2909(stack.method_7972(), 36 + inventorySlot);
+            int creativeSlot = SpawnEggEditorHelper.creativePacketSlotFromEditedSlot(inventorySlot);
+            if (creativeSlot < 0) {
+                DebugLog.info("Skipped creative save for invalid slot {}", inventorySlot);
+                return false;
             }
-            DebugLog.info("Saved spawn egg into creative slot {}", inventorySlot);
+            int playerSlot = SpawnEggEditorHelper.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            if (playerSlot >= 0) {
+                mc.field_1724.method_31548().method_5447(playerSlot, stack.method_7972());
+            }
+            mc.field_1761.method_2909(stack.method_7972(), creativeSlot);
+            DebugLog.info("Saved spawn egg into creative slot {}", creativeSlot);
             return true;
         }
         int selected = VersionCompat.get().getSelectedSlot(mc.field_1724.method_31548());
         mc.field_1724.method_31548().method_5447(selected, stack.method_7972());
-        mc.field_1761.method_2909(stack.method_7972(), selected);
         mc.field_1761.method_2909(stack.method_7972(), 36 + selected);
         DebugLog.info("Saved spawn egg into selected slot {}", selected);
         return true;

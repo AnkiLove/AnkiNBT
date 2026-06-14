@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  net.minecraft.client.Minecraft
  *  net.minecraft.client.gui.GuiGraphics
@@ -117,76 +117,65 @@ extends Screen {
         g.fill(x + w - 1, y, x + w, y + h, c);
     }
 
+
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        double mx = event.x();
-        double my = event.y();
-        int iy = this.py + 34 + 14 + 20 + 8 + 12;
-        int cols = 3;
-        int bw = (276 - (cols - 1) * 4) / cols;
-        int bh = 18;
-        for (int i = 0; i < TYPE_NAMES.length; ++i) {
-            int col = i % cols;
-            int row = i / cols;
-            int bx = this.px + 12 + col * (bw + 4);
-            int by = iy + row * (bh + 3);
-            if (!(mx >= (double)bx) || !(mx < (double)(bx + bw)) || !(my >= (double)by) || !(my < (double)(by + bh))) continue;
-            this.selectedType = i;
-            return true;
+        return handleMouseClicked(event.x(), event.y(), event.button());
+    }
+
+    public boolean mouseClicked(double mx, double my, int btn) {
+        return handleMouseClicked(mx, my, btn);
+    }
+
+    private boolean handleMouseClicked(double mx, double my, int btn) {
+        int iy = py + 34 + 14 + 20 + 8 + 12;
+        int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
+        for (int i = 0; i < TYPE_NAMES.length; i++) {
+            int col = i % cols, row = i / cols;
+            int bx = px + 12 + col * (bw + 4), by = iy + row * (bh + 3);
+            if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) { selectedType = i; return true; }
         }
-        int btnY = this.py + 200 - 30;
-        int btnW = 80;
-        int btnH = 22;
-        int cancelX = this.px + 150 - btnW - 8;
-        if (mx >= (double)cancelX && mx < (double)(cancelX + btnW) && my >= (double)btnY && my < (double)(btnY + btnH)) {
-            this.goBack();
-            return true;
-        }
-        int okX = this.px + 150 + 8;
-        if (mx >= (double)okX && mx < (double)(okX + btnW) && my >= (double)btnY && my < (double)(btnY + btnH)) {
-            this.confirm();
-            return true;
-        }
-        return super.mouseClicked(mx, my, event.button());
+        int btnY = py + PH - 30, btnW = 80, btnH = 22;
+        int cancelX = px + PW / 2 - btnW - 8;
+        if (mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH) { goBack(); return true; }
+        int okX = px + PW / 2 + 8;
+        if (mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH) { confirm(); return true; }
+        return false;
     }
 
     public boolean keyPressed(KeyEvent event) {
-        int key = event.key();
-        int scan = event.scancode();
-        int mod = event.modifiers();
-        if (key == 256) {
-            this.goBack();
-            return true;
+        return handleKeyPressed(event.key(), event.scancode(), 0);
+    }
+
+    public boolean keyPressed(int key, int scan, int mod) {
+        return handleKeyPressed(key, scan, mod);
+    }
+
+    private boolean handleKeyPressed(int key, int scan, int mod) {
+        if (key == 256) { goBack(); return true; }
+        if (key == 257 || key == 335) { confirm(); return true; }
+        if (key == 259 && keyCursor > 0) {
+            keyInput = keyInput.substring(0, keyCursor - 1) + keyInput.substring(keyCursor);
+            keyCursor--; error = null; return true;
         }
-        if (key == 257 || key == 335) {
-            this.confirm();
-            return true;
-        }
-        if (key == 259 && this.keyCursor > 0) {
-            this.keyInput = this.keyInput.substring(0, this.keyCursor - 1) + this.keyInput.substring(this.keyCursor);
-            --this.keyCursor;
-            this.error = null;
-            return true;
-        }
-        if (key == 263 && this.keyCursor > 0) {
-            --this.keyCursor;
-            return true;
-        }
-        if (key == 262 && this.keyCursor < this.keyInput.length()) {
-            ++this.keyCursor;
-            return true;
-        }
-        return super.keyPressed(key, scan, mod);
+        if (key == 263 && keyCursor > 0) { keyCursor--; return true; }
+        if (key == 262 && keyCursor < keyInput.length()) { keyCursor++; return true; }
+        return false;
     }
 
     public boolean charTyped(CharacterEvent event) {
-        char c = (char)event.codepoint();
-        if (c >= ' ') {
-            this.keyInput = this.keyInput.substring(0, this.keyCursor) + c + this.keyInput.substring(this.keyCursor);
-            ++this.keyCursor;
-            this.error = null;
-            return true;
+        return handleCharTyped((char) event.codepoint(), 0);
+    }
+
+    public boolean charTyped(char c, int mod) {
+        return handleCharTyped(c, mod);
+    }
+
+    private boolean handleCharTyped(char c, int mod) {
+        if (c >= 32) {
+            keyInput = keyInput.substring(0, keyCursor) + c + keyInput.substring(keyCursor);
+            keyCursor++; error = null; return true;
         }
-        return super.charTyped(c, event.modifiers());
+        return false;
     }
 
     private void confirm() {

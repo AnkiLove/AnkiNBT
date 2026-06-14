@@ -1766,15 +1766,45 @@ public class SimpleEditorScreen extends Screen {
 
     // ==================== SAVE ====================
 
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot >= 36 && creativeSlot < 45) {
+            return creativeSlot - 36;
+        }
+        if (creativeSlot >= 9 && creativeSlot < 36) {
+            return creativeSlot;
+        }
+        return -1;
+    }
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot >= 36 && editedSlot < 45) {
+            return editedSlot;
+        }
+        if (editedSlot >= 0 && editedSlot < 9) {
+            return 36 + editedSlot;
+        }
+        if (editedSlot >= 9 && editedSlot < 36) {
+            return editedSlot;
+        }
+        return -1;
+    }
+
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         if (!mc.player.isCreative()) { setStatus(tr("ankinbt.status.creative_only"), ERROR_C); return; }
 
+        VersionCompat.get().sanitizeForCreativeSave(editStack);
         if (inventorySlot >= 0) {
-            // Save to specific inventory slot
-            mc.player.getInventory().setItem(inventorySlot, editStack.copy());
-            mc.gameMode.handleCreativeModeItemAdd(editStack.copy(), inventorySlot < 9 ? 36 + inventorySlot : inventorySlot);
+            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(inventorySlot);
+            if (creativeSlot < 0) {
+                setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+                return;
+            }
+            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            if (playerSlot >= 0) {
+                mc.player.getInventory().setItem(playerSlot, editStack.copy());
+            }
+            mc.gameMode.handleCreativeModeItemAdd(editStack.copy(), creativeSlot);
         } else {
             int slot = VersionCompat.get().getSelectedSlot(mc.player.getInventory());
             mc.player.getInventory().setItem(slot, editStack.copy());
@@ -1801,7 +1831,11 @@ public class SimpleEditorScreen extends Screen {
     private static String tr(String key) { return Component.translatable(key).getString(); }
 
     private int currentEditedSlot() {
-        if (inventorySlot >= 0) return inventorySlot;
+        if (inventorySlot >= 0) {
+            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(inventorySlot);
+            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            return playerSlot >= 0 ? playerSlot : inventorySlot;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return -1;
         return VersionCompat.get().getSelectedSlot(mc.player.getInventory());
@@ -3307,6 +3341,7 @@ public class SimpleEditorScreen extends Screen {
         final EditBox inputBox;
         String error = null;
         final boolean isLore;
+        boolean initialCursorSynced = false;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field; this.isLore = isLore;
@@ -3334,6 +3369,10 @@ public class SimpleEditorScreen extends Screen {
             inputBox.setX(ix);
             inputBox.setY(iy);
             inputBox.setWidth(iw);
+            if (!initialCursorSynced) {
+                inputBox.setCursorPosition(inputBox.getValue().length());
+                initialCursorSynced = true;
+            }
             inputBox.setFocused(true);
             inputBox.render(g, mx, my, 0.0f);
 

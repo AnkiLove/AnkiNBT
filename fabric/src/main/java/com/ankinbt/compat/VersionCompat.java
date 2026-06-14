@@ -246,13 +246,19 @@ public class VersionCompat {
     }
 
     public void setUnbreakable(ItemStack stack, boolean value) {
+        removeComponent(stack, DataComponents.UNBREAKABLE);
         if (!value) {
-            removeComponent(stack, DataComponents.UNBREAKABLE);
             return;
         }
         Object unbreakable = constructFirst("net.minecraft.world.item.component.Unbreakable",
                 new Class<?>[]{boolean.class}, true);
         setComponentUnchecked(stack, DataComponents.UNBREAKABLE, unbreakable != null ? unbreakable : unitInstance());
+    }
+
+    public void sanitizeForCreativeSave(ItemStack stack) {
+        if (stack != null && hasComponent(stack, DataComponents.UNBREAKABLE)) {
+            setUnbreakable(stack, true);
+        }
     }
 
     public void setDyedColor(ItemStack stack, int rgb) {
