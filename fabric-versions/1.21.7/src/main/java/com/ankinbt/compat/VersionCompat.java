@@ -264,7 +264,7 @@ public class VersionCompat {
     public void setUnbreakable(class_1799 stack, boolean value) {
         stack.method_57381(class_9334.field_49630);
         if (value) {
-            stack.method_57379(class_9334.field_49630, (Object)class_3902.field_17274);
+            stack.method_57379(class_9334.field_49630, (Object)new class_9300(true));
         }
     }
 

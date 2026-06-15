@@ -91,7 +91,9 @@ public class VersionCompat {
             return;
         }
         Object resistant = constructDamageResistant();
-        setComponentUnchecked(stack, type, resistant != null ? resistant : unitInstance());
+        if (resistant != null) {
+            setComponentUnchecked(stack, type, resistant);
+        }
     }
 
     public int getCustomModelData(ItemStack stack) {
@@ -250,9 +252,10 @@ public class VersionCompat {
         if (!value) {
             return;
         }
-        Object unbreakable = constructFirst("net.minecraft.world.item.component.Unbreakable",
-                new Class<?>[]{boolean.class}, true);
-        setComponentUnchecked(stack, DataComponents.UNBREAKABLE, unbreakable != null ? unbreakable : unitInstance());
+        Object unbreakable = constructUnbreakable(true);
+        if (unbreakable != null) {
+            setComponentUnchecked(stack, DataComponents.UNBREAKABLE, unbreakable);
+        }
     }
 
     public void sanitizeForCreativeSave(ItemStack stack) {
@@ -485,10 +488,37 @@ public class VersionCompat {
         }
     }
 
+    private Object constructUnbreakable(boolean showInTooltip) {
+        Object named = constructFirst("net.minecraft.world.item.component.Unbreakable",
+                new Class<?>[]{boolean.class}, showInTooltip);
+        if (named != null) {
+            return named;
+        }
+        return constructFirst("net.minecraft.class_9300", new Class<?>[]{boolean.class}, showInTooltip);
+    }
+
     private Object constructDamageResistant() {
+        Object named = constructDamageResistantWith(
+                "net.minecraft.world.item.component.DamageResistant",
+                "net.minecraft.tags.DamageTypeTags",
+                "IS_FIRE");
+        if (named != null) {
+            return named;
+        }
+        Object obfuscated = constructDamageResistantWith(
+                "net.minecraft.class_10215",
+                "net.minecraft.class_8103",
+                "field_42246");
+        if (obfuscated != null) {
+            return obfuscated;
+        }
+        return null;
+    }
+
+    private Object constructDamageResistantWith(String componentClass, String tagClass, String tagField) {
         try {
-            Class<?> cls = Class.forName("net.minecraft.world.item.component.DamageResistant");
-            Object tag = Class.forName("net.minecraft.tags.DamageTypeTags").getField("IS_FIRE").get(null);
+            Class<?> cls = Class.forName(componentClass);
+            Object tag = Class.forName(tagClass).getField(tagField).get(null);
             for (Constructor<?> ctor : cls.getConstructors()) {
                 if (ctor.getParameterCount() == 1 && ctor.getParameterTypes()[0].isAssignableFrom(tag.getClass())) {
                     return ctor.newInstance(tag);
