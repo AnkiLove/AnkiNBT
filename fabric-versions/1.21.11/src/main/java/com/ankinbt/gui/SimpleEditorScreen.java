@@ -1211,8 +1211,15 @@ public class SimpleEditorScreen extends Screen {
         List<ItemAttributeModifiers.Entry> entries = new ArrayList<>(attrComp.modifiers());
         if (index >= 0 && index < entries.size()) {
             entries.remove(index);
-            editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+            ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+            if (next == attrComp && entries.size() != attrComp.modifiers().size()) {
+                setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+                return;
+            }
+            editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
             markDirty();
+        } else {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
         }
     }
 
@@ -1224,14 +1231,22 @@ public class SimpleEditorScreen extends Screen {
 
     private void addAttribute(String attrId, double amount, AttributeModifier.Operation op, EquipmentSlotGroup slot) {
         Optional<Holder.Reference<Attribute>> holder = VersionCompat.get().getAttributeHolder(attrId);
-        if (holder.isEmpty()) return;
+        if (holder.isEmpty()) {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+            return;
+        }
 
         var attrComp = editStack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
         List<ItemAttributeModifiers.Entry> entries = new ArrayList<>(attrComp.modifiers());
         Identifier modId = Identifier.fromNamespaceAndPath("ankinbt", "custom_" + System.currentTimeMillis());
         entries.add(new ItemAttributeModifiers.Entry(holder.get(),
                 new AttributeModifier(modId, amount, op), slot));
-        editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+        ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+        if (next == attrComp && entries.size() != attrComp.modifiers().size()) {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+            return;
+        }
+        editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
         dirty = true;
         activeSubEditor = null;
         setStatus(Component.translatable("ankinbt.status.added", getAttrDisplayName(attrId)).getString(), SUCCESS);
@@ -1572,9 +1587,12 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private void removeEnchantment(String enchId) {
-        applyEnchantLevel(enchId, 0);
-        dirty = true;
-        setStatus(tr("ankinbt.status.deleted"), C2);
+        if (applyEnchantLevel(enchId, 0)) {
+            dirty = true;
+            setStatus(tr("ankinbt.status.deleted"), C2);
+        } else {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+        }
     }
 
     private void copyNbtToClipboard() {
@@ -1726,7 +1744,11 @@ public class SimpleEditorScreen extends Screen {
                 setLore(lore);
             } else if (field.startsWith("ench_level:")) {
                 String enchId = field.substring(11);
-                applyEnchantLevel(enchId, Integer.parseInt(value));
+                if (!applyEnchantLevel(enchId, Integer.parseInt(value))) {
+                    setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+                    activeSubEditor = null;
+                    return;
+                }
             } else if (field.startsWith("attr_amount:")) {
                 int idx = Integer.parseInt(field.substring(12));
                 var attrComp = editStack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
@@ -1736,7 +1758,17 @@ public class SimpleEditorScreen extends Screen {
                     double newAmount = Double.parseDouble(value);
                     entries.set(idx, new ItemAttributeModifiers.Entry(old.attribute(),
                             new AttributeModifier(old.modifier().id(), newAmount, old.modifier().operation()), old.slot()));
-                    editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+                    ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+                    if (next == attrComp) {
+                        setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+                        activeSubEditor = null;
+                        return;
+                    }
+                    editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
+                } else {
+                    setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+                    activeSubEditor = null;
+                    return;
                 }
             }
             dirty = true;
@@ -1747,21 +1779,27 @@ public class SimpleEditorScreen extends Screen {
         activeSubEditor = null;
     }
 
-    private void applyEnchantLevel(String enchId, int level) {
+    private boolean applyEnchantLevel(String enchId, int level) {
         Identifier loc = Identifier.tryParse(enchId);
-        if (loc == null) return;
-        Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
-        if (holder.isEmpty()) return;
+        if (loc == null) return false;
         ItemEnchantments.Mutable mutable = new ItemEnchantments.Mutable(EnchantmentHelper.getEnchantmentsForCrafting(editStack));
         if (level <= 0) mutable.removeIf(h -> h.unwrapKey().map(k -> k.identifier().equals(loc)).orElse(false));
-        else mutable.set(holder.get(), level);
+        else {
+            Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
+            if (holder.isEmpty()) return false;
+            mutable.set(holder.get(), level);
+        }
         editStack.set(DataComponents.ENCHANTMENTS, mutable.toImmutable());
+        return true;
     }
 
     private void addEnchantment(String enchId, int level) {
-        applyEnchantLevel(enchId, level);
-        dirty = true; activeSubEditor = null;
-        setStatus(Component.translatable("ankinbt.status.added", getEnchantDisplayName(enchId)).getString(), SUCCESS);
+        if (applyEnchantLevel(enchId, level)) {
+            dirty = true; activeSubEditor = null;
+            setStatus(Component.translatable("ankinbt.status.added", getEnchantDisplayName(enchId)).getString(), SUCCESS);
+        } else {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+        }
     }
 
     // ==================== SAVE ====================

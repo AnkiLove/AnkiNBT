@@ -732,8 +732,15 @@ extends Screen {
         ArrayList<ItemAttributeModifiers.Entry> entries = new ArrayList<ItemAttributeModifiers.Entry>(attrComp.modifiers());
         if (index >= 0 && index < entries.size()) {
             entries.remove(index);
-            this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+            ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+            if (next == attrComp && entries.size() != attrComp.modifiers().size()) {
+                this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+                return;
+            }
+            this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
             this.markDirty();
+        } else {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
         }
     }
 
@@ -746,13 +753,19 @@ extends Screen {
     private void addAttribute(String attrId, double amount, AttributeModifier.Operation op, EquipmentSlotGroup slot) {
         Optional<Holder.Reference<Attribute>> holder = VersionCompat.get().getAttributeHolder(attrId);
         if (holder.isEmpty()) {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
             return;
         }
         ItemAttributeModifiers attrComp = (ItemAttributeModifiers)this.editStack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
         ArrayList<ItemAttributeModifiers.Entry> entries = new ArrayList<ItemAttributeModifiers.Entry>(attrComp.modifiers());
         ResourceLocation modId = ResourceLocation.fromNamespaceAndPath((String)"ankinbt", (String)("custom_" + System.currentTimeMillis()));
         entries.add(new ItemAttributeModifiers.Entry((Holder)holder.get(), new AttributeModifier(modId, amount, op), slot));
-        this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+        ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+        if (next == attrComp && entries.size() != attrComp.modifiers().size()) {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+            return;
+        }
+        this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
         this.dirty = true;
         this.activeSubEditor = null;
         this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{this.getAttrDisplayName(attrId)}).getString(), -14498466);
@@ -1040,9 +1053,12 @@ extends Screen {
     }
 
     private void removeEnchantment(String enchId) {
-        this.applyEnchantLevel(enchId, 0);
-        this.dirty = true;
-        this.setStatus(SimpleEditorScreen.tr("ankinbt.status.deleted"), -7035976);
+        if (this.applyEnchantLevel(enchId, 0)) {
+            this.dirty = true;
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.deleted"), -7035976);
+        } else {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+        }
     }
 
     private void copyNbtToClipboard() {
@@ -1226,7 +1242,11 @@ extends Screen {
                 this.setLore(lore);
             } else if (field.startsWith("ench_level:")) {
                 String enchId = field.substring(11);
-                this.applyEnchantLevel(enchId, Integer.parseInt(value));
+                if (!this.applyEnchantLevel(enchId, Integer.parseInt(value))) {
+                    this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+                    this.activeSubEditor = null;
+                    return;
+                }
             } else if (field.startsWith("attr_amount:")) {
                 int idx = Integer.parseInt(field.substring(12));
                 ItemAttributeModifiers attrComp = (ItemAttributeModifiers)this.editStack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
@@ -1235,7 +1255,17 @@ extends Screen {
                     ItemAttributeModifiers.Entry old = (ItemAttributeModifiers.Entry)entries.get(idx);
                     double newAmount = Double.parseDouble(value);
                     entries.set(idx, new ItemAttributeModifiers.Entry(old.attribute(), new AttributeModifier(old.modifier().id(), newAmount, old.modifier().operation()), old.slot()));
-                    this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, VersionCompat.get().withEntries(entries, attrComp));
+                    ItemAttributeModifiers next = VersionCompat.get().withEntries(entries, attrComp);
+                    if (next == attrComp) {
+                        this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+                        this.activeSubEditor = null;
+                        return;
+                    }
+                    this.editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, next);
+                } else {
+                    this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+                    this.activeSubEditor = null;
+                    return;
                 }
             }
             this.dirty = true;
@@ -1247,29 +1277,33 @@ extends Screen {
         this.activeSubEditor = null;
     }
 
-    private void applyEnchantLevel(String enchId, int level) {
+    private boolean applyEnchantLevel(String enchId, int level) {
         ResourceLocation loc = ResourceLocation.tryParse((String)enchId);
         if (loc == null) {
-            return;
-        }
-        Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
-        if (holder.isEmpty()) {
-            return;
+            return false;
         }
         ItemEnchantments.Mutable mutable = new ItemEnchantments.Mutable(EnchantmentHelper.getEnchantmentsForCrafting((ItemStack)this.editStack));
         if (level <= 0) {
             mutable.removeIf(h -> h.unwrapKey().map(k -> k.location().equals(loc)).orElse(false));
         } else {
+            Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
+            if (holder.isEmpty()) {
+                return false;
+            }
             mutable.set((Holder)holder.get(), level);
         }
         this.editStack.set(DataComponents.ENCHANTMENTS, mutable.toImmutable());
+        return true;
     }
 
     private void addEnchantment(String enchId, int level) {
-        this.applyEnchantLevel(enchId, level);
-        this.dirty = true;
-        this.activeSubEditor = null;
-        this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{this.getEnchantDisplayName(enchId)}).getString(), -14498466);
+        if (this.applyEnchantLevel(enchId, level)) {
+            this.dirty = true;
+            this.activeSubEditor = null;
+            this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{this.getEnchantDisplayName(enchId)}).getString(), -14498466);
+        } else {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+        }
     }
 
     private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
@@ -4386,5 +4420,3 @@ extends Screen {
         }
     }
 }
-
-

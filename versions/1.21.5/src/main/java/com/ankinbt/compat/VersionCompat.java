@@ -213,14 +213,35 @@ public class VersionCompat {
         Object registry = getRegistry(registryKey);
         Object location = parseResourceId(id);
         if (registry == null || location == null) return Optional.empty();
-        Object holder = invokeRegistryLookup(registry, location, "getHolder", "get");
-        if (holder == null) {
-            holder = invokeRegistryLookup(registry, createElementKey(registryKey, location), "getHolder", "get");
+        Optional<?> holder = toHolderOptional(invokeRegistryLookup(registry, location,
+                "getHolder", "getEntry", "method_55841", "method_10223"));
+        if (holder.isEmpty()) {
+            holder = toHolderOptional(invokeRegistryLookup(registry, createElementKey(registryKey, location),
+                    "getHolder", "getEntry", "method_40264", "method_57095", "method_10223"));
         }
-        if (holder instanceof Optional<?> optional) return optional;
-        return holder != null ? Optional.of(holder) : Optional.empty();
+        if (holder.isEmpty()) {
+            Object value = invokeRegistryLookup(registry, location, "get", "getValue", "method_10223");
+            holder = toHolderOptional(invokeRegistryLookup(registry, value,
+                    "wrapAsHolder", "getEntry", "method_47983"));
+        }
+        return holder;
     }
 
+    private Optional<?> toHolderOptional(Object value) {
+        if (value instanceof Optional<?> optional) {
+            if (optional.isEmpty()) return Optional.empty();
+            Object unwrapped = optional.get();
+            return isHolder(unwrapped) ? optional : Optional.empty();
+        }
+        return isHolder(value) ? Optional.of(value) : Optional.empty();
+    }
+
+    private boolean isHolder(Object value) {
+        if (value == null) return false;
+        if (value instanceof Holder<?>) return true;
+        String name = value.getClass().getName();
+        return name.contains("Holder") || name.contains("class_6880");
+    }
     private Object getRegistry(Object registryKey) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;

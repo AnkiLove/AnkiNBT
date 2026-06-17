@@ -277,7 +277,7 @@ public class VersionCompat {
     }
 
     public ItemAttributeModifiers withEntries(List<ItemAttributeModifiers.Entry> entries, ItemAttributeModifiers old) {
-        Object keepTooltip = invokeAny(old, "showInTooltip");
+        Object keepTooltip = invokeAny(old, "showInTooltip", "comp_2394");
         Object withTooltip = keepTooltip instanceof Boolean b
                 ? constructItemAttributeModifiers(new Class<?>[]{List.class, boolean.class}, entries, b)
                 : null;
@@ -331,7 +331,7 @@ public class VersionCompat {
                 addId(ids, idFromKey(key));
             });
         }
-        Object keys = invokeAny(registry, "listElementIds");
+        Object keys = invokeAny(registry, "listElementIds", "method_46754");
         if (keys instanceof Stream<?> stream) {
             stream.forEach(key -> addId(ids, idFromKey(key)));
         } else if (keys instanceof Iterable<?> iterable) {
@@ -350,12 +350,34 @@ public class VersionCompat {
         Object registry = getRegistry(registryKey);
         Object location = parseResourceId(id);
         if (registry == null || location == null) return Optional.empty();
-        Object holder = invokeRegistryLookup(registry, location, "getHolder", "get");
-        if (holder == null) {
-            holder = invokeRegistryLookup(registry, createElementKey(registryKey, location), "getHolder", "get");
+        Optional<?> holder = toHolderOptional(invokeRegistryLookup(registry, location,
+                "getHolder", "getEntry", "method_55841", "method_10223"));
+        if (holder.isEmpty()) {
+            holder = toHolderOptional(invokeRegistryLookup(registry, createElementKey(registryKey, location),
+                    "getHolder", "getEntry", "method_40264", "method_57095", "method_10223"));
         }
-        if (holder instanceof Optional<?> optional) return optional;
-        return holder != null ? Optional.of(holder) : Optional.empty();
+        if (holder.isEmpty()) {
+            Object value = invokeRegistryLookup(registry, location, "get", "getValue", "method_10223");
+            holder = toHolderOptional(invokeRegistryLookup(registry, value,
+                    "wrapAsHolder", "getEntry", "method_47983"));
+        }
+        return holder;
+    }
+
+    private Optional<?> toHolderOptional(Object value) {
+        if (value instanceof Optional<?> optional) {
+            if (optional.isEmpty()) return Optional.empty();
+            Object unwrapped = optional.get();
+            return isHolder(unwrapped) ? optional : Optional.empty();
+        }
+        return isHolder(value) ? Optional.of(value) : Optional.empty();
+    }
+
+    private boolean isHolder(Object value) {
+        if (value == null) return false;
+        if (value instanceof Holder<?>) return true;
+        String name = value.getClass().getName();
+        return name.contains("Holder") || name.contains("class_6880");
     }
 
     private Object getRegistry(Object registryKey) {
@@ -387,7 +409,14 @@ public class VersionCompat {
 
     private Object parseResourceId(String id) {
         Object loc = parseResourceIdWith("net.minecraft.resources.ResourceLocation", id);
-        return loc != null ? loc : parseResourceIdWith("net.minecraft.resources.Identifier", id);
+        if (loc != null) {
+            return loc;
+        }
+        loc = parseResourceIdWith("net.minecraft.resources.Identifier", id);
+        if (loc != null) {
+            return loc;
+        }
+        return parseResourceIdWith("net.minecraft.class_2960", id);
     }
 
     private Object parseResourceIdWith(String className, String id) {
@@ -405,7 +434,14 @@ public class VersionCompat {
 
     private Object createElementKey(Object registryKey, Object location) {
         Object key = createElementKeyWith("net.minecraft.resources.ResourceKey", registryKey, location);
-        return key != null ? key : createElementKeyWith("net.minecraft.registry.RegistryKey", registryKey, location);
+        if (key != null) {
+            return key;
+        }
+        key = createElementKeyWith("net.minecraft.registry.RegistryKey", registryKey, location);
+        if (key != null) {
+            return key;
+        }
+        return createElementKeyWith("net.minecraft.class_5321", registryKey, location);
     }
 
     private Object createElementKeyWith(String className, Object registryKey, Object location) {
@@ -567,8 +603,8 @@ public class VersionCompat {
             Constructor<ItemAttributeModifiers> ctor = ItemAttributeModifiers.class.getConstructor(types);
             return ctor.newInstance(args);
         } catch (Throwable ignored) {
-            return null;
         }
+        return constructFirst("net.minecraft.class_9285", types, args);
     }
 
     private Object constructFirst(String className, Class<?>[] parameterTypes, Object... args) {
