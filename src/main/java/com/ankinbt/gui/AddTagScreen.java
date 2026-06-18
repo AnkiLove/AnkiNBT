@@ -16,6 +16,7 @@ package com.ankinbt.gui;
 import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
+import com.ankinbt.util.FlatEditBox;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -41,8 +42,7 @@ extends Screen {
     private static final byte[] TYPE_IDS = new byte[]{1, 2, 3, 4, 5, 6, 8, 10, 9};
     private final NbtEditorScreen parent;
     private final NbtTreeNode targetNode;
-    private String keyInput = "";
-    private int keyCursor = 0;
+    private FlatEditBox keyBox;
     private int selectedType = 6;
     private String error = null;
     private int px;
@@ -58,6 +58,7 @@ extends Screen {
         super.init();
         this.px = (this.width - 300) / 2;
         this.py = (this.height - 200) / 2;
+        this.ensureKeyBox();
     }
 
     public void render(GuiGraphics g, int mx, int my, float pt) {
@@ -73,8 +74,8 @@ extends Screen {
         int ih = 20;
         g.fill(ix, iy += 14, ix + iw, iy + ih, -15592930);
         this.border(g, ix, iy, iw, ih, -10262799);
-        String kd = this.keyInput.isEmpty() ? Component.translatable((String)"ankinbt.add.key.hint").getString() : this.keyInput;
-        g.drawString(this.font, kd + (System.currentTimeMillis() % 1000L < 500L ? "_" : ""), ix + 4, iy + 6, this.keyInput.isEmpty() ? -10193781 : -1906448, false);
+        this.layoutKeyBox(ix, iy, iw, ih);
+        this.keyBox.render(g, mx, my, pt);
         g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.add.type"), this.px + 12, iy += ih + 8, -7035976, false);
         iy += 12;
         int cols = 3;
@@ -119,7 +120,24 @@ extends Screen {
 
 
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        return handleMouseClicked(event.x(), event.y(), event.button());
+        int btn;
+        double my;
+        double mx = event.x();
+        if (this.mouseClicked(mx, my = event.y(), btn = event.button())) {
+            return true;
+        }
+        if (this.minecraft != null) {
+            double sw = this.minecraft.getWindow().getScreenWidth();
+            double sh = this.minecraft.getWindow().getScreenHeight();
+            if (sw > 0.0 && sh > 0.0) {
+                double sx = mx * (double)this.width / sw;
+                double sy = my * (double)this.height / sh;
+                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && this.mouseClicked(sx, sy, btn)) {
+                    return true;
+                }
+            }
+        }
+        return super.mouseClicked(event.x(), event.y(), event.button());
     }
 
     public boolean mouseClicked(double mx, double my, int btn) {
@@ -127,6 +145,12 @@ extends Screen {
     }
 
     private boolean handleMouseClicked(double mx, double my, int btn) {
+        this.ensureKeyBox();
+        this.layoutKeyBox(this.px + 12, this.py + 34 + 14, 276, 20);
+        if (this.keyBox.mouseClicked(mx, my, btn)) {
+            this.keyBox.setFocused(true);
+            return true;
+        }
         int iy = py + 34 + 14 + 20 + 8 + 12;
         int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
         for (int i = 0; i < TYPE_NAMES.length; i++) {
@@ -143,37 +167,49 @@ extends Screen {
     }
 
     public boolean keyPressed(KeyEvent event) {
-        return handleKeyPressed(event.key(), event.scancode(), 0);
+        if (this.keyPressed(event.key(), event.scancode(), event.modifiers())) {
+            return true;
+        }
+        return super.keyPressed(event.key(), event.scancode(), event.modifiers());
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
-        return handleKeyPressed(key, scan, mod);
+        if (this.handleKeyPressed(key, scan, mod)) {
+            return true;
+        }
+        return super.keyPressed(key, scan, mod);
     }
 
     private boolean handleKeyPressed(int key, int scan, int mod) {
         if (key == 256) { goBack(); return true; }
         if (key == 257 || key == 335) { confirm(); return true; }
-        if (key == 259 && keyCursor > 0) {
-            keyInput = keyInput.substring(0, keyCursor - 1) + keyInput.substring(keyCursor);
-            keyCursor--; error = null; return true;
+        this.ensureKeyBox();
+        if (this.keyBox.keyPressed(key, scan, mod)) {
+            this.error = null;
+            return true;
         }
-        if (key == 263 && keyCursor > 0) { keyCursor--; return true; }
-        if (key == 262 && keyCursor < keyInput.length()) { keyCursor++; return true; }
         return false;
     }
 
     public boolean charTyped(CharacterEvent event) {
-        return handleCharTyped((char) event.codepoint(), 0);
+        if (this.charTyped((char)event.codepoint(), event.modifiers())) {
+            return true;
+        }
+        return super.charTyped((char)event.codepoint(), event.modifiers());
     }
 
     public boolean charTyped(char c, int mod) {
-        return handleCharTyped(c, mod);
+        if (this.handleCharTyped(c, mod)) {
+            return true;
+        }
+        return super.charTyped(c, mod);
     }
 
     private boolean handleCharTyped(char c, int mod) {
-        if (c >= 32) {
-            keyInput = keyInput.substring(0, keyCursor) + c + keyInput.substring(keyCursor);
-            keyCursor++; error = null; return true;
+        this.ensureKeyBox();
+        if (this.keyBox.charTyped(c, mod)) {
+            this.error = null;
+            return true;
         }
         return false;
     }
@@ -185,18 +221,45 @@ extends Screen {
             this.goBack();
             return;
         }
-        if (this.keyInput.isEmpty()) {
+        String keyInput = this.keyBoxValue();
+        if (keyInput.isEmpty()) {
             this.error = Component.translatable((String)"ankinbt.add.error.empty").getString();
             return;
         }
         for (NbtTreeNode child : this.targetNode.getChildren()) {
-            if (!child.getKey().equals(this.keyInput)) continue;
+            if (!child.getKey().equals(keyInput)) continue;
             this.error = Component.translatable((String)"ankinbt.add.error.exists").getString();
             return;
         }
         Tag tag = NbtHelper.createDefault(TYPE_IDS[this.selectedType]);
-        this.parent.addTagToNode(this.targetNode, this.keyInput, tag);
+        this.parent.addTagToNode(this.targetNode, keyInput, tag);
         this.goBack();
+    }
+
+    private void ensureKeyBox() {
+        if (this.keyBox != null) {
+            return;
+        }
+        this.keyBox = new FlatEditBox(this.font, this.px + 12, this.py + 48, 276, 20, Component.empty());
+        this.keyBox.setMaxLength(2048);
+        this.keyBox.setHint(Component.translatable((String)"ankinbt.add.key.hint"));
+        this.keyBox.setResponder(value -> this.error = null);
+        this.keyBox.setFocused(true);
+    }
+
+    private void layoutKeyBox(int x, int y, int w, int h) {
+        this.ensureKeyBox();
+        this.keyBox.setX(x);
+        this.keyBox.setY(y);
+        this.keyBox.setWidth(w);
+        this.keyBox.setHeight(h);
+        this.keyBox.setFocused(true);
+    }
+
+    private String keyBoxValue() {
+        this.ensureKeyBox();
+        String value = this.keyBox.getValue();
+        return value == null ? "" : value.trim();
     }
 
     private void goBack() {
