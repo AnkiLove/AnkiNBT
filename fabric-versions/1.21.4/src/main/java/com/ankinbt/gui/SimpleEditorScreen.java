@@ -2241,6 +2241,7 @@ extends class_437 {
     implements SubEditor {
         final String field;
         final FlatEditBox inputBox;
+        final String initialValue;
         String error = null;
         final boolean isLore;
         boolean initialCursorSynced = false;
@@ -2248,9 +2249,10 @@ extends class_437 {
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field;
             this.isLore = isLore;
+            this.initialValue = currentValue == null ? "" : currentValue;
             this.inputBox = new FlatEditBox(SimpleEditorScreen.this.field_22793, 0, 0, 1, 22, (class_2561)class_2561.method_43473());
             this.inputBox.method_1852(2048);
-            this.inputBox.method_1852(currentValue == null ? "" : currentValue);
+            this.inputBox.method_1852(this.initialValue);
             this.inputBox.method_1863(value -> this.error = null);
             this.inputBox.method_25365(true);
         }
@@ -2275,7 +2277,9 @@ extends class_437 {
             this.inputBox.method_46419(iy);
             this.inputBox.method_25358(iw);
             if (!this.initialCursorSynced) {
+                this.inputBox.method_1852(this.initialValue);
                 this.inputBox.method_1883(this.inputBox.method_1882().length(), false);
+                this.inputBox.method_25365(true);
                 this.initialCursorSynced = true;
             }
             this.inputBox.method_25365(true);
@@ -5540,6 +5544,5 @@ extends class_437 {
         }
     }
 }
-
 
 
