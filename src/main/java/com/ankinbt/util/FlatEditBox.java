@@ -66,13 +66,14 @@ extends EditBox {
             this.setX(x + TEXT_PAD_X);
             this.setY(textY);
             this.setWidth(Math.max(1, w - TEXT_PAD_X * 2));
+            this.setHeight(Math.max(1, h - (textY - y)));
             super.renderWidget(g, mx, my, partialTick);
         }
         finally {
             this.setX(x);
             this.setY(y);
             this.setWidth(w);
+            this.setHeight(h);
         }
     }
 }
-

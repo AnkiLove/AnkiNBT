@@ -104,8 +104,16 @@ public class VersionCompat {
     public float getFloatValue(FloatTag tag) { return tag.value(); }
     public double getDoubleValue(DoubleTag tag) { return tag.value(); }
     public String getStringValue(StringTag tag) { return tag.value(); }
-    public String compoundGetString(CompoundTag tag, String key) { return tag.getString(key).orElse(""); }
-    public int compoundGetInt(CompoundTag tag, String key) { return tag.getInt(key).orElse(0); }
+    public String compoundGetString(CompoundTag tag, String key) {
+        Object value = invokeNamed(tag, "getString", key);
+        if (value instanceof Optional<?> optional) value = optional.orElse(null);
+        return value instanceof String string ? string : "";
+    }
+    public int compoundGetInt(CompoundTag tag, String key) {
+        Object value = invokeNamed(tag, "getInt", key);
+        if (value instanceof Optional<?> optional) value = optional.orElse(null);
+        return value instanceof Number number ? number.intValue() : 0;
+    }
 
     public int getSelectedSlot(net.minecraft.world.entity.player.Inventory inv) { return inv.getSelectedSlot(); }
 
@@ -251,6 +259,17 @@ public class VersionCompat {
             if (!allowed.contains(method.getName()) || method.getParameterCount() != 0) continue;
             try {
                 return method.invoke(target);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private Object invokeNamed(Object target, String name, Object... args) {
+        if (target == null) return null;
+        for (java.lang.reflect.Method method : target.getClass().getMethods()) {
+            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+            try {
+                return method.invoke(target, args);
             } catch (Throwable ignored) {}
         }
         return null;

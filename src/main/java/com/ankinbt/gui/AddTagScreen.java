@@ -120,10 +120,18 @@ extends Screen {
 
 
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        int btn;
-        double my;
-        double mx = event.x();
-        if (this.mouseClicked(mx, my = event.y(), btn = event.button())) {
+        if (this.tryMouseClicked(event.x(), event.y(), event.button())) {
+            return true;
+        }
+        return super.mouseClicked(event.x(), event.y(), event.button());
+    }
+
+    public boolean mouseClicked(double mx, double my, int btn) {
+        return this.tryMouseClicked(mx, my, btn);
+    }
+
+    private boolean tryMouseClicked(double mx, double my, int btn) {
+        if (this.handleMouseClicked(mx, my, btn)) {
             return true;
         }
         if (this.minecraft != null) {
@@ -132,16 +140,12 @@ extends Screen {
             if (sw > 0.0 && sh > 0.0) {
                 double sx = mx * (double)this.width / sw;
                 double sy = my * (double)this.height / sh;
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && this.mouseClicked(sx, sy, btn)) {
+                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && this.handleMouseClicked(sx, sy, btn)) {
                     return true;
                 }
             }
         }
-        return super.mouseClicked(event.x(), event.y(), event.button());
-    }
-
-    public boolean mouseClicked(double mx, double my, int btn) {
-        return handleMouseClicked(mx, my, btn);
+        return false;
     }
 
     private boolean handleMouseClicked(double mx, double my, int btn) {
