@@ -1857,7 +1857,7 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private void switchToAdvanced() {
-        Minecraft.getInstance().setScreen(new NbtEditorScreen(editStack, inventorySlot));
+        Minecraft.getInstance().setScreenAndShow(new NbtEditorScreen(editStack, inventorySlot));
     }
 
     private void openInventorySwitch() {
@@ -1900,7 +1900,7 @@ public class SimpleEditorScreen extends Screen {
             activeSubEditor = null;
             return;
         }
-        Minecraft.getInstance().setScreen(new SimpleEditorScreen(stack.copy(), slot));
+        Minecraft.getInstance().setScreenAndShow(new SimpleEditorScreen(stack.copy(), slot));
     }
 
     private boolean hasTinyFd() {
@@ -2914,7 +2914,7 @@ public class SimpleEditorScreen extends Screen {
 
         private void openPicker() {
             final int slot = selectedSlot;
-            Minecraft.getInstance().setScreen(new ItemPickerScreen(SimpleEditorScreen.this, id -> {
+            Minecraft.getInstance().setScreenAndShow(new ItemPickerScreen(SimpleEditorScreen.this, id -> {
                 ensureSlots(slot + 1);
                 Item item = com.ankinbt.util.ItemRegistryHelper.resolveItem(id);
                 if (item == null) return;
@@ -5281,3 +5281,5 @@ public class SimpleEditorScreen extends Screen {
         }
     }
 }
+
+

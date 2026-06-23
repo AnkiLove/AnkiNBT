@@ -3381,15 +3381,16 @@ public class SimpleEditorScreen extends Screen {
     class InlineFieldEditor implements SubEditor {
         final String field;
         final FlatEditBox inputBox;
+        final String initialValue;
         String error = null;
         final boolean isLore;
         boolean initialCursorSynced = false;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field; this.isLore = isLore;
+            this.initialValue = currentValue != null ? currentValue : "";
             this.inputBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 22, Component.empty());
             this.inputBox.setMaxLength(2048);
-            this.inputBox.setValue(currentValue != null ? currentValue : "");
             this.inputBox.setResponder(value -> error = null);
             this.inputBox.setFocused(true);
         }
@@ -3412,7 +3413,11 @@ public class SimpleEditorScreen extends Screen {
             inputBox.setY(iy);
             inputBox.setWidth(iw);
             if (!initialCursorSynced) {
-                inputBox.setCursorPosition(inputBox.getValue().length());
+                inputBox.setValue(initialValue);
+                int end = inputBox.getValue().length();
+                boolean fits = font.width(inputBox.getValue()) <= Math.max(1, iw - 8);
+                inputBox.setCursorPosition(fits ? end : 0);
+                inputBox.setHighlightPos(fits ? end : 0);
                 initialCursorSynced = true;
             }
             inputBox.setFocused(true);
@@ -5276,12 +5281,5 @@ public class SimpleEditorScreen extends Screen {
         }
     }
 }
-
-
-
-
-
-
-
 
 

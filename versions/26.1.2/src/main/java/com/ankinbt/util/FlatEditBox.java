@@ -16,7 +16,7 @@ import net.minecraft.network.chat.Component;
 
 public class FlatEditBox
 extends EditBox {
-    private static final int TEXT_PAD_X = 4;
+    private static final int TEXT_PAD_X = -4;
     private int bgColor = 1075059755;
     private int borderColor = -13878436;
     private int focusedBorderColor = -10262799;
@@ -80,8 +80,4 @@ extends EditBox {
         }
     }
 }
-
-
-
-
 
