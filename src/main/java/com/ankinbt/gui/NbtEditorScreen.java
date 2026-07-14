@@ -641,7 +641,7 @@ extends Screen {
         if (mc.player == null) {
             return;
         }
-        if (!mc.player.isCreative()) {
+        if (!mc.player.hasInfiniteMaterials()) {
             this.setStatus(Component.translatable((String)"ankinbt.status.creative_only").getString(), -1096636);
             return;
         }
@@ -924,5 +924,4 @@ extends Screen {
         }
     }
 }
-
 

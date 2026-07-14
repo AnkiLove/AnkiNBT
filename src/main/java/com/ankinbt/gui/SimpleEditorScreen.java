@@ -47,6 +47,7 @@ import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.UiTheme;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
+import com.ankinbt.util.EnchantmentTooltipHelper;
 import com.ankinbt.util.FlatEditBox;
 import com.ankinbt.util.ItemEditorVisuals;
 import com.ankinbt.util.ItemRegistryHelper;
@@ -598,6 +599,7 @@ extends Screen {
     private List<ActionRow> getEnchantRows() {
         ArrayList<ActionRow> rows = new ArrayList<ActionRow>();
         ItemEnchantments enchants = EnchantmentHelper.getEnchantmentsForCrafting((ItemStack)this.editStack);
+        rows.add(new ActionRow(SimpleEditorScreen.tr("ankinbt.simple.hide_enchantments"), EnchantmentTooltipHelper.isHidden(this.editStack) ? SimpleEditorScreen.tr("ankinbt.simple.on") : SimpleEditorScreen.tr("ankinbt.simple.off"), this::toggleEnchantmentsHidden));
         enchants.entrySet().forEach(entry -> {
             Holder ench = (Holder)entry.getKey();
             int level = entry.getIntValue();
@@ -1046,8 +1048,21 @@ extends Screen {
         this.setStatus(SimpleEditorScreen.tr("ankinbt.simple.lore_cleared"), -7035976);
     }
 
+    private void toggleEnchantmentsHidden() {
+        boolean hidden = !EnchantmentTooltipHelper.isHidden(this.editStack);
+        if (EnchantmentTooltipHelper.setHidden(this.editStack, hidden)) {
+            this.markDirty();
+        } else {
+            this.setStatus(SimpleEditorScreen.tr("ankinbt.status.save_error"), -1096636);
+        }
+    }
+
     private void clearEnchantments() {
+        boolean hidden = EnchantmentTooltipHelper.isHidden(this.editStack);
         this.editStack.set(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+        if (hidden) {
+            EnchantmentTooltipHelper.setHidden(this.editStack, true);
+        }
         this.dirty = true;
         this.setStatus(SimpleEditorScreen.tr("ankinbt.simple.enchants_cleared"), -7035976);
     }
@@ -1333,7 +1348,7 @@ extends Screen {
         if (mc.player == null) {
             return;
         }
-        if (!mc.player.isCreative()) {
+        if (!mc.player.hasInfiniteMaterials()) {
             this.setStatus(SimpleEditorScreen.tr("ankinbt.status.creative_only"), -1096636);
             return;
         }

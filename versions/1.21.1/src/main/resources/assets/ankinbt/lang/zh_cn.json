@@ -72,6 +72,7 @@
   "ankinbt.simple.on": "开",
   "ankinbt.simple.off": "关",
   "ankinbt.simple.add_enchant": "[ + 添加附魔 ]",
+  "ankinbt.simple.hide_enchantments": "隐藏附魔文字",
   "ankinbt.simple.clear_enchants": "[ 清除全部附魔 ]",
   "ankinbt.simple.level": "等级: ",
   "ankinbt.simple.ench_level": "附魔等级",

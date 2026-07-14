@@ -227,7 +227,7 @@ public final class SpawnEggEditorHelper {
         if (mc == null || mc.player == null || mc.gameMode == null) {
             return false;
         }
-        if (!mc.player.isCreative()) {
+        if (!mc.player.hasInfiniteMaterials()) {
             return false;
         }
         if (inventorySlot >= 0) {

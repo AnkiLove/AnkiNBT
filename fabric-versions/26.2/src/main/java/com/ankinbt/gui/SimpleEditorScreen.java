@@ -3,6 +3,7 @@ package com.ankinbt.gui;
 import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtFileIO;
+import com.ankinbt.util.EnchantmentTooltipHelper;
 import com.ankinbt.util.ItemEditorVisuals;
 import com.ankinbt.util.UiSound;
 import com.ankinbt.util.FlatEditBox;
@@ -793,6 +794,9 @@ public class SimpleEditorScreen extends Screen {
     private List<ActionRow> getEnchantRows() {
         List<ActionRow> rows = new ArrayList<>();
         ItemEnchantments enchants = EnchantmentHelper.getEnchantmentsForCrafting(editStack);
+        rows.add(new ActionRow(tr("ankinbt.simple.hide_enchantments"),
+                EnchantmentTooltipHelper.isHidden(editStack) ? tr("ankinbt.simple.on") : tr("ankinbt.simple.off"),
+                this::toggleEnchantmentsHidden));
         enchants.entrySet().forEach(entry -> {
             Holder<Enchantment> ench = entry.getKey();
             int level = entry.getIntValue();
@@ -1585,8 +1589,22 @@ public class SimpleEditorScreen extends Screen {
         setStatus(tr("ankinbt.simple.lore_cleared"), C2);
     }
 
+    private void toggleEnchantmentsHidden() {
+        boolean hidden = !EnchantmentTooltipHelper.isHidden(editStack);
+        if (EnchantmentTooltipHelper.setHidden(editStack, hidden)) {
+            markDirty();
+        } else {
+            setStatus(tr("ankinbt.status.save_error"), ERROR_C);
+        }
+    }
+
     private void clearEnchantments() {
-        editStack.set(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY); dirty = true;
+        boolean hidden = EnchantmentTooltipHelper.isHidden(editStack);
+        editStack.set(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+        if (hidden) {
+            EnchantmentTooltipHelper.setHidden(editStack, true);
+        }
+        dirty = true;
         setStatus(tr("ankinbt.simple.enchants_cleared"), C2);
     }
 
@@ -1833,7 +1851,7 @@ public class SimpleEditorScreen extends Screen {
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        if (!mc.player.isCreative()) { setStatus(tr("ankinbt.status.creative_only"), ERROR_C); return; }
+        if (!mc.player.hasInfiniteMaterials()) { setStatus(tr("ankinbt.status.creative_only"), ERROR_C); return; }
 
         VersionCompat.get().sanitizeForCreativeSave(editStack);
         if (inventorySlot >= 0) {

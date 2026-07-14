@@ -601,7 +601,7 @@ public class NbtEditorScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        if (!mc.player.isCreative()) {
+        if (!mc.player.hasInfiniteMaterials()) {
             setStatus(Component.translatable("ankinbt.status.creative_only").getString(), ERROR_C);
             return;
         }
@@ -866,7 +866,6 @@ public class NbtEditorScreen extends Screen {
         return super.charTyped(event);
     }
 }
-
 
 
 

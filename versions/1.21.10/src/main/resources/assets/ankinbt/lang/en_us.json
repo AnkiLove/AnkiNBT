@@ -82,6 +82,7 @@
   "ankinbt.simple.off": "OFF",
 
   "ankinbt.simple.add_enchant": "[ + Add Enchantment ]",
+  "ankinbt.simple.hide_enchantments": "Hide Enchantment Text",
   "ankinbt.simple.clear_enchants": "[ Clear All Enchantments ]",
   "ankinbt.simple.level": "Level: ",
   "ankinbt.simple.ench_level": "Enchantment Level",
