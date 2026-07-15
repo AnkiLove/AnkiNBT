@@ -131,7 +131,7 @@ public class AddTagScreen extends Screen {
     }
 
     public boolean keyPressed(KeyEvent event) {
-        return handleKeyPressed(event.key(), event.scancode(), 0);
+        return handleKeyPressed(event.key(), event.scancode(), event.modifiers());
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
@@ -141,6 +141,16 @@ public class AddTagScreen extends Screen {
     private boolean handleKeyPressed(int key, int scan, int mod) {
         if (key == 256) { goBack(); return true; }
         if (key == 257 || key == 335) { confirm(); return true; }
+        if ((mod & 2) != 0 && key == 86) {
+            String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+            if (clip != null && !clip.isEmpty()) {
+                clip = clip.replace("\r", "").replace("\n", "");
+                keyInput = keyInput.substring(0, keyCursor) + clip + keyInput.substring(keyCursor);
+                keyCursor += clip.length();
+                error = null;
+            }
+            return true;
+        }
         if (key == 259 && keyCursor > 0) {
             keyInput = keyInput.substring(0, keyCursor - 1) + keyInput.substring(keyCursor);
             keyCursor--; error = null; return true;

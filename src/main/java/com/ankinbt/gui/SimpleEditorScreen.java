@@ -3061,6 +3061,13 @@ extends Screen {
                 this.focusField = (this.focusField + 1) % 3;
                 return true;
             }
+            if ((mod & 2) != 0 && key == 86) {
+                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                if (clip != null) {
+                    for (int i = 0; i < clip.length(); ++i) this.charTyped(clip.charAt(i), 0);
+                }
+                return true;
+            }
             String target = this.focusField == 0 ? this.fileName : (this.focusField == 1 ? this.category : this.alias);
             int cur = this.focusField == 0 ? this.cursor : (this.focusField == 1 ? this.category.length() : this.alias.length());
             if (key == 259 && cur > 0) {

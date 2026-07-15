@@ -1180,12 +1180,14 @@ public class VillagerTradeEditorScreen extends Screen {
         for (EditBox box : allBoxes()) {
             if (box != null) box.setFocused(box == target);
         }
+        this.setFocused(target);
     }
 
     private void unfocusEditBoxes() {
         for (EditBox box : allBoxes()) {
             if (box != null) box.setFocused(false);
         }
+        this.clearFocus();
     }
 
     private EditBox boxForTarget(InvPickTarget target) {
@@ -2840,7 +2842,7 @@ public class VillagerTradeEditorScreen extends Screen {
 
         @Override
     public boolean keyPressed(KeyEvent event) {
-        if (keyPressed(event.key(), event.scancode(), 0)) return true;
+        if (keyPressed(event.key(), event.scancode(), event.modifiers())) return true;
         return super.keyPressed(event);
     }
     @Override
@@ -2974,7 +2976,4 @@ public class VillagerTradeEditorScreen extends Screen {
         }
     }
 }
-
-
-
 

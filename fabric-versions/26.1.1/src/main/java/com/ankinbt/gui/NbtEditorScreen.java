@@ -154,6 +154,7 @@ public class NbtEditorScreen extends Screen {
         searchBox.setValue(value);
         searchBox.setResponder(v -> refreshVisible());
         searchBox.setFocused(searching);
+        if (searching) this.setFocused(searchBox);
     }
 
     private String searchValue() {
@@ -165,6 +166,8 @@ public class NbtEditorScreen extends Screen {
         if (searchBox != null) {
             if (!searching) searchBox.setValue("");
             searchBox.setFocused(searching);
+            if (searching) this.setFocused(searchBox);
+            else this.clearFocus();
         }
         refreshVisible();
     }
@@ -480,6 +483,7 @@ public class NbtEditorScreen extends Screen {
             layoutSearchBox();
             if (searchBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) {
                 searchBox.setFocused(true);
+                this.setFocused(searchBox);
                 return true;
             }
         }
@@ -870,6 +874,3 @@ public class NbtEditorScreen extends Screen {
         return super.charTyped(event);
     }
 }
-
-
-

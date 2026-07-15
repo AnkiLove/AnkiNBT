@@ -14,6 +14,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.PreeditEvent;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -689,9 +690,9 @@ public class SimpleEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        int key = event.key(); int scan = event.scancode(); int mod = 0;
+        int key = event.key(); int scan = event.scancode(); int mod = event.modifiers();
         if (activeSubEditor != null) {
-            if (key == 256) { activeSubEditor = null; return true; }
+            if (key == 256) { activeSubEditor.onClosed(); activeSubEditor = null; return true; }
             return activeSubEditor.keyPressed(key, scan, mod);
         }
         if (key == 256) { tryClose(); return true; }
@@ -712,6 +713,12 @@ public class SimpleEditorScreen extends Screen {
         char c = (char) event.codepoint(); int mod = 0;
         if (activeSubEditor != null) return activeSubEditor.charTyped(c, mod);
         return super.charTyped(event);
+    }
+
+    @Override
+    public boolean preeditUpdated(PreeditEvent event) {
+        if (activeSubEditor != null && activeSubEditor.preeditUpdated(event)) return true;
+        return super.preeditUpdated(event);
     }
 
     // ==================== CATEGORY ROWS ====================
@@ -2366,6 +2373,13 @@ public class SimpleEditorScreen extends Screen {
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { doExport(); return true; }
             if (key == 258) { focusField = (focusField + 1) % 3; return true; } // Tab
+            if ((mod & 2) != 0 && key == 86) {
+                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                if (clip != null) {
+                    for (int i = 0; i < clip.length(); i++) charTyped(clip.charAt(i), 0);
+                }
+                return true;
+            }
             String target = focusField == 0 ? fileName : (focusField == 1 ? category : alias);
             int cur = focusField == 0 ? cursor : (focusField == 1 ? category.length() : alias.length());
 
@@ -2398,6 +2412,11 @@ public class SimpleEditorScreen extends Screen {
             } else {
                 alias = alias + c;
             }
+            return true;
+        }
+
+        @Override
+        public boolean preeditUpdated(PreeditEvent event) {
             return true;
         }
 
@@ -3283,6 +3302,8 @@ public class SimpleEditorScreen extends Screen {
         boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h);
         boolean keyPressed(int key, int scan, int mod);
         boolean charTyped(char c, int mod);
+        default void onClosed() {}
+        default boolean preeditUpdated(PreeditEvent event) { return false; }
         default boolean mouseScrolled(double sx, double sy) { return false; }
         default boolean mouseDragged(double mx, double my, int button, double dragX, double dragY, int x, int y, int w, int h) { return false; }
     }
@@ -3410,7 +3431,7 @@ public class SimpleEditorScreen extends Screen {
             this.inputBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 22, Component.empty());
             this.inputBox.setMaxLength(2048);
             this.inputBox.setResponder(value -> error = null);
-            this.inputBox.setFocused(true);
+            this.focusInput();
         }
 
         @Override
@@ -3438,7 +3459,7 @@ public class SimpleEditorScreen extends Screen {
                 inputBox.setHighlightPos(fits ? end : 0);
                 initialCursorSynced = true;
             }
-            inputBox.setFocused(true);
+            focusInput();
             inputBox.renderWidget(g, mx, my, 0.0f);
 
             // Preview for name/lore color codes
@@ -3484,6 +3505,7 @@ public class SimpleEditorScreen extends Screen {
             if (colorEditable) {
                 int palX = dx + dw - 80, palY = dy + 6;
                 if (mx >= palX && mx < palX + 70 && my >= palY && my < palY + 16) {
+                    releaseFocus();
                     activeSubEditor = new LoreColorInsertEditor(this);
                     return true;
                 }
@@ -3494,13 +3516,13 @@ public class SimpleEditorScreen extends Screen {
             inputBox.setY(iy);
             inputBox.setWidth(iw);
             if (inputBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) {
-                inputBox.setFocused(true);
+                focusInput();
                 return true;
             }
 
             int by = dy + dh - 28, bw = 70, bh = 20;
             int cancelX = dx + dw / 2 - bw - 6;
-            if (mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh) { activeSubEditor = null; return true; }
+            if (mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh) { releaseFocus(); activeSubEditor = null; return true; }
             int okX = dx + dw / 2 + 6;
             if (mx >= okX && mx < okX + bw && my >= by && my < by + bh) { apply(); return true; }
             return true;
@@ -3519,6 +3541,32 @@ public class SimpleEditorScreen extends Screen {
             return true;
         }
 
+        @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            return inputBox.preeditUpdated(event);
+        }
+
+        @Override
+        public void onClosed() {
+            releaseFocus();
+        }
+
+        void focusInput() {
+            if (SimpleEditorScreen.this.getFocused() != inputBox) {
+                SimpleEditorScreen.this.setFocused(inputBox);
+            } else if (!inputBox.isFocused()) {
+                inputBox.setFocused(true);
+            }
+        }
+
+        void releaseFocus() {
+            if (SimpleEditorScreen.this.getFocused() == inputBox) {
+                SimpleEditorScreen.this.setFocused(null);
+            } else if (inputBox.isFocused()) {
+                inputBox.setFocused(false);
+            }
+        }
+
         void insertAtCursor(String text) {
             String selected = inputBox.getHighlighted();
             if (selected != null && !selected.isEmpty() && (text == null || !text.endsWith("r"))) {
@@ -3533,6 +3581,7 @@ public class SimpleEditorScreen extends Screen {
             if (input.isEmpty() && !field.equals("rename") && !field.equals("lore_add") && !field.startsWith("lore:")) {
                 error = tr("ankinbt.simple.invalid_number"); return;
             }
+            releaseFocus();
             applyInlineEdit(field, input, isLore);
         }
 
@@ -3616,7 +3665,7 @@ public class SimpleEditorScreen extends Screen {
                 if (i == this.activeLine) {
                     g.fill(contentX - 2, ly, textX + textW, ly + lineH, 0x18FFFFFF);
                 }
-                this.configureLineBox(box, contentX, ly, textW - 28, lineH, i == this.activeLine);
+                this.configureLineBox(box, contentX, ly, textW - 28, lineH);
                 if (this.showRawCodes) {
                     box.renderWidget(g, mx, my, 0.0f);
                 } else {
@@ -3694,17 +3743,28 @@ public class SimpleEditorScreen extends Screen {
             this.focusActiveBox();
         }
 
-        private void configureLineBox(FlatEditBox box, int x, int y, int w, int h, boolean focused) {
+        private void configureLineBox(FlatEditBox box, int x, int y, int w, int h) {
             box.setX(x);
             box.setY(y);
             box.setWidth(Math.max(1, w));
-            box.setFocused(focused);
         }
 
         private void focusActiveBox() {
             this.ensureLineBoxes();
-            for (int i = 0; i < this.lineBoxes.size(); ++i) {
-                this.lineBoxes.get(i).setFocused(i == this.activeLine);
+            FlatEditBox active = this.activeBox();
+            for (FlatEditBox box : this.lineBoxes) {
+                if (box != active && box.isFocused()) box.setFocused(false);
+            }
+            SimpleEditorScreen.this.setFocused(active);
+            if (!active.isFocused()) active.setFocused(true);
+        }
+
+        private void releaseFocus() {
+            if (this.lineBoxes.contains(SimpleEditorScreen.this.getFocused())) {
+                SimpleEditorScreen.this.setFocused(null);
+            }
+            for (FlatEditBox box : this.lineBoxes) {
+                if (box.isFocused()) box.setFocused(false);
             }
         }
 
@@ -3755,12 +3815,13 @@ public class SimpleEditorScreen extends Screen {
             int bh2 = 20;
             int palX = dx + 10;
             if (mx >= (double)palX && mx < (double)(palX + 62) && my >= (double)by && my < (double)(by + bh2)) {
-                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.activeBox().getValue(), true);
-                SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this, tempEditor);
+                this.releaseFocus();
+                SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this);
                 return true;
             }
             int cancelX = dx + dw / 2 - bw - 6;
             if (mx >= (double)cancelX && mx < (double)(cancelX + bw) && my >= (double)by && my < (double)(by + bh2)) {
+                this.releaseFocus();
                 SimpleEditorScreen.this.activeSubEditor = null;
                 return true;
             }
@@ -3780,7 +3841,7 @@ public class SimpleEditorScreen extends Screen {
                     int contentX = textX + 24;
                     int ly = textY + (clickedLine - this.scrollOff) * lineH;
                     FlatEditBox box = this.lineBoxes.get(clickedLine);
-                    this.configureLineBox(box, contentX, ly, textW - 28, lineH, true);
+                    this.configureLineBox(box, contentX, ly, textW - 28, lineH);
                     this.setActiveLine(clickedLine);
                     if (this.showRawCodes) {
                         box.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false);
@@ -3872,6 +3933,16 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            return this.activeBox().preeditUpdated(event);
+        }
+
+        @Override
+        public void onClosed() {
+            this.releaseFocus();
+        }
+
+        @Override
         public boolean mouseScrolled(double sx, double sy) {
             this.scrollOff -= (int)sy * 3;
             this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - 5)));
@@ -3908,6 +3979,7 @@ public class SimpleEditorScreen extends Screen {
             } else {
                 SimpleEditorScreen.this.setLore(loreComponents);
             }
+            this.releaseFocus();
             SimpleEditorScreen.this.markDirty();
             SimpleEditorScreen.this.activeSubEditor = null;
         }
@@ -3915,12 +3987,10 @@ public class SimpleEditorScreen extends Screen {
 
     class LoreColorInsertEditorForText implements SubEditor {
         final LoreTextEditorSubEditor textEditor;
-        final InlineFieldEditor tempParent;
         private int hoveredColor = -1;
 
-        LoreColorInsertEditorForText(LoreTextEditorSubEditor textEditor, InlineFieldEditor tempParent) {
+        LoreColorInsertEditorForText(LoreTextEditorSubEditor textEditor) {
             this.textEditor = textEditor;
-            this.tempParent = tempParent;
         }
 
         @Override
@@ -4023,7 +4093,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = gridY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     textEditor.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    activeSubEditor = textEditor;
+                    restoreTextEditor();
                     return true;
                 }
             }
@@ -4036,7 +4106,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = darkY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     textEditor.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    activeSubEditor = textEditor;
+                    restoreTextEditor();
                     return true;
                 }
             }
@@ -4052,7 +4122,7 @@ public class SimpleEditorScreen extends Screen {
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 if (mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18) {
                     textEditor.insertAtCursor("&" + MC_FORMAT_CODES[i]);
-                    activeSubEditor = textEditor;
+                    restoreTextEditor();
                     return true;
                 }
                 fmtX += pillW + 6;
@@ -4061,10 +4131,15 @@ public class SimpleEditorScreen extends Screen {
             // Back button
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             if (mx >= backX && mx < backX + backW && my >= backY && my < backY + 20) {
-                activeSubEditor = textEditor;
+                restoreTextEditor();
                 return true;
             }
             return true;
+        }
+
+        private void restoreTextEditor() {
+            textEditor.focusActiveBox();
+            activeSubEditor = textEditor;
         }
 
         @Override public boolean keyPressed(int key, int scan, int mod) { return true; }
@@ -4149,7 +4224,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = gridY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     parent.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    activeSubEditor = parent;
+                    restoreParent();
                     return true;
                 }
             }
@@ -4161,7 +4236,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = darkY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     parent.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    activeSubEditor = parent;
+                    restoreParent();
                     return true;
                 }
             }
@@ -4176,7 +4251,7 @@ public class SimpleEditorScreen extends Screen {
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 if (mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18) {
                     parent.insertAtCursor("&" + MC_FORMAT_CODES[i]);
-                    activeSubEditor = parent;
+                    restoreParent();
                     return true;
                 }
                 fmtX += pillW + 6;
@@ -4184,10 +4259,15 @@ public class SimpleEditorScreen extends Screen {
 
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             if (mx >= backX && mx < backX + backW && my >= backY && my < backY + 20) {
-                activeSubEditor = parent;
+                restoreParent();
                 return true;
             }
             return true;
+        }
+
+        private void restoreParent() {
+            parent.focusInput();
+            activeSubEditor = parent;
         }
 
         @Override public boolean keyPressed(int key, int scan, int mod) { return true; }
@@ -4313,6 +4393,11 @@ public class SimpleEditorScreen extends Screen {
         public boolean charTyped(char c, int mod) {
             if (searchBox.charTyped(new CharacterEvent(c))) return true;
             return true;
+        }
+
+        @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            return searchBox.preeditUpdated(event);
         }
 
         @Override
@@ -4702,6 +4787,12 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            FlatEditBox box = focusField == 0 ? searchBox : (focusField == 1 ? durationBox : amplifierBox);
+            return box.preeditUpdated(event);
+        }
+
+        @Override
         public boolean mouseScrolled(double sx, double sy) {
             int dw = Math.min(contentW - 20, Math.min(760, Math.max(520, contentW - 36)));
             int dh = Math.min(contentH - 20, Math.min(360, Math.max(300, contentH - 30)));
@@ -4995,6 +5086,11 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            return !focusLevel && searchBox.preeditUpdated(event);
+        }
+
+        @Override
         public boolean mouseScrolled(double sx, double sy) {
             scrollOff -= (int) sy * 3;
             scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, filtered.size() - 10)));
@@ -5255,6 +5351,11 @@ public class SimpleEditorScreen extends Screen {
                 return true;
             }
             return false;
+        }
+
+        @Override
+        public boolean preeditUpdated(PreeditEvent event) {
+            return focusField == 0 && searchBox.preeditUpdated(event);
         }
 
         @Override

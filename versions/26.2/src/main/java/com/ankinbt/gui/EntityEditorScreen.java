@@ -845,6 +845,7 @@ public class EntityEditorScreen extends Screen {
             return true;
         }
         if (healthBox != null) healthBox.setFocused(false);
+        this.clearFocus();
         return false;
     }
 
@@ -854,6 +855,7 @@ public class EntityEditorScreen extends Screen {
             setInlineBoxValue(box, fallback);
         }
         box.setFocused(true);
+        this.setFocused(box);
         return true;
     }
 
@@ -1006,7 +1008,7 @@ public class EntityEditorScreen extends Screen {
 
         @Override
     public boolean keyPressed(KeyEvent event) {
-        if (keyPressed(event.key(), event.scancode(), 0)) return true;
+        if (keyPressed(event.key(), event.scancode(), event.modifiers())) return true;
         return super.keyPressed(event);
     }
     @Override
@@ -1235,7 +1237,4 @@ public class EntityEditorScreen extends Screen {
         return true;
     }
 }
-
-
-
 

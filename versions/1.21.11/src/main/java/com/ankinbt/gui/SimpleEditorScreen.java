@@ -2362,6 +2362,13 @@ public class SimpleEditorScreen extends Screen {
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { doExport(); return true; }
             if (key == 258) { focusField = (focusField + 1) % 3; return true; } // Tab
+            if ((mod & 2) != 0 && key == 86) {
+                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                if (clip != null) {
+                    for (int i = 0; i < clip.length(); i++) charTyped(clip.charAt(i), 0);
+                }
+                return true;
+            }
             String target = focusField == 0 ? fileName : (focusField == 1 ? category : alias);
             int cur = focusField == 0 ? cursor : (focusField == 1 ? category.length() : alias.length());
 

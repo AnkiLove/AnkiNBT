@@ -64,6 +64,7 @@ extends Screen {
         this.input.setValue(value);
         this.input.setResponder(v -> this.error = null);
         this.input.setFocused(true);
+        this.setFocused(this.input);
     }
 
     public void render(GuiGraphics g, int mx, int my, float pt) {
@@ -132,6 +133,7 @@ extends Screen {
         this.input.setWidth(296);
         if (this.input.mouseClicked(event, isDoubleClick)) {
             this.input.setFocused(true);
+            this.setFocused(this.input);
             return true;
         }
         return super.mouseClicked(event, isDoubleClick);

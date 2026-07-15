@@ -2,6 +2,7 @@ package com.ankinbt.gui;
 
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
+import com.ankinbt.util.FlatEditBox;
 import net.minecraft.client.Minecraft;
 import com.ankinbt.compat.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -31,8 +32,7 @@ public class AddTagScreen extends Screen {
 
     private final NbtEditorScreen parent;
     private final NbtTreeNode targetNode;
-    private String keyInput = "";
-    private int keyCursor = 0;
+    private FlatEditBox keyBox;
     private int selectedType = 6;
     private String error = null;
     private int px, py;
@@ -48,6 +48,15 @@ public class AddTagScreen extends Screen {
         super.init();
         px = (width - PW) / 2;
         py = (height - PH) / 2;
+        String value = keyBox == null ? "" : keyBox.getValue();
+        keyBox = new FlatEditBox(font, px + 12, py + 48, PW - 24, 20, Component.translatable("ankinbt.add.key"));
+        keyBox.setMaxLength(32767);
+        keyBox.setHint(Component.translatable("ankinbt.add.key.hint"));
+        keyBox.setValue(value);
+        keyBox.setResponder(v -> error = null);
+        keyBox.setThemeColors(INPUT_BG, BORDER, ACCENT);
+        keyBox.setFocused(true);
+        this.setFocused(keyBox);
     }
 
     @Override
@@ -67,11 +76,10 @@ public class AddTagScreen extends Screen {
         g.drawString(font, Component.translatable("ankinbt.add.key"), px + 12, iy + 2, C2, false);
         iy += 14;
         int ix = px + 12, iw = PW - 24, ih = 20;
-        g.fill(ix, iy, ix + iw, iy + ih, INPUT_BG);
-        border(g, ix, iy, iw, ih, ACCENT);
-        String kd = keyInput.isEmpty() ? Component.translatable("ankinbt.add.key.hint").getString() : keyInput;
-        g.drawString(font, kd + (System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
-                ix + 4, iy + 6, keyInput.isEmpty() ? C3 : C1, false);
+        keyBox.setX(ix);
+        keyBox.setY(iy);
+        keyBox.setWidth(iw);
+        keyBox.renderWidget(g, mx, my, pt);
 
         iy += ih + 8;
         g.drawString(font, Component.translatable("ankinbt.add.type"), px + 12, iy, C2, false);
@@ -110,6 +118,11 @@ public class AddTagScreen extends Screen {
 
 
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
+        if (keyBox.mouseClicked(event, isDoubleClick)) {
+            keyBox.setFocused(true);
+            this.setFocused(keyBox);
+            return true;
+        }
         return handleMouseClicked(event.x(), event.y(), event.button());
     }
 
@@ -118,6 +131,13 @@ public class AddTagScreen extends Screen {
     }
 
     private boolean handleMouseClicked(double mx, double my, int btn) {
+        if (keyBox != null && mx >= keyBox.getX() && mx < keyBox.getX() + keyBox.getWidth()
+                && my >= keyBox.getY() && my < keyBox.getY() + keyBox.getHeight()) {
+            keyBox.setFocused(true);
+            keyBox.setCursorPosition(keyBox.getValue().length());
+            this.setFocused(keyBox);
+            return true;
+        }
         int iy = py + 34 + 14 + 20 + 8 + 12;
         int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
         for (int i = 0; i < TYPE_NAMES.length; i++) {
@@ -134,7 +154,10 @@ public class AddTagScreen extends Screen {
     }
 
     public boolean keyPressed(KeyEvent event) {
-        return handleKeyPressed(event.key(), event.scancode(), 0);
+        if (event.key() == 256) { goBack(); return true; }
+        if (event.key() == 257 || event.key() == 335) { confirm(); return true; }
+        if (keyBox.keyPressed(event)) { error = null; return true; }
+        return false;
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
@@ -144,17 +167,13 @@ public class AddTagScreen extends Screen {
     private boolean handleKeyPressed(int key, int scan, int mod) {
         if (key == 256) { goBack(); return true; }
         if (key == 257 || key == 335) { confirm(); return true; }
-        if (key == 259 && keyCursor > 0) {
-            keyInput = keyInput.substring(0, keyCursor - 1) + keyInput.substring(keyCursor);
-            keyCursor--; error = null; return true;
-        }
-        if (key == 263 && keyCursor > 0) { keyCursor--; return true; }
-        if (key == 262 && keyCursor < keyInput.length()) { keyCursor++; return true; }
+        if (keyBox.keyPressed(new KeyEvent(key, scan, mod))) { error = null; return true; }
         return false;
     }
 
     public boolean charTyped(CharacterEvent event) {
-        return handleCharTyped((char) event.codepoint(), 0);
+        if (keyBox.charTyped(event)) { error = null; return true; }
+        return false;
     }
 
     public boolean charTyped(char c, int mod) {
@@ -163,8 +182,9 @@ public class AddTagScreen extends Screen {
 
     private boolean handleCharTyped(char c, int mod) {
         if (c >= 32) {
-            keyInput = keyInput.substring(0, keyCursor) + c + keyInput.substring(keyCursor);
-            keyCursor++; error = null; return true;
+            keyBox.insertText(Character.toString(c));
+            error = null;
+            return true;
         }
         return false;
     }
@@ -175,6 +195,7 @@ public class AddTagScreen extends Screen {
             parent.addTagToNode(targetNode, "", tag);
             goBack(); return;
         }
+        String keyInput = keyBox.getValue();
         if (keyInput.isEmpty()) { error = Component.translatable("ankinbt.add.error.empty").getString(); return; }
         for (var child : targetNode.getChildren()) {
             if (child.getKey().equals(keyInput)) {
@@ -189,7 +210,5 @@ public class AddTagScreen extends Screen {
     private void goBack() { Minecraft.getInstance().setScreen(parent); }
     @Override public boolean isPauseScreen() { return false; }
 }
-
-
 
 
