@@ -1,185 +1,106 @@
 [CmdletBinding()]
 param(
-    [Parameter()]
-    [ValidateNotNullOrEmpty()]
-    [string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot)
+    [string]$Version = '2.0.0',
+    [string]$OutputDirectory = ''
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-Add-Type -AssemblyName System.IO.Compression
-
-$releaseVersion = '2.0.0'
-$repositoryPath = [System.IO.Path]::GetFullPath($RepositoryRoot)
-$verifyScript = Join-Path $PSScriptRoot 'verify-release.ps1'
-
-if (-not (Test-Path -LiteralPath $verifyScript -PathType Leaf)) {
-    throw "缺少发布校验脚本：$verifyScript"
-}
-
-Write-Host "正在校验 AnkiNBT $releaseVersion 的 30 个发布 JAR..." -ForegroundColor Cyan
-$verification = & $verifyScript -RepositoryRoot $repositoryPath -PassThru -Quiet
-if (-not $verification.Success) {
-    Write-Host "发布校验失败：发现 $($verification.Errors.Count) 个问题，未复制或压缩任何文件。" -ForegroundColor Red
-    foreach ($verificationError in $verification.Errors) {
-        Write-Host "  - $verificationError" -ForegroundColor Red
-    }
-    throw "AnkiNBT $releaseVersion 未通过发布校验。"
-}
-
-if ($verification.ExpectedArtifactCount -ne 30 -or $verification.Artifacts.Count -ne 30) {
-    throw "发布矩阵不是固定的 30 个 JAR，拒绝打包。"
-}
-
-$releaseRoot = Join-Path $repositoryPath "release/$releaseVersion"
-$fabricReleasePath = Join-Path $releaseRoot 'Fabric'
-$neoForgeReleasePath = Join-Path $releaseRoot 'NeoForge'
-$zipPath = Join-Path $releaseRoot "AnkiNBT-$releaseVersion-all-versions.zip"
-
-$destinationRecords = @($verification.Artifacts | ForEach-Object {
-    $loaderDirectory = if ($_.Loader -ceq 'Fabric') { $fabricReleasePath } else { $neoForgeReleasePath }
-    [pscustomobject]@{
-        Loader = $_.Loader
-        MinecraftVersion = $_.MinecraftVersion
-        SourcePath = $_.JarPath
-        DestinationPath = Join-Path $loaderDirectory $_.FileName
-        ZipEntryName = "$($_.Loader)/$($_.FileName)"
-        Sha256 = $_.Sha256
-    }
-})
-
-$expectedFabricCount = @($destinationRecords | Where-Object { $_.Loader -ceq 'Fabric' }).Count
-$expectedNeoForgeCount = @($destinationRecords | Where-Object { $_.Loader -ceq 'NeoForge' }).Count
-if ($expectedFabricCount -ne 15 -or $expectedNeoForgeCount -ne 15) {
-    throw "发布矩阵加载器数量错误：Fabric=$expectedFabricCount，NeoForge=$expectedNeoForgeCount。"
-}
-
-foreach ($record in $destinationRecords) {
-    if (-not (Test-Path -LiteralPath $record.DestinationPath -PathType Leaf)) {
-        continue
-    }
-
-    $existingHash = (Get-FileHash -LiteralPath $record.DestinationPath -Algorithm SHA256).Hash
-    if ($existingHash -cne $record.Sha256) {
-        throw "发布目录已有同名但内容不同的文件，拒绝覆盖：$($record.DestinationPath)"
-    }
-}
-
-foreach ($loaderPath in @($fabricReleasePath, $neoForgeReleasePath)) {
-    if (-not (Test-Path -LiteralPath $loaderPath)) {
-        continue
-    }
-
-    $expectedNames = @($destinationRecords | Where-Object {
-        [System.IO.Path]::GetDirectoryName($_.DestinationPath) -ceq $loaderPath
-    } | ForEach-Object { [System.IO.Path]::GetFileName($_.DestinationPath) })
-
-    foreach ($unexpectedJar in Get-ChildItem -LiteralPath $loaderPath -File -Filter '*.jar') {
-        if ($expectedNames -cnotcontains $unexpectedJar.Name) {
-            throw "发布目录存在矩阵外 JAR，拒绝生成混合发布包：$($unexpectedJar.FullName)"
-        }
-    }
-}
-
-New-Item -ItemType Directory -Path $fabricReleasePath -Force | Out-Null
-New-Item -ItemType Directory -Path $neoForgeReleasePath -Force | Out-Null
-
-foreach ($record in $destinationRecords) {
-    if (-not (Test-Path -LiteralPath $record.DestinationPath -PathType Leaf)) {
-        Copy-Item -LiteralPath $record.SourcePath -Destination $record.DestinationPath
-    }
-}
-
-$temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ankinbt-release-$releaseVersion-" + [System.Guid]::NewGuid().ToString('N'))
-$temporaryZip = Join-Path ([System.IO.Path]::GetTempPath()) ("ankinbt-release-$releaseVersion-" + [System.Guid]::NewGuid().ToString('N') + '.zip')
-
-try {
-    $temporaryFabricPath = Join-Path $temporaryRoot 'Fabric'
-    $temporaryNeoForgePath = Join-Path $temporaryRoot 'NeoForge'
-    New-Item -ItemType Directory -Path $temporaryFabricPath -Force | Out-Null
-    New-Item -ItemType Directory -Path $temporaryNeoForgePath -Force | Out-Null
-
-    foreach ($record in $destinationRecords) {
-        $temporaryLoaderPath = if ($record.Loader -ceq 'Fabric') { $temporaryFabricPath } else { $temporaryNeoForgePath }
-        Copy-Item -LiteralPath $record.DestinationPath -Destination (Join-Path $temporaryLoaderPath ([System.IO.Path]::GetFileName($record.DestinationPath)))
-    }
-
-    [System.IO.Compression.ZipFile]::CreateFromDirectory(
-        $temporaryRoot,
-        $temporaryZip,
-        [System.IO.Compression.CompressionLevel]::Optimal,
-        $false
-    )
-
-    if (Test-Path -LiteralPath $zipPath -PathType Leaf) {
-        $existingArchiveMatches = $true
-        $archive = $null
-        try {
-            $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-            $fileEntries = @($archive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) })
-            if ($fileEntries.Count -ne $destinationRecords.Count) {
-                $existingArchiveMatches = $false
-            }
-
-            if ($existingArchiveMatches) {
-                foreach ($record in $destinationRecords) {
-                    $entryMatches = @($fileEntries | Where-Object { $_.FullName -ceq $record.ZipEntryName })
-                    if ($entryMatches.Count -ne 1) {
-                        $existingArchiveMatches = $false
-                        break
-                    }
-
-                    $entryStream = $entryMatches[0].Open()
-                    $hashStream = [System.Security.Cryptography.SHA256]::Create()
-                    try {
-                        $entryHash = [System.Convert]::ToHexString($hashStream.ComputeHash($entryStream))
-                    }
-                    finally {
-                        $hashStream.Dispose()
-                        $entryStream.Dispose()
-                    }
-
-                    if ($entryHash -cne $record.Sha256) {
-                        $existingArchiveMatches = $false
-                        break
-                    }
-                }
-            }
-        }
-        finally {
-            if ($null -ne $archive) {
-                $archive.Dispose()
-            }
-        }
-
-        if (-not $existingArchiveMatches) {
-            throw "已有发布 ZIP 与当前 30 个 JAR 不一致，拒绝覆盖：$zipPath"
-        }
-    }
-    else {
-        Move-Item -LiteralPath $temporaryZip -Destination $zipPath
-    }
-}
-finally {
-    if (Test-Path -LiteralPath $temporaryZip -PathType Leaf) {
-        Remove-Item -LiteralPath $temporaryZip -Force
-    }
-    if (Test-Path -LiteralPath $temporaryRoot -PathType Container) {
-        Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
-    }
-}
-
-$packagedJars = @(
-    Get-ChildItem -LiteralPath $fabricReleasePath -File -Filter '*.jar'
-    Get-ChildItem -LiteralPath $neoForgeReleasePath -File -Filter '*.jar'
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$minecraftVersions = @(
+    '1.21', '1.21.1', '1.21.2', '1.21.3', '1.21.4', '1.21.5',
+    '1.21.6', '1.21.7', '1.21.8', '1.21.9', '1.21.10', '1.21.11',
+    '26.1', '26.1.1', '26.1.2', '26.2'
 )
-if ($packagedJars.Count -ne 30) {
-    throw "打包后的 JAR 数量应为 30，实际为 $($packagedJars.Count)。"
+
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $OutputDirectory = Join-Path $repoRoot "release\$stamp-$Version-update"
+} elseif (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path $repoRoot $OutputDirectory
 }
 
-Write-Host "发布包已生成：$releaseRoot" -ForegroundColor Green
-Write-Host "  Fabric：15 个 JAR" -ForegroundColor Green
-Write-Host "  NeoForge：15 个 JAR" -ForegroundColor Green
-Write-Host "  ZIP：$zipPath" -ForegroundColor Green
+if (Test-Path -LiteralPath $OutputDirectory) {
+    throw "发布目录已存在，拒绝覆盖：$OutputDirectory"
+}
+
+$assetsDirectory = Join-Path $OutputDirectory 'assets'
+$packageDirectory = Join-Path $OutputDirectory 'package'
+$fabricDirectory = Join-Path $packageDirectory 'Fabric'
+$neoForgeDirectory = Join-Path $packageDirectory 'NeoForge'
+New-Item -ItemType Directory -Path $assetsDirectory, $fabricDirectory, $neoForgeDirectory -Force | Out-Null
+
+$releaseJars = [System.Collections.Generic.List[object]]::new()
+foreach ($minecraftVersion in $minecraftVersions) {
+    $neoForgeName = "AnkiNBT-NeoForge-mc$minecraftVersion-$Version.jar"
+    $neoForgePath = Join-Path $repoRoot "versions\$minecraftVersion\build\libs\$neoForgeName"
+    $fabricName = "AnkiNBT-Fabric-mc$minecraftVersion-$Version.jar"
+    $fabricPath = if ($minecraftVersion -eq '1.21.1') {
+        Join-Path $repoRoot "fabric\build\libs\$fabricName"
+    } else {
+        Join-Path $repoRoot "fabric-versions\$minecraftVersion\build\libs\$fabricName"
+    }
+
+    foreach ($entry in @(
+        [pscustomobject]@{ Loader = 'NeoForge'; Source = $neoForgePath; Name = $neoForgeName; Package = $neoForgeDirectory },
+        [pscustomobject]@{ Loader = 'Fabric'; Source = $fabricPath; Name = $fabricName; Package = $fabricDirectory }
+    )) {
+        if (-not (Test-Path -LiteralPath $entry.Source -PathType Leaf)) {
+            throw "缺少发布 JAR：$($entry.Source)"
+        }
+        Copy-Item -LiteralPath $entry.Source -Destination (Join-Path $assetsDirectory $entry.Name)
+        Copy-Item -LiteralPath $entry.Source -Destination (Join-Path $entry.Package $entry.Name)
+        $releaseJars.Add($entry)
+    }
+}
+
+if ($releaseJars.Count -ne 32) {
+    throw "发布 JAR 数量错误：$($releaseJars.Count)，预期 32"
+}
+
+$names = @($releaseJars | ForEach-Object Name)
+if (@($names | Sort-Object -Unique).Count -ne 32) {
+    throw '发布 JAR 文件名存在重复'
+}
+
+foreach ($document in @('README.md', 'CHANGELOG.md', 'RELEASE_NOTES_2.0.0.md', 'LICENSE')) {
+    $source = Join-Path $repoRoot $document
+    if (Test-Path -LiteralPath $source -PathType Leaf) {
+        Copy-Item -LiteralPath $source -Destination (Join-Path $packageDirectory $document)
+    }
+}
+
+$zipName = "AnkiNBT-$Version-all-versions.zip"
+$zipPath = Join-Path $assetsDirectory $zipName
+Compress-Archive -Path (Join-Path $packageDirectory '*') -DestinationPath $zipPath -CompressionLevel Optimal
+
+$checksumEntries = @(
+    Get-ChildItem -LiteralPath $assetsDirectory -File |
+        Where-Object Name -NE 'SHA256SUMS.txt' |
+        Sort-Object Name |
+        ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+        }
+)
+$checksumPath = Join-Path $assetsDirectory 'SHA256SUMS.txt'
+[IO.File]::WriteAllLines($checksumPath, $checksumEntries, [Text.UTF8Encoding]::new($false))
+
+$manifest = [ordered]@{
+    version = $Version
+    generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    minecraftVersions = $minecraftVersions
+    loaders = @('Fabric', 'NeoForge')
+    jarCount = $releaseJars.Count
+    assets = @(Get-ChildItem -LiteralPath $assetsDirectory -File | Sort-Object Name | ForEach-Object Name)
+}
+$manifestPath = Join-Path $OutputDirectory 'manifest.json'
+$manifestJson = $manifest | ConvertTo-Json -Depth 4
+[IO.File]::WriteAllText($manifestPath, $manifestJson, [Text.UTF8Encoding]::new($false))
+
+Write-Output "发布目录：$OutputDirectory"
+Write-Output "JAR 数量：$($releaseJars.Count)"
+Write-Output "上传资产：$(@(Get-ChildItem -LiteralPath $assetsDirectory -File).Count)"
+Write-Output "校验文件：$checksumPath"
 

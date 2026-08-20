@@ -87,3 +87,5 @@ tasks.withType(ProcessResources).configureEach {
 tasks.named('jar').configure {
     exclude 'net/minecraft/**'
 }
+
+apply from: '../../scripts/neoforge-qa.gradle'

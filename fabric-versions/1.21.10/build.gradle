@@ -103,3 +103,5 @@ clean.doFirst {
     delete 'build/version-src'
     delete 'build/shared-resources'
 }
+
+apply from: '../../scripts/fabric-qa.gradle'

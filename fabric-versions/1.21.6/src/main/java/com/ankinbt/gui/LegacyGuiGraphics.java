@@ -31,6 +31,10 @@ final class LegacyGuiGraphics {
         delegate.disableScissor();
     }
 
+    /** The render-state API submits later; clipping is balanced by each screen. */
+    void finishFrame() {
+    }
+
     int drawString(Font font, String text, int x, int y, int color, boolean shadow) {
         delegate.drawString(font, text, x, y, color, shadow);
         return x + font.width(text);

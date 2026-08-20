@@ -186,6 +186,7 @@ public class VersionCompat {
                     net.minecraft.client.gui.Font.class, net.minecraft.network.chat.Component.class, int.class, int.class, int.class, boolean.class);
             Object out = m.invoke(g, font, text, x, y, color, shadow);
             if (out instanceof Number n) return n.intValue();
+            return font.width(text);
         } catch (Throwable ignored) {}
         return drawString(g, font, text.getString(), x, y, color, shadow);
     }
@@ -197,6 +198,7 @@ public class VersionCompat {
                     net.minecraft.client.gui.Font.class, String.class, int.class, int.class, int.class, boolean.class);
             Object out = m.invoke(g, font, resolved, x, y, color, shadow);
             if (out instanceof Number n) return n.intValue();
+            return font.width(resolved);
         } catch (Throwable ignored) {}
         g.drawString(font, resolved, x, y, color, shadow);
         return font.width(resolved);
@@ -234,7 +236,7 @@ public class VersionCompat {
                 "getHolder", "getEntry", "method_55841", "method_10223"));
         if (holder.isEmpty()) {
             holder = toHolderOptional(invokeRegistryLookup(registry, createElementKey(registryKey, location),
-                    "getHolder", "getEntry", "method_40264", "method_57095", "method_10223"));
+                    "getHolder", "get", "getEntry", "method_40264", "method_57095", "method_10223"));
         }
         if (holder.isEmpty()) {
             Object value = invokeRegistryLookup(registry, location, "get", "getValue", "method_10223");
@@ -255,9 +257,9 @@ public class VersionCompat {
 
     private boolean isHolder(Object value) {
         if (value == null) return false;
-        if (value instanceof Holder<?>) return true;
+        if (value instanceof Holder.Reference<?>) return true;
         String name = value.getClass().getName();
-        return name.contains("Holder") || name.contains("class_6880");
+        return name.contains("Holder$Reference") || name.contains("class_6880$class_6883");
     }
     private Object getRegistry(Object registryKey) {
         Minecraft mc = Minecraft.getInstance();

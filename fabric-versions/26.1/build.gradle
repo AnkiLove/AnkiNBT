@@ -104,6 +104,8 @@ clean.doFirst {
     delete 'build/shared-resources'
 }
 
+apply from: '../../scripts/fabric-qa.gradle'
+
 tasks.named('jar').configure {
     from('../../LICENSE') {
         rename { 'LICENSE_AnkiNBT' }

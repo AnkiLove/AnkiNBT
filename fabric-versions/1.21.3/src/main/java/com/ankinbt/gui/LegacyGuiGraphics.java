@@ -17,6 +17,8 @@ final class LegacyGuiGraphics {
     void fill(int x1, int y1, int x2, int y2, int color) { delegate.fill(x1, y1, x2, y2, color); }
     void enableScissor(int x1, int y1, int x2, int y2) { delegate.enableScissor(x1, y1, x2, y2); }
     void disableScissor() { delegate.disableScissor(); }
+    /** Submits buffered custom-screen draws after the screen balances clipping. */
+    void finishFrame() { delegate.flush(); }
     int drawString(Font font, String text, int x, int y, int color, boolean shadow) { return delegate.drawString(font, text, x, y, color, shadow); }
     int drawString(Font font, Component text, int x, int y, int color, boolean shadow) { return delegate.drawString(font, text, x, y, color, shadow); }
     int drawString(Font font, FormattedCharSequence text, int x, int y, int color, boolean shadow) { return delegate.drawString(font, text, x, y, color, shadow); }

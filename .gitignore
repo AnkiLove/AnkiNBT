@@ -18,6 +18,7 @@ look/
 
 # Minecraft dev
 run/
+**/run-qa/
 logs/
 *.log
 

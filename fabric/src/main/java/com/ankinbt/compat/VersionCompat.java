@@ -91,6 +91,13 @@ public class VersionCompat {
             return;
         }
         Object resistant = constructDamageResistant();
+        // Minecraft 1.21 still stores FIRE_RESISTANT as Unit. Starting with
+        // 1.21.2 the component became DAMAGE_RESISTANT and stores a
+        // DamageResistant value instead. Keep the shared Fabric adapter valid
+        // for both component shapes.
+        if (resistant == null) {
+            resistant = unitInstance();
+        }
         if (resistant != null) {
             setComponentUnchecked(stack, type, resistant);
         }
@@ -253,6 +260,12 @@ public class VersionCompat {
             return;
         }
         Object unbreakable = constructUnbreakable(true);
+        // Minecraft 1.21.5 changed UNBREAKABLE from the tooltip-bearing
+        // Unbreakable record to the marker Unit component. Preserve support
+        // for both layouts in the shared Fabric adapter.
+        if (unbreakable == null) {
+            unbreakable = unitInstance();
+        }
         if (unbreakable != null) {
             setComponentUnchecked(stack, DataComponents.UNBREAKABLE, unbreakable);
         }
@@ -306,6 +319,7 @@ public class VersionCompat {
         if (text == null) return drawString(g, font, "", x, y, color, shadow);
         Object out = invokeGuiWithResult(g, "drawString", font, text, x, y, color, shadow);
         if (out instanceof Number number) return number.intValue();
+        if (out != InvokeMiss.INSTANCE) return font.width(text);
         return drawString(g, font, text.getString(), x, y, color, shadow);
     }
 
@@ -313,6 +327,7 @@ public class VersionCompat {
         String resolved = text == null ? "" : text;
         Object out = invokeGuiWithResult(g, "drawString", font, resolved, x, y, color, shadow);
         if (out instanceof Number number) return number.intValue();
+        if (out != InvokeMiss.INSTANCE) return font.width(resolved);
         try {
             g.drawString(font, resolved, x, y, color, shadow);
         } catch (Throwable ignored) {}
@@ -320,14 +335,13 @@ public class VersionCompat {
     }
 
     private List<String> getAllRegistryIds(Object registryKey) {
-        ArrayList<String> ids = new ArrayList<>();
+        Set<String> ids = new LinkedHashSet<>();
         Object registry = getRegistry(registryKey);
-        if (registry == null) return ids;
+        if (registry == null) return new ArrayList<>();
         Object holders = invokeAny(registry, "holders");
         if (holders instanceof Stream<?> stream) {
             stream.forEach(holder -> {
-                Object key = invokeAny(holder, "key", "unwrapKey");
-                if (key instanceof Optional<?> optional) key = optional.orElse(null);
+                Object key = unwrapOptionals(invokeAny(holder, "key", "unwrapKey"));
                 addId(ids, idFromKey(key));
             });
         }
@@ -343,7 +357,7 @@ public class VersionCompat {
         if (keySet instanceof Iterable<?> iterable) {
             for (Object key : iterable) addId(ids, idFromKey(key));
         }
-        return ids;
+        return new ArrayList<>(ids);
     }
 
     private Optional<?> getHolder(Object registryKey, String id) {
@@ -357,20 +371,29 @@ public class VersionCompat {
                     "getHolder", "getEntry", "method_40264", "method_57095", "method_10223"));
         }
         if (holder.isEmpty()) {
-            Object value = invokeRegistryLookup(registry, location, "get", "getValue", "method_10223");
-            holder = toHolderOptional(invokeRegistryLookup(registry, value,
-                    "wrapAsHolder", "getEntry", "method_47983"));
+            Object value = unwrapOptionals(invokeRegistryLookup(
+                    registry, location, "get", "getValue", "method_10223"));
+            holder = toHolderOptional(value);
+            if (holder.isEmpty()) {
+                holder = toHolderOptional(invokeRegistryLookup(registry, value,
+                        "wrapAsHolder", "getEntry", "method_47983"));
+            }
         }
         return holder;
     }
 
     private Optional<?> toHolderOptional(Object value) {
-        if (value instanceof Optional<?> optional) {
-            if (optional.isEmpty()) return Optional.empty();
-            Object unwrapped = optional.get();
-            return isHolder(unwrapped) ? optional : Optional.empty();
+        Object unwrapped = unwrapOptionals(value);
+        return isHolder(unwrapped) ? Optional.of(unwrapped) : Optional.empty();
+    }
+
+    private Object unwrapOptionals(Object value) {
+        Object current = value;
+        int depth = 0;
+        while (current instanceof Optional<?> optional && depth++ < 16) {
+            current = optional.orElse(null);
         }
-        return isHolder(value) ? Optional.of(value) : Optional.empty();
+        return current;
     }
 
     private boolean isHolder(Object value) {
@@ -402,9 +425,10 @@ public class VersionCompat {
     }
 
     private String idFromKey(Object key) {
+        key = unwrapOptionals(key);
         if (key == null) return "";
-        Object id = invokeAny(key, "location", "identifier", "method_29177");
-        return id != null ? String.valueOf(id) : String.valueOf(key);
+        Object id = unwrapOptionals(invokeAny(key, "location", "identifier", "method_29177"));
+        return canonicalRegistryId(id != null ? String.valueOf(id) : String.valueOf(key));
     }
 
     private Object parseResourceId(String id) {
@@ -459,8 +483,19 @@ public class VersionCompat {
         return null;
     }
 
-    private void addId(List<String> ids, String id) {
-        if (id != null && !id.isBlank() && !ids.contains(id)) ids.add(id);
+    private String canonicalRegistryId(String raw) {
+        if (raw == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[a-z0-9_.-]+:[a-z0-9_./-]+")
+                .matcher(raw.toLowerCase(Locale.ROOT));
+        String last = null;
+        while (matcher.find()) last = matcher.group();
+        return last != null ? last : raw.trim();
+    }
+
+    private void addId(Set<String> ids, String id) {
+        String canonical = canonicalRegistryId(id);
+        if (!canonical.isBlank()) ids.add(canonical);
     }
 
     @SuppressWarnings("unchecked")

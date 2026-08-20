@@ -86,3 +86,5 @@ tasks.named('jar').configure {
     exclude 'net/minecraft/**'
     from('../../LICENSE') { rename { 'LICENSE_AnkiNBT' } }
 }
+
+apply from: '../../scripts/neoforge-qa.gradle'

@@ -1,0 +1,54 @@
+// Shared NeoForge editor automation source set. This code is available only
+// to the dedicated QA client and is never packaged in the release JAR.
+sourceSets {
+    qa {
+        java.srcDir '../../src/qa/java'
+        resources.srcDir '../../src/qa/resources'
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    qaImplementation.extendsFrom implementation
+    qaRuntimeOnly.extendsFrom runtimeOnly
+}
+
+neoForge {
+    addModdingDependenciesTo sourceSets.qa
+
+    mods {
+        ankinbt_qa {
+            sourceSet sourceSets.qa
+        }
+    }
+
+    runs {
+        qaClient {
+            client()
+            sourceSet = sourceSets.qa
+            loadedMods = [mods.ankinbt, mods.ankinbt_qa]
+            gameDirectory = project.file('run-qa')
+            systemProperty 'ankinbt.qa.enabled', 'true'
+            systemProperty 'ankinbt.qa.loader', 'neoforge'
+            systemProperty 'ankinbt.qa.version', project.minecraft_version
+            systemProperty 'ankinbt.qa.language', providers.gradleProperty('qaLanguage').getOrElse('zh_cn')
+            systemProperty 'ankinbt.qa.report', providers.gradleProperty('qaReport')
+                    .getOrElse(project.layout.buildDirectory.file('reports/ankinbt-qa/report.json').get().asFile.absolutePath)
+            systemProperty 'ankinbt.qa.screenshotDir', providers.gradleProperty('qaScreenshotDir')
+                    .getOrElse(project.layout.buildDirectory.dir('reports/ankinbt-qa/screenshots').get().asFile.absolutePath)
+            systemProperty 'ankinbt.qa.timeoutSeconds', providers.gradleProperty('qaTimeoutSeconds').getOrElse('240')
+        }
+    }
+}
+
+tasks.named('processQaResources', ProcessResources).configure {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand([
+                minecraft_version_range: minecraft_version_range,
+                neo_version_range      : neo_version_range,
+                loader_version_range   : loader_version_range
+        ])
+    }
+}

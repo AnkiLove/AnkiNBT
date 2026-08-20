@@ -111,3 +111,4 @@ tasks.named('jar').configure {
     exclude 'net/minecraft/**'
 }
 
+apply from: '../../scripts/fabric-qa.gradle'

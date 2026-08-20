@@ -37,6 +37,7 @@
  */
 package com.ankinbt.gui;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.ankinbt.compat.VersionCompat;
 import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.EditorCommandHelper;
@@ -1134,6 +1135,10 @@ extends class_437 {
         this.renderInlineEditBox(g, this.maxUses, mx, my, accent);
         this.renderInlineEditBox(g, this.xp, mx, my, accent);
         g.method_44380();
+        // Older GuiGraphics releases can leave GL_SCISSOR_TEST enabled after the
+        // logical stack is popped. Reset the driver state so the following world
+        // frame is not clipped to the editor body (visible as full-screen flashing).
+        RenderSystem.disableScissor();
         this.renderTradeScrollBar(g, leftRight - 7, this.tradeFieldClipTop(), this.tradeFieldClipBottom() - this.tradeFieldClipTop(), accent);
         for (UiBtn btn : this.buttons) {
             btn.render(g, this.field_22793, mx, my, accent);
@@ -2584,30 +2589,41 @@ extends class_437 {
                     return;
                 }
                 class_3988 serverVillager = (class_3988)serverEntity;
-                class_2487 mergedTag = this.readEntityTag(serverEntity);
-                boolean loadedFromTag = false;
-                if (mergedTag != null && patch != null && !patch.method_33133()) {
-                    mergedTag.method_10543(this.copyCompound(patch));
-                    if (this.loadEntityTag(serverEntity, mergedTag)) {
-                        loadedFromTag = true;
+
+                if (serverEntity instanceof class_1646) {
+                    class_1646 villager = (class_1646)serverEntity;
+                    if (!this.isWanderingTraderContext()) {
+                        class_1937 initialWorld = serverEntity.method_37908();
+                        class_3218 initialLevel = initialWorld instanceof class_3218 ? (class_3218)initialWorld : null;
+                        this.applyVillagerData(villager, initialLevel);
                     }
                 }
+
+                class_2487 mergedTag = this.readEntityTag(serverEntity);
+                if (mergedTag != null && patch != null && !patch.method_33133()) {
+                    mergedTag.method_10543(this.copyCompound(patch));
+                    this.loadEntityTag(serverEntity, mergedTag);
+                }
+
+                if (serverEntity instanceof class_1646) {
+                    class_1646 villager = (class_1646)serverEntity;
+                    if (!this.isWanderingTraderContext()) {
+                        class_1937 reloadedWorld = serverEntity.method_37908();
+                        class_3218 reloadedLevel = reloadedWorld instanceof class_3218 ? (class_3218)reloadedWorld : null;
+                        this.applyVillagerData(villager, reloadedLevel);
+                    }
+                }
+
                 class_1916 offers = this.buildMerchantOffers();
+                if (offers == null || offers.size() != this.trades.size()) {
+                    return;
+                }
                 class_1916 live = serverVillager.method_8264();
                 live.clear();
                 for (class_1914 offer : offers) {
                     live.add((Object)offer.method_53881());
                 }
-                if (serverEntity instanceof class_1646) {
-                    class_1646 villager = (class_1646)serverEntity;
-                    if (!this.isWanderingTraderContext()) {
-                        class_3218 level;
-                        class_1937 patt0$temp = serverEntity.method_37908();
-                        class_3218 serverLevel = patt0$temp instanceof class_3218 ? (level = (class_3218)patt0$temp) : null;
-                        this.applyVillagerData(villager, serverLevel);
-                    }
-                }
-                success.set(loadedFromTag || !offers.isEmpty() || serverEntity instanceof class_1646 || serverVillager != null);
+                success.set(live.size() == this.trades.size());
             }
             catch (Throwable t) {
                 DebugLog.warn("Integrated villager trade apply failed: {}", t.toString());
@@ -2740,17 +2756,77 @@ extends class_437 {
             class_9306 firstCost;
             class_1799 buy = this.buildPreviewStack(t.buyId, t.buyComponents, Math.max(1, t.buyCount));
             class_1799 sell = this.buildPreviewStack(t.sellId, t.sellComponents, Math.max(1, t.sellCount));
-            if (buy.method_7960() || sell.method_7960() || (firstCost = this.toItemCost(buy)) == null) continue;
+            if (buy.method_7960() || sell.method_7960() || (firstCost = this.toItemCost(buy)) == null) {
+                return null;
+            }
             Optional<Object> secondCost = Optional.empty();
             if (!t.buy2Id.isBlank()) {
                 class_1799 buy2 = this.buildPreviewStack(t.buy2Id, t.buy2Components, Math.max(1, t.buy2Count));
                 class_9306 extraCost = this.toItemCost(buy2);
-                if (extraCost == null) continue;
+                if (extraCost == null) {
+                    return null;
+                }
                 secondCost = Optional.of(extraCost);
             }
-            offers.add((Object)new class_1914(firstCost, secondCost, sell.method_7972(), 0, Math.max(1, t.maxUses), Math.max(0, t.xp), 0.0f, 0));
+            class_1914 offer = this.createMerchantOffer(firstCost, secondCost, sell.method_7972(), t);
+            if (offer == null) {
+                return null;
+            }
+            offers.add((Object)offer);
         }
         return offers;
+    }
+
+    private class_1914 createMerchantOffer(class_9306 firstCost, Optional<Object> secondCost, class_1799 sell, TradeData trade) {
+        try {
+            for (Constructor<?> ctor : class_1914.class.getDeclaredConstructors()) {
+                Class<?>[] parameters = ctor.getParameterTypes();
+                if (parameters.length != 10
+                        || parameters[3] != Integer.TYPE
+                        || parameters[4] != Integer.TYPE
+                        || parameters[5] != Boolean.TYPE
+                        || parameters[6] != Integer.TYPE
+                        || parameters[7] != Integer.TYPE
+                        || parameters[8] != Float.TYPE
+                        || parameters[9] != Integer.TYPE) {
+                    continue;
+                }
+                ctor.setAccessible(true);
+                Object out = ctor.newInstance(
+                        firstCost,
+                        secondCost,
+                        sell,
+                        Math.max(0, trade.uses),
+                        Math.max(1, trade.maxUses),
+                        trade.rewardExp,
+                        trade.specialPrice,
+                        trade.demand,
+                        trade.priceMultiplier,
+                        Math.max(0, trade.xp));
+                if (out instanceof class_1914) {
+                    return (class_1914)out;
+                }
+            }
+        }
+        catch (Throwable ignored) {
+        }
+        try {
+            class_1914 offer = new class_1914(
+                    firstCost,
+                    secondCost,
+                    sell,
+                    Math.max(0, trade.uses),
+                    Math.max(1, trade.maxUses),
+                    Math.max(0, trade.xp),
+                    trade.priceMultiplier,
+                    trade.demand);
+            offer.method_19273(trade.specialPrice);
+            return offer;
+        }
+        catch (Throwable error) {
+            DebugLog.warn("Villager offer reconstruction failed: {}", error.toString());
+            return null;
+        }
     }
 
     private class_9306 toItemCost(class_1799 stack) {
@@ -2843,13 +2919,24 @@ extends class_437 {
         List<Object> professionCandidates = this.registryCandidates(class_7923.field_41195, profession, currentProfession);
         Object updated = current;
         Object next = this.invokeCompatibleCandidates(updated, "withType", typeCandidates);
+        if (next == null) {
+            next = this.invokeCompatibleCandidates(updated, "setType", typeCandidates);
+        }
         if (next != null) {
             updated = next;
         }
-        if ((next = this.invokeCompatibleCandidates(updated, "withProfession", professionCandidates)) != null) {
+        next = this.invokeCompatibleCandidates(updated, "withProfession", professionCandidates);
+        if (next == null) {
+            next = this.invokeCompatibleCandidates(updated, "setProfession", professionCandidates);
+        }
+        if (next != null) {
             updated = next;
         }
-        if ((next = this.invokeCompatible(updated, "withLevel", level)) instanceof class_3850 && this.matchesVillagerData(data = (class_3850)next, desiredType, desiredProfession, level)) {
+        next = this.invokeCompatible(updated, "withLevel", level);
+        if (next == null) {
+            next = this.invokeCompatible(updated, "setLevel", level);
+        }
+        if (next instanceof class_3850 && this.matchesVillagerData(data = (class_3850)next, desiredType, desiredProfession, level)) {
             return data;
         }
         if (updated instanceof class_3850 && this.matchesVillagerData(data = updated, desiredType, desiredProfession, level)) {
@@ -2880,10 +2967,31 @@ extends class_437 {
         if (data == null) {
             return false;
         }
-        String actualType = this.extractNamespacedId(this.invokeAny((Object)data, "type", "getType"));
-        String actualProfession = this.extractNamespacedId(this.invokeAny((Object)data, "profession", "getProfession"));
+        String actualType = this.registryEntryId(class_7923.field_41194, this.invokeAny((Object)data, "type", "getType"));
+        String actualProfession = this.registryEntryId(class_7923.field_41195, this.invokeAny((Object)data, "profession", "getProfession"));
         Integer actualLevel = this.invokeInt(data, "getLevel");
+        if (actualLevel == null) {
+            actualLevel = this.invokeInt(data, "level");
+        }
         return Objects.equals(expectedType, actualType) && Objects.equals(expectedProfession, actualProfession) && actualLevel != null && actualLevel == expectedLevel;
+    }
+
+    private String registryEntryId(Object registry, Object entry) {
+        if (entry == null) {
+            return null;
+        }
+        Object raw = this.unwrapHolderValue(entry);
+        if (raw == null) {
+            raw = entry;
+        }
+        for (String method : List.of("getKey", "getId")) {
+            Object id = this.invokeCompatible(registry, method, raw);
+            String resolved = this.extractNamespacedId(id);
+            if (resolved != null && !resolved.isBlank()) {
+                return resolved;
+            }
+        }
+        return this.extractNamespacedId(entry);
     }
 
     private Object resolveRegistryEntry(Object registry, String id, Object fallback, String defaultId) {
@@ -3424,4 +3532,3 @@ extends class_437 {
         }
     }
 }
-

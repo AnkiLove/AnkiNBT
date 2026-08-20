@@ -66,15 +66,11 @@ public final class ImeSupport {
 
     public static void updateCursorArea(double mouseX, double mouseY) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft == null || !imeEnabled) return;
+        if (minecraft == null || !isInputRequested() || !ensureTextInputEnabled(minecraft)) return;
         int x = Math.max(0, (int) Math.round(mouseX));
         int y = Math.max(0, (int) Math.round(mouseY));
         try {
-            minecraft.textInputManager().setTextInputArea(
-                    x,
-                    y,
-                    x + 2,
-                    y + Math.max(12, minecraft.font.lineHeight + 4));
+            setCursorArea(minecraft, x, y);
         } catch (Throwable ignored) {
         }
     }
@@ -88,21 +84,15 @@ public final class ImeSupport {
         }
         if (minecraft == null || minecraft.getWindow() == null) return;
 
-        boolean shouldEnable = overlayUser || !SCREEN_USERS.isEmpty();
+        boolean shouldEnable = isInputRequested();
         try {
             TextInputManager textInput = minecraft.textInputManager();
             if (shouldEnable) {
-                textInput.onTextInputFocusChange(true);
-                GLFW.glfwSetInputMode(
-                        minecraft.getWindow().handle(),
-                        GLFW_IME,
-                        GLX.glfwBool(true));
-                textInput.notifyIMEChanged();
-                WindowsIme.ensureAssociated(minecraft.getWindow().handle());
-                imeEnabled = true;
-                Screen current = minecraft.gui.screen();
-                if (current != null) {
-                    updateCursorArea(current.width / 2.0, current.height / 2.0);
+                if (ensureTextInputEnabled(minecraft)) {
+                    Screen current = minecraft.gui.screen();
+                    if (current != null) {
+                        setCursorArea(minecraft, current.width / 2, current.height / 2);
+                    }
                 }
             } else if (imeEnabled) {
                 textInput.onTextInputFocusChange(false);
@@ -117,6 +107,41 @@ public final class ImeSupport {
         } catch (Throwable ignored) {
             // Keep editor input usable if a platform window is being rebuilt.
         }
+    }
+
+    private static boolean isInputRequested() {
+        return overlayUser || !SCREEN_USERS.isEmpty();
+    }
+
+    /**
+     * Container widgets can change vanilla text focus after the overlay opens.
+     * Reassert the native text-input state whenever an AnkiNBT field is clicked
+     * so committed IME characters continue to reach the overlay callback.
+     */
+    private static boolean ensureTextInputEnabled(Minecraft minecraft) {
+        try {
+            TextInputManager textInput = minecraft.textInputManager();
+            textInput.onTextInputFocusChange(true);
+            GLFW.glfwSetInputMode(
+                    minecraft.getWindow().handle(),
+                    GLFW_IME,
+                    GLX.glfwBool(true));
+            textInput.notifyIMEChanged();
+            WindowsIme.ensureAssociated(minecraft.getWindow().handle());
+            imeEnabled = true;
+            return true;
+        } catch (Throwable ignored) {
+            imeEnabled = false;
+            return false;
+        }
+    }
+
+    private static void setCursorArea(Minecraft minecraft, int x, int y) {
+        minecraft.textInputManager().setTextInputArea(
+                x,
+                y,
+                x + 2,
+                y + Math.max(12, minecraft.font.lineHeight + 4));
     }
 
     private static final class WindowsIme {

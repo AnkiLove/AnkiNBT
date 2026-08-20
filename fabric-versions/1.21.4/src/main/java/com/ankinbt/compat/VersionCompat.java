@@ -41,7 +41,9 @@ package com.ankinbt.compat;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import net.fabricmc.loader.api.FabricLoader;
@@ -299,6 +301,7 @@ public class VersionCompat {
                 Number n = (Number)out;
                 return n.intValue();
             }
+            return font.method_1727(text.getString());
         }
         catch (Throwable throwable) {
             // empty catch block
@@ -315,6 +318,7 @@ public class VersionCompat {
                 Number n = (Number)out;
                 return n.intValue();
             }
+            return font.method_1727(resolved);
         }
         catch (Throwable throwable) {
             // empty catch block
@@ -323,18 +327,15 @@ public class VersionCompat {
         return font.method_1727(resolved);
     }
     private List<String> getAllRegistryIds(Object registryKey) {
-        ArrayList<String> ids = new ArrayList<String>();
+        Set<String> ids = new LinkedHashSet<String>();
         Object registry = this.getRegistry(registryKey);
         if (registry == null) {
-            return ids;
+            return new ArrayList<String>();
         }
         Object holders = this.invokeAny(registry, "holders");
         if (holders instanceof java.util.stream.Stream<?> stream) {
             stream.forEach(holder -> {
-                Object key = this.invokeAny(holder, "key", "unwrapKey");
-                if (key instanceof Optional<?> optional) {
-                    key = optional.orElse(null);
-                }
+                Object key = this.unwrapOptionals(this.invokeAny(holder, "key", "unwrapKey"));
                 this.addId(ids, this.idFromKey(key));
             });
         }
@@ -352,7 +353,7 @@ public class VersionCompat {
                 this.addId(ids, this.idFromKey(key));
             }
         }
-        return ids;
+        return new ArrayList<String>(ids);
     }
 
     private Optional<?> getHolder(Object registryKey, String id) {
@@ -361,11 +362,28 @@ public class VersionCompat {
         if (registry == null || location == null) {
             return Optional.empty();
         }
-        Object holder = this.invokeRegistryLookup(registry, location, "getHolder", "get", "method_10223");
-        if (holder instanceof Optional<?> optional) {
-            return optional;
-        }
-        return holder != null ? Optional.of(holder) : Optional.empty();
+        Object holder = this.unwrapOptionals(this.invokeRegistryLookup(
+                registry, location, "getHolder", "getEntry", "method_55841", "method_10223"));
+        if (this.isHolder(holder)) return Optional.of(holder);
+        Object value = this.unwrapOptionals(this.invokeRegistryLookup(
+                registry, location, "get", "getValue", "method_10223"));
+        if (this.isHolder(value)) return Optional.of(value);
+        holder = this.unwrapOptionals(this.invokeRegistryLookup(
+                registry, value, "wrapAsHolder", "getEntry", "method_47983"));
+        return this.isHolder(holder) ? Optional.of(holder) : Optional.empty();
+    }
+
+    private Object unwrapOptionals(Object value) {
+        Object current = value;
+        int depth = 0;
+        while (current instanceof Optional<?> optional && depth++ < 16) current = optional.orElse(null);
+        return current;
+    }
+
+    private boolean isHolder(Object value) {
+        if (value == null) return false;
+        String name = value.getClass().getName();
+        return value instanceof class_6880 || name.contains("Holder") || name.contains("class_6880");
     }
 
     private Object getRegistry(Object registryKey) {
@@ -429,16 +447,26 @@ public class VersionCompat {
     }
 
     private String idFromKey(Object key) {
+        key = this.unwrapOptionals(key);
         if (key == null) {
             return "";
         }
-        Object id = this.invokeAny(key, "location", "identifier", "method_29177");
-        return id != null ? String.valueOf(id) : String.valueOf(key);
+        Object id = this.unwrapOptionals(this.invokeAny(key, "location", "identifier", "method_29177"));
+        return this.canonicalRegistryId(id != null ? String.valueOf(id) : String.valueOf(key));
     }
 
-    private void addId(List<String> ids, String id) {
-        if (id != null && !id.isBlank() && !ids.contains(id)) {
-            ids.add(id);
-        }
+    private String canonicalRegistryId(String raw) {
+        if (raw == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[a-z0-9_.-]+:[a-z0-9_./-]+")
+                .matcher(raw.toLowerCase(Locale.ROOT));
+        String last = null;
+        while (matcher.find()) last = matcher.group();
+        return last != null ? last : raw.trim();
+    }
+
+    private void addId(Set<String> ids, String id) {
+        String canonical = this.canonicalRegistryId(id);
+        if (!canonical.isBlank()) ids.add(canonical);
     }
 }

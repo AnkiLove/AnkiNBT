@@ -1653,7 +1653,6 @@ public class VillagerTradeEditorScreen extends Screen {
         int card = UiTheme.card(AnkiConfig.getUiOpacity(), openAnim);
         int edge = UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim);
         renderTradeStrip(g, mx, my, accent, card, edge);
-        g.enableScissor(px, clipTop, px + pw, clipBottom);
 
         layoutTradeFields();
         iconHits.clear();
@@ -1665,8 +1664,6 @@ public class VillagerTradeEditorScreen extends Screen {
             renderContentScrollBar(g, accent);
             g.disableScissor();
         }
-        g.enableScissor(px, clipTop, px + pw, clipBottom);
-
         int footerY = py + ph - 26;
         g.fill(px + 1, footerY, px + pw - 1, footerY + 1, UiTheme.themedBorder(1f, 1f));
         Component footer = status != null && !status.getString().isEmpty()
@@ -3259,32 +3256,30 @@ public class VillagerTradeEditorScreen extends Screen {
                 Entity serverEntity = EditorCommandHelper.findIntegratedServerEntity(server, targetEntity.getId(), targetEntity.getUUID());
                 if (!(serverEntity instanceof AbstractVillager serverVillager)) return;
 
-                CompoundTag mergedTag = readEntityTag(serverEntity);
-                boolean loadedFromTag = false;
-                if (mergedTag != null && patch != null && !patch.isEmpty()) {
-                    mergedTag.merge(copyCompound(patch));
-                    if (loadEntityTag(serverEntity, mergedTag)) {
-                        loadedFromTag = true;
-                    }
+                if (serverEntity instanceof Villager villager && !isWanderingTraderContext()) {
+                    ServerLevel serverLevel = serverEntity.level() instanceof ServerLevel level ? level : null;
+                    applyVillagerData(villager, serverLevel);
                 }
 
-                MerchantOffers live = serverVillager.getOffers();
-                boolean offersMatch = loadedFromTag && live.size() == trades.size();
-                if (!offersMatch) {
-                    MerchantOffers offers = buildMerchantOffers();
-                    if (offers == null || offers.size() != trades.size()) return;
-                    live.clear();
-                    for (MerchantOffer offer : offers) {
-                        live.add(offer.copy());
-                    }
-                    offersMatch = live.size() == trades.size();
+                CompoundTag mergedTag = readEntityTag(serverEntity);
+                if (mergedTag != null && patch != null && !patch.isEmpty()) {
+                    mergedTag.merge(copyCompound(patch));
+                    loadEntityTag(serverEntity, mergedTag);
                 }
 
                 if (serverEntity instanceof Villager villager && !isWanderingTraderContext()) {
                     ServerLevel serverLevel = serverEntity.level() instanceof ServerLevel level ? level : null;
                     applyVillagerData(villager, serverLevel);
                 }
-                success.set(offersMatch);
+
+                MerchantOffers offers = buildMerchantOffers();
+                if (offers == null || offers.size() != trades.size()) return;
+                MerchantOffers live = serverVillager.getOffers();
+                live.clear();
+                for (MerchantOffer offer : offers) {
+                    live.add(offer.copy());
+                }
+                success.set(live.size() == trades.size());
             } catch (Throwable t) {
                 DebugLog.warn("Integrated villager trade apply failed: {}", t.toString());
             } finally {
@@ -3517,10 +3512,13 @@ public class VillagerTradeEditorScreen extends Screen {
 
         Object updated = current;
         Object next = invokeCompatibleCandidates(updated, "withType", typeCandidates);
+        if (next == null) next = invokeCompatibleCandidates(updated, "setType", typeCandidates);
         if (next != null) updated = next;
         next = invokeCompatibleCandidates(updated, "withProfession", professionCandidates);
+        if (next == null) next = invokeCompatibleCandidates(updated, "setProfession", professionCandidates);
         if (next != null) updated = next;
         next = invokeCompatible(updated, "withLevel", Integer.valueOf(level));
+        if (next == null) next = invokeCompatible(updated, "setLevel", Integer.valueOf(level));
         if (next instanceof VillagerData data && matchesVillagerData(data, desiredType, desiredProfession, level)) {
             return data;
         }
@@ -3548,13 +3546,26 @@ public class VillagerTradeEditorScreen extends Screen {
 
     private boolean matchesVillagerData(VillagerData data, String expectedType, String expectedProfession, int expectedLevel) {
         if (data == null) return false;
-        String actualType = extractNamespacedId(invokeAny(data, "type", "getType"));
-        String actualProfession = extractNamespacedId(invokeAny(data, "profession", "getProfession"));
+        String actualType = registryEntryId(BuiltInRegistries.VILLAGER_TYPE, invokeAny(data, "type", "getType"));
+        String actualProfession = registryEntryId(BuiltInRegistries.VILLAGER_PROFESSION, invokeAny(data, "profession", "getProfession"));
         Integer actualLevel = invokeInt(data, "getLevel");
+        if (actualLevel == null) actualLevel = invokeInt(data, "level");
         return Objects.equals(expectedType, actualType)
                 && Objects.equals(expectedProfession, actualProfession)
                 && actualLevel != null
                 && actualLevel == expectedLevel;
+    }
+
+    private String registryEntryId(Object registry, Object entry) {
+        if (entry == null) return null;
+        Object raw = unwrapHolderValue(entry);
+        if (raw == null) raw = entry;
+        for (String method : List.of("getKey", "getId")) {
+            Object id = invokeCompatible(registry, method, raw);
+            String resolved = extractNamespacedId(id);
+            if (resolved != null && !resolved.isBlank()) return resolved;
+        }
+        return extractNamespacedId(entry);
     }
 
     private Object resolveRegistryEntry(Object registry, String id, Object fallback, String defaultId) {

@@ -90,3 +90,5 @@ tasks.named('jar').configure {
         rename { 'LICENSE_AnkiNBT' }
     }
 }
+
+apply from: '../../scripts/neoforge-qa.gradle'

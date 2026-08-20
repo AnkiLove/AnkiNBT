@@ -1,0 +1,67 @@
+// Shared Fabric editor automation source set. QA classes and resources are
+// available only to runQaClient and are never packaged in release JARs.
+def qaRepositoryRoot = project.projectDir
+while (qaRepositoryRoot != null && !new File(qaRepositoryRoot, 'src/qa/java').isDirectory()) {
+    qaRepositoryRoot = qaRepositoryRoot.parentFile
+}
+if (qaRepositoryRoot == null) {
+    throw new GradleException('Unable to locate AnkiNBT repository root for Fabric QA')
+}
+
+sourceSets {
+    qa {
+        java.srcDir new File(qaRepositoryRoot, 'src/qa/java')
+        java.exclude 'com/ankinbt/qa/AnkiNBTQaMod.java'
+        java.srcDir new File(qaRepositoryRoot, 'src/qa-fabric/java')
+        resources.srcDir new File(qaRepositoryRoot, 'src/qa-fabric/resources')
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    qaImplementation.extendsFrom implementation
+    qaRuntimeOnly.extendsFrom runtimeOnly
+}
+
+loom {
+    mods {
+        ankinbt {
+            sourceSet sourceSets.main
+        }
+    }
+    runs {
+        qaClient {
+            client()
+            runDir 'run-qa'
+        }
+    }
+}
+
+def qaModJar = tasks.register('qaModJar', Jar) {
+    dependsOn tasks.named('qaClasses')
+    archiveBaseName = 'ankinbt-qa'
+    archiveVersion = '1.0.0'
+    destinationDirectory = project.layout.buildDirectory.dir('qa-mod')
+    from sourceSets.qa.output
+}
+
+tasks.named('runQaClient').configure {
+    dependsOn qaModJar
+    def qaReport = providers.gradleProperty('qaReport')
+            .getOrElse(project.layout.buildDirectory.file('reports/ankinbt-qa/report.json').get().asFile.absolutePath)
+    def screenshotDir = providers.gradleProperty('qaScreenshotDir')
+            .getOrElse(project.layout.buildDirectory.dir('reports/ankinbt-qa/screenshots').get().asFile.absolutePath)
+    jvmArgs "-Dankinbt.qa.enabled=true"
+    jvmArgs "-Dankinbt.qa.loader=fabric"
+    jvmArgs "-Dankinbt.qa.version=${project.minecraft_version}"
+    jvmArgs "-Dankinbt.qa.report=${qaReport}"
+    jvmArgs "-Dankinbt.qa.screenshotDir=${screenshotDir}"
+    jvmArgs "-Dankinbt.qa.language=${providers.gradleProperty('qaLanguage').getOrElse('zh_cn')}"
+    jvmArgs "-Dankinbt.qa.timeoutSeconds=${providers.gradleProperty('qaTimeoutSeconds').getOrElse('240')}"
+    jvmArgs "-Dfabric.addMods=${qaModJar.get().archiveFile.get().asFile.absolutePath}"
+}
+
+tasks.named('processQaResources', ProcessResources).configure {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

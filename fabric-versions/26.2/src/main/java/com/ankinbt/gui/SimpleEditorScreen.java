@@ -1550,7 +1550,11 @@ public class SimpleEditorScreen extends Screen {
         enchants.entrySet().forEach(entry -> {
             Holder<Enchantment> ench = entry.getKey();
             String eId = ench.unwrapKey().map(this::registryKeyToString).orElse("?");
-            sorted.add(new EnchantRowData(eId, entry.getIntValue(), enchantGroup(ench.value())));
+            Object enchantValue = unwrapOptionalCompat(ench.value());
+            int group = enchantValue instanceof Enchantment enchantment
+                    ? enchantGroup(enchantment)
+                    : 2;
+            sorted.add(new EnchantRowData(eId, entry.getIntValue(), group));
         });
         sorted.sort(Comparator.comparingInt(EnchantRowData::group)
                 .thenComparing(data -> getEnchantDisplayName(data.id()), String.CASE_INSENSITIVE_ORDER)
@@ -2442,7 +2446,9 @@ public class SimpleEditorScreen extends Screen {
     private int enchantGroup(String enchantId) {
         try {
             Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchantId);
-            return holder.map(reference -> enchantGroup(reference.value())).orElse(2);
+            if (holder.isEmpty()) return 2;
+            Object enchantValue = unwrapOptionalCompat(holder.get().value());
+            return enchantValue instanceof Enchantment enchantment ? enchantGroup(enchantment) : 2;
         } catch (Throwable ignored) {
             return 2;
         }
@@ -2500,7 +2506,8 @@ public class SimpleEditorScreen extends Screen {
         try {
             Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchId);
             if (holder.isEmpty()) return null;
-            Component description = invokeComponent(holder.get().value(), "description", "getDescription");
+            Object enchantValue = unwrapOptionalCompat(holder.get().value());
+            Component description = invokeComponent(enchantValue, "description", "getDescription");
             if (description != null) {
                 String translated = description.getString();
                 if (!translated.isBlank()) return translated;

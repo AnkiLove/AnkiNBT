@@ -1207,7 +1207,6 @@ public class EntityEditorScreen extends Screen {
                 }
             }
             g.disableScissor();
-            g.enableScissor(px, clipTop, px + pw, clipBottom);
             renderContentScrollbar(g, bodyClipTop, bodyClipBottom);
         }
 

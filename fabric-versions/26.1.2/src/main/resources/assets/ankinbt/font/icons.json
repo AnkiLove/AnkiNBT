@@ -1,11 +1,13 @@
 {
   "providers": [
     {
-      "type": "ttf",
-      "file": "ankinbt:mynaui.ttf",
-      "size": 10.0,
-      "oversample": 2.0,
-      "shift": [0.0, 1.0]
+      "type": "bitmap",
+      "file": "ankinbt:font/mynaui.png",
+      "height": 10,
+      "ascent": 9,
+      "chars": [
+        "\uEAA5\uEE59\uEEBC\uEBC2\uEB4C\uEE09\uEEF9\uEAFB\uEB0F\uEE7A\uEA93\uEC6A\uEE31\uEE1C\uED83\uEB54\uEDDF\uEDD7\uEB60\uEEA4\uEAFF\uEB03\uEDEF\uEC58\uEECF\uEC3D\uEA05\uED34\uEAC2\uEDF0"
+      ]
     }
   ]
 }

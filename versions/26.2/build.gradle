@@ -90,3 +90,5 @@ tasks.withType(ProcessResources).configureEach {
         expand replaceProperties
     }
 }
+
+apply from: '../../scripts/neoforge-qa.gradle'

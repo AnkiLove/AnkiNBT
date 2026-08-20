@@ -1005,7 +1005,12 @@ public class EntityEditorScreen extends Screen {
 
     @Override
     public void render(net.minecraft.client.gui.GuiGraphics g, int mx, int my, float partialTick) {
-        render(new LegacyGuiGraphics(g), mx, my, partialTick);
+        LegacyGuiGraphics legacy = new LegacyGuiGraphics(g);
+        try {
+            render(legacy, mx, my, partialTick);
+        } finally {
+            legacy.finishFrame();
+        }
     }
 
     public void render(LegacyGuiGraphics g, int mx, int my, float partialTick) {
@@ -1211,7 +1216,6 @@ public class EntityEditorScreen extends Screen {
                 }
             }
             g.disableScissor();
-            g.enableScissor(px, clipTop, px + pw, clipBottom);
             renderContentScrollbar(g, bodyClipTop, bodyClipBottom);
         }
 

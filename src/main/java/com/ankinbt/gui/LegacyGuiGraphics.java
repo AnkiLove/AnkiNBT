@@ -31,6 +31,15 @@ final class LegacyGuiGraphics {
         delegate.disableScissor();
     }
 
+    /**
+     * Submits a legacy immediate-mode GUI frame after the screen has balanced
+     * its own clipping calls. This finalizer must never pop the scissor stack:
+     * doing so after a balanced screen crashes the client with an underflow.
+     */
+    void finishFrame() {
+        delegate.flush();
+    }
+
     int drawString(Font font, String text, int x, int y, int color, boolean shadow) {
         return delegate.drawString(font, text, x, y, color, shadow);
     }

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "ankinbt_qa",
+  "version": "1.0.0",
+  "name": "AnkiNBT Editor Automation",
+  "description": "Development-only integration tests for the AnkiNBT editors.",
+  "authors": ["Ankiw"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.ankinbt.qa.AnkiNBTQaFabricMod"]
+  },
+  "depends": {
+    "fabricloader": "*",
+    "minecraft": "*",
+    "ankinbt": ">=2.0.0 <2.1.0"
+  }
+}

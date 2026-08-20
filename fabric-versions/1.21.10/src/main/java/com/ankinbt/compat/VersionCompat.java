@@ -187,6 +187,7 @@ public class VersionCompat {
                     net.minecraft.client.gui.Font.class, net.minecraft.network.chat.Component.class, int.class, int.class, int.class, boolean.class);
             Object out = m.invoke(g, font, text, x, y, color, shadow);
             if (out instanceof Number n) return n.intValue();
+            return font.width(text);
         } catch (Throwable ignored) {}
         return drawString(g, font, text.getString(), x, y, color, shadow);
     }
@@ -198,19 +199,19 @@ public class VersionCompat {
                     net.minecraft.client.gui.Font.class, String.class, int.class, int.class, int.class, boolean.class);
             Object out = m.invoke(g, font, resolved, x, y, color, shadow);
             if (out instanceof Number n) return n.intValue();
+            return font.width(resolved);
         } catch (Throwable ignored) {}
         g.drawString(font, resolved, x, y, color, shadow);
         return font.width(resolved);
     }
     private List<String> getAllRegistryIds(Object registryKey) {
-        ArrayList<String> ids = new ArrayList<>();
+        Set<String> ids = new LinkedHashSet<>();
         Object registry = getRegistry(registryKey);
-        if (registry == null) return ids;
+        if (registry == null) return new ArrayList<>();
         Object holders = invokeAny(registry, "holders");
         if (holders instanceof java.util.stream.Stream<?> stream) {
             stream.forEach(holder -> {
-                Object key = invokeAny(holder, "key", "unwrapKey");
-                if (key instanceof Optional<?> optional) key = optional.orElse(null);
+                Object key = unwrapOptionals(invokeAny(holder, "key", "unwrapKey"));
                 addId(ids, idFromKey(key));
             });
         }
@@ -224,7 +225,7 @@ public class VersionCompat {
         if (keySet instanceof Iterable<?> iterable) {
             for (Object key : iterable) addId(ids, idFromKey(key));
         }
-        return ids;
+        return new ArrayList<>(ids);
     }
 
     private Optional<?> getHolder(Object registryKey, String id) {
@@ -238,20 +239,29 @@ public class VersionCompat {
                     "getHolder", "getEntry", "method_40264", "method_57095", "method_10223"));
         }
         if (holder.isEmpty()) {
-            Object value = invokeRegistryLookup(registry, location, "get", "getValue", "method_10223");
-            holder = toHolderOptional(invokeRegistryLookup(registry, value,
-                    "wrapAsHolder", "getEntry", "method_47983"));
+            Object value = unwrapOptionals(invokeRegistryLookup(
+                    registry, location, "get", "getValue", "method_10223"));
+            holder = toHolderOptional(value);
+            if (holder.isEmpty()) {
+                holder = toHolderOptional(invokeRegistryLookup(registry, value,
+                        "wrapAsHolder", "getEntry", "method_47983"));
+            }
         }
         return holder;
     }
 
     private Optional<?> toHolderOptional(Object value) {
-        if (value instanceof Optional<?> optional) {
-            if (optional.isEmpty()) return Optional.empty();
-            Object unwrapped = optional.get();
-            return isHolder(unwrapped) ? optional : Optional.empty();
+        Object unwrapped = unwrapOptionals(value);
+        return isHolder(unwrapped) ? Optional.of(unwrapped) : Optional.empty();
+    }
+
+    private Object unwrapOptionals(Object value) {
+        Object current = value;
+        int depth = 0;
+        while (current instanceof Optional<?> optional && depth++ < 16) {
+            current = optional.orElse(null);
         }
-        return isHolder(value) ? Optional.of(value) : Optional.empty();
+        return current;
     }
 
     private boolean isHolder(Object value) {
@@ -331,12 +341,24 @@ public class VersionCompat {
         return null;
     }
     private String idFromKey(Object key) {
+        key = unwrapOptionals(key);
         if (key == null) return "";
-        Object id = invokeAny(key, "location");
-        return id != null ? String.valueOf(id) : String.valueOf(key);
+        Object id = unwrapOptionals(invokeAny(key, "location", "identifier"));
+        return canonicalRegistryId(id != null ? String.valueOf(id) : String.valueOf(key));
     }
 
-    private void addId(List<String> ids, String id) {
-        if (id != null && !id.isBlank() && !ids.contains(id)) ids.add(id);
+    private String canonicalRegistryId(String raw) {
+        if (raw == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("[a-z0-9_.-]+:[a-z0-9_./-]+")
+                .matcher(raw.toLowerCase(Locale.ROOT));
+        String last = null;
+        while (matcher.find()) last = matcher.group();
+        return last != null ? last : raw.trim();
+    }
+
+    private void addId(Set<String> ids, String id) {
+        String canonical = canonicalRegistryId(id);
+        if (!canonical.isBlank()) ids.add(canonical);
     }
 }

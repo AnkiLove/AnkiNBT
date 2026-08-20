@@ -8,7 +8,6 @@ import com.sun.jna.win32.StdCallLibrary;
 import com.sun.jna.win32.W32APIOptions;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeWin32;
 
 import java.util.Collections;
@@ -18,7 +17,6 @@ import java.util.Set;
 
 /** Keeps the Windows input method attached while an AnkiNBT text editor is active. */
 public final class ImeSupport {
-    private static final int GLFW_IME = 0x33007;
     private static final Set<Screen> SCREEN_USERS =
             Collections.newSetFromMap(new IdentityHashMap<>());
     private static boolean overlayUser;
@@ -71,17 +69,15 @@ public final class ImeSupport {
         long window = minecraft.getWindow().handle();
         try {
             if (shouldEnable) {
-                GLFW.glfwSetInputMode(window, GLFW_IME, GLFW.GLFW_TRUE);
                 WindowsIme.ensureAssociated(window);
                 imeEnabled = true;
             } else if (imeEnabled) {
                 WindowsIme.releaseManagedContext();
-                GLFW.glfwSetInputMode(window, GLFW_IME, GLFW.GLFW_FALSE);
                 imeEnabled = false;
             }
         } catch (Throwable ignored) {
-            // Some GLFW builds do not expose the IME input mode. The native
-            // Windows context remains available through the fallback above.
+            // Keep ordinary keyboard input available if the platform window
+            // is being recreated while the editor closes.
             if (shouldEnable) {
                 WindowsIme.ensureAssociated(window);
                 imeEnabled = true;

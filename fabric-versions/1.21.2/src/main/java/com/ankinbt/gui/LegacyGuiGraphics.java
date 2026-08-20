@@ -32,6 +32,11 @@ final class LegacyGuiGraphics {
         delegate.disableScissor();
     }
 
+    /** Submits buffered custom-screen draws after the screen balances clipping. */
+    void finishFrame() {
+        delegate.flush();
+    }
+
     int drawString(Font font, String text, int x, int y, int color, boolean shadow) {
         return delegate.drawString(font, text, x, y, color, shadow);
     }
