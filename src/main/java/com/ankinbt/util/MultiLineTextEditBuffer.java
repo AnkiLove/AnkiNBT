@@ -169,10 +169,14 @@ public class MultiLineTextEditBuffer {
     }
 
     public boolean charTyped(char c) {
-        if (c < ' ') {
+        return charTyped((int) c);
+    }
+
+    public boolean charTyped(int codePoint) {
+        if (!Character.isValidCodePoint(codePoint) || Character.isISOControl(codePoint)) {
             return false;
         }
-        insert(Character.toString(c));
+        insert(new String(Character.toChars(codePoint)));
         return true;
     }
 

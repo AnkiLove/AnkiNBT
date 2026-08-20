@@ -30,6 +30,7 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    include implementation("com.madgag:animated-gif-lib:1.4")
 }
 
 task copySharedSources(type: Copy) {
@@ -52,6 +53,7 @@ task copyVersionSources(type: Copy) {
         include 'com/ankinbt/gui/**'
         include 'com/ankinbt/compat/**'
         include 'com/ankinbt/keybind/**'
+        include 'com/ankinbt/mixin/**'
         include 'com/ankinbt/util/FlatEditBox.java'
         include 'net/minecraft/**'
     }
@@ -84,6 +86,7 @@ compileJava.dependsOn copySharedSources, copyVersionSources
 processResources.dependsOn copySharedResources
 
 processResources {
+    inputs.property 'version', project.mod_version
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     filesMatching('fabric.mod.json') {
         expand 'version': project.mod_version

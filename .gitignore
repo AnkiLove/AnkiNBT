@@ -6,6 +6,7 @@ gradle/wrapper/gradle-wrapper.jar
 # IDE
 *.iml
 .idea/
+.eclipse/
 out/
 *.ipr
 *.iws
@@ -13,8 +14,6 @@ out/
 .classpath
 .project
 .vscode/
-bin/
-.eclipse/
 look/
 
 # Minecraft dev
@@ -29,6 +28,24 @@ site/
 .cache/
 .venv-mkdocs/
 *.zip
+*.class
+
+# Local backups and generated review files
+/backup*/
+/backups/
+**/backups/
+/20??????-??????*/
+/bin/
+/dist/
+/design-system/
+/extracted*/
+/jar_extracted/
+/src_full/
+/SimpleEditorScreen.java
+/zh_cn.json
+/pack-dist.ps1
+/run-client-screen.png
+**/run-client*.png
 
 # Build logs
 build_log.txt

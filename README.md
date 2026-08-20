@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/AnkiLove/AnkiNBT-wiki/main/docs/assets/blue-logo.png" alt="AnkiNBT" width="128">
+<img src=".github/assets/ankinbt-banner.png" alt="AnkiNBT" width="100%">
 
 # AnkiNBT
 
@@ -35,6 +35,12 @@ AnkiNBT 用来在客户端查看和编辑物品、实体以及常见数据组件
 | NeoForge | 1.21 到 1.21.11，26.1 到 26.1.2 | 1.21 系列用 Java 21，26.1 系列用 Java 25 |
 
 Fabric 版本需要同时安装 Fabric API。
+
+## 2.0.0 Beta
+
+2.0.0 Beta 是新版编辑器界面的首个公开预览版本，当前发布包面向
+Minecraft 26.1.1 + Fabric。其他 Minecraft 与加载器版本仍保留在源码树中，
+会在完成兼容迁移和运行验证后逐步提供 2.0.0 构建。
 
 ## 主要功能
 

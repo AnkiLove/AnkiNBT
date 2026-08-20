@@ -152,10 +152,14 @@ public class TextEditBuffer {
     }
 
     public boolean charTyped(char c) {
-        if (c < ' ') {
+        return this.charTyped((int)c);
+    }
+
+    public boolean charTyped(int codePoint) {
+        if (!Character.isValidCodePoint(codePoint) || Character.isISOControl(codePoint)) {
             return false;
         }
-        this.insert(Character.toString(c));
+        this.insert(new String(Character.toChars(codePoint)));
         return true;
     }
 
@@ -244,4 +248,3 @@ public class TextEditBuffer {
         return Math.max(0, Math.min(n, this.value == null ? 0 : this.value.length()));
     }
 }
-

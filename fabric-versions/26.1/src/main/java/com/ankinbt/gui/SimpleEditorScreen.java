@@ -4,13 +4,15 @@ import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.util.EnchantmentTooltipHelper;
+import com.ankinbt.util.TextEditBuffer;
+import com.ankinbt.util.MultiLineTextEditBuffer;
 import com.ankinbt.util.ItemEditorVisuals;
 import com.ankinbt.util.UiSound;
-import com.ankinbt.util.FlatEditBox;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import com.ankinbt.compat.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -28,6 +30,7 @@ import net.minecraft.world.item.Item;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
@@ -47,6 +50,7 @@ import net.minecraft.world.item.component.ItemAttributeModifiers;
  * Zero NBT knowledge required. Switchable with Advanced Mode.
  */
 public class SimpleEditorScreen extends Screen {
+    private static final Identifier LOGO_TEXTURE = Identifier.fromNamespaceAndPath("ankinbt", "textures/gui/editor-logo.png");
 
     // Layout
     private static final int HEADER_H = 32;
@@ -55,19 +59,17 @@ public class SimpleEditorScreen extends Screen {
     private static final int SIDEBAR_W = 140;
     private static final int SCROLLBAR_W = 6;
     private static final int ROW_H = 24;
+    private static final int CARD_H = 42;
+    private static final int CARD_GAP = 5;
+    private static final int LORE_CARD_GAP = 3;
     private static final int CAT_H = 28;
 
     // Colors
     private static final int BG = 0xD8080810;
     private static final int SIDEBAR_BG = 0xD80C0C18;
     private static final int HEADER_BG = 0xD8101020;
-    private static final int BORDER = 0xFF222236;
     private static final int HOVER = 0x30FFFFFF;
-    private static final int SELECT_BG = 0x28_63_66_F1;
-    private static final int ACCENT = 0xFF6366F1;
-    private static final int C1 = 0xFFE2E8F0;
-    private static final int C2 = 0xFF94A3B8;
-    private static final int C3 = 0xFF64748B;
+    private static final int SELECT_BG = 0x28_38_BD_F8;
     private static final int SB_TRACK = 0x30FFFFFF;
     private static final int SB_THUMB = 0x70FFFFFF;
     private static final int BTN_BG = 0x30FFFFFF;
@@ -301,8 +303,27 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private ItemStack editStack;
-    private final ItemStack originalStack;
-    private final int inventorySlot; // -1 = main hand, >= 0 = inventory slot
+    private ItemStack originalStack;
+    private int inventorySlot; // -1 = main hand, >= 0 = inventory slot
+    private final AbstractContainerScreen<?> inventoryParent;
+    private EditorDock.Bounds dockBounds;
+    private EditorDock.Bounds barBounds;
+    private EditorDock.Bounds drawerBounds;
+    private boolean drawerAbove;
+    private boolean drawerOpen = true;
+    private float drawerAnim = 0f;
+    private float contentAnim = 1f;
+    private float activeIndicatorX = -1f;
+    private final float[] toolHoverAnim = new float[2];
+    private boolean draggingMenuBar;
+    private int dragOffsetX;
+    private int dragOffsetY;
+    private boolean resizingEditor;
+    private boolean editorSizeFocused;
+    private float editorScale = EditorDock.DEFAULT_EDITOR_SCALE;
+    private float editorWidthAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float editorHeightAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float sizeControlHoverAnim;
 
     // Panel geometry
     private int px, py, pw, ph;
@@ -317,50 +338,76 @@ public class SimpleEditorScreen extends Screen {
     private int scrollOff = 0, maxRows;
     private int hoverRow = -1;
     private int sideScrollOff = 0; // sidebar scroll offset in pixels
+    private final float[] categoryHoverAnim = new float[Category.values().length];
+    private final Map<Integer, Float> cardHoverAnim = new HashMap<>();
+    private int draggingLoreIndex = -1;
+    private int loreDropIndex = -1;
+    private long lastLoreAutoScrollAt = 0L;
+    private float loreTipHoverAnim = 0f;
+    private float homeTipHoverAnim = 0f;
 
     // Status
     private String statusMsg = null;
     private long statusTime = 0;
-    private int statusColor = C3;
+    private int statusColor = UiTheme.textDim();
     private boolean dirty = false;
     private boolean nativeDialogOpen = false;
     private long lastNativeDialogAt = 0L;
     private float openAnim = 0f;
+    private float brandAnim = 0f;
+    private float settingsHoverAnim = 0f;
 
     // Sub-editor state
     private SubEditor activeSubEditor = null;
+    private SubEditor lastRenderedSubEditor = null;
 
     // Header buttons
     private final List<Btn> headerBtns = new ArrayList<>();
 
     public SimpleEditorScreen(ItemStack stack) {
-        this(stack, -1);
+        this(stack, -1, null);
     }
 
     public SimpleEditorScreen(ItemStack stack, int inventorySlot) {
+        this(stack, inventorySlot, null);
+    }
+
+    public SimpleEditorScreen(ItemStack stack, int inventorySlot, AbstractContainerScreen<?> inventoryParent) {
         super(Component.translatable("ankinbt.simple.title"));
-        this.originalStack = stack;
+        this.originalStack = stack.copy();
         this.editStack = stack.copy();
         this.inventorySlot = inventorySlot;
+        this.inventoryParent = inventoryParent;
     }
 
     @Override
     protected void init() {
         super.init();
-        pw = Math.min(width - MARGIN * 2, 620);
-        ph = Math.min(height - MARGIN * 2, 420);
-        px = (width - pw) / 2;
-        py = (height - ph) / 2;
+        editorScale = AnkiConfig.getItemEditorScale();
+        editorWidthAdjustment = AnkiConfig.getItemEditorWidthAdjustment();
+        editorHeightAdjustment = AnkiConfig.getItemEditorHeightAdjustment();
+        applyMenuLayout(EditorDock.menuLayout(width, height, 286, inventoryParent != null,
+                editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        headerBtns.clear();
+    }
 
-        sideX = px + 1; sideY = py + HEADER_H + 1;
-        sideW = SIDEBAR_W; sideH = ph - HEADER_H - FOOTER_H - 2;
+    private void applyMenuLayout(EditorDock.MenuLayout layout) {
+        barBounds = layout.bar();
+        drawerBounds = layout.drawer();
+        drawerAbove = layout.drawerAbove();
+        dockBounds = drawerBounds;
+        pw = drawerBounds.width();
+        ph = drawerBounds.height();
+        px = drawerBounds.x();
+        py = drawerBounds.y();
 
-        contentX = px + SIDEBAR_W + 2; contentY = py + HEADER_H + 1;
-        contentW = pw - SIDEBAR_W - SCROLLBAR_W - 6;
-        contentH = ph - HEADER_H - FOOTER_H - 2;
-        maxRows = contentH / ROW_H;
-
-        buildHeaderButtons();
+        contentX = px + 8;
+        contentY = py + 34;
+        contentW = Math.max(1, pw - 16 - SCROLLBAR_W);
+        contentH = Math.max(1, ph - 34 - FOOTER_H);
+        maxRows = Math.max(1, contentH / ROW_H);
+        scrollOff = Math.max(0, Math.min(scrollOff,
+                Math.max(0, getRowsForCategory(activeCat).size() - maxRows)));
     }
 
     private void buildHeaderButtons() {
@@ -401,40 +448,191 @@ public class SimpleEditorScreen extends Screen {
 
     public void render(GuiGraphics g, int mx, int my, float pt) {
         float cfgSpeed = AnkiConfig.getUiAnimationSpeed();
-        float speed = Math.max(0.06f, Math.min(0.16f, cfgSpeed));
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.06f, Math.min(0.16f, cfgSpeed)) : 1.0f;
         openAnim = UiTheme.approach(openAnim, 1.0f, speed);
-        int scrimAlpha = Math.max(70, Math.min(130, Math.round(112f * openAnim)));
-        int panel = fadeColor(BG, openAnim);
-        int header = fadeColor(HEADER_BG, openAnim);
-        int border = fadeColor(BORDER, openAnim);
+        float motionSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.10f, cfgSpeed * 1.7f) : 1.0f;
+        drawerAnim = UiTheme.approach(drawerAnim, drawerOpen ? 1.0f : 0.0f, motionSpeed);
+        contentAnim = UiTheme.approach(contentAnim, 1.0f, motionSpeed);
+        if (draggingLoreIndex >= 0 && drawerAnim >= 0.92f && contentAnim >= 0.92f) {
+            updateLoreDropTarget(mx, my);
+        }
 
-        g.fill(0, 0, width, height, (scrimAlpha << 24));
-        g.fill(px, py, px + pw, py + ph, panel);
-        drawBorder(g, px, py, pw, ph, border);
+        if (inventoryParent == null) {
+            brandAnim = EditorBrandLayer.approachOpen(brandAnim);
+            boolean settingsHovered = EditorBrandLayer.isSettingsButton(mx, my, width);
+            settingsHoverAnim = EditorBrandLayer.approachSettingsHover(settingsHoverAnim, settingsHovered);
+            EditorBrandLayer.renderBackgroundLogo(g, width, height);
+            g.fill(0, 0, width, height, UiTheme.scrim(AnkiConfig.getUiOpacity(), openAnim));
+        }
+        renderDrawer(g, mx, my);
+        renderMenuBar(g, mx, my);
+        renderSizeControl(g, mx, my);
+        if (inventoryParent == null) {
+            EditorBrandLayer.renderItemStatus(g, font, width, height, brandAnim,
+                    InventoryEditorOverlay.itemEditorStatusMode(
+                            Component.translatable("ankinbt.config.mode.simple").getString()), editorScale);
+            EditorBrandLayer.renderSettingsButton(g, font, width, mx, my, settingsHoverAnim);
+        }
+    }
 
-        // Header
-        g.fill(px + 1, py + 1, px + pw - 1, py + HEADER_H, header);
-        g.fill(px + 1, py + HEADER_H, px + pw - 1, py + HEADER_H + 1, border);
-        g.drawString(font, "AnkiNBT", px + 16, py + 11, 0xFFE2E8F0, false);
-        g.drawString(font, "简单模式", px + 64, py + 11, 0xFF38BDF8, false);
-        if (dirty) g.drawString(font, "*", px + 116, py + 12, ERROR_C, false);
+    private void renderMenuBar(GuiGraphics g, int mx, int my) {
+        int bx = barBounds.x(), by = barBounds.y(), bw = barBounds.width(), bh = barBounds.height();
+        int accent = accentColor();
+        g.fill(bx, by, bx + bw, by + bh, UiTheme.toolbar(AnkiConfig.getUiOpacity(), openAnim));
+        drawBorder(g, bx, by, bw, bh, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+        g.fill(bx, by + bh - 1, bx + bw, by + bh, fadeColor(accent, openAnim));
 
-        for (Btn b : headerBtns) b.render(g, font, mx, my);
+        int brandW = Math.min(72, Math.max(58, bw / 7));
+        Component moveIcon = UiIcons.component(UiIcons.MOVE);
+        boolean moveHover = mx >= bx && mx < bx + brandW && my >= by && my < by + bh;
+        g.drawString(font, moveIcon, bx + (brandW - font.width(moveIcon)) / 2, by + 10,
+                moveHover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (moveHover && !draggingMenuBar) {
+            VersionCompat.get().renderTooltip(g, font, Component.translatable("ankinbt.ui.drag_editor"), mx, my);
+        }
+        if (dirty) g.fill(bx + brandW - 6, by + 7, bx + brandW - 3, by + 10, ERROR_C);
 
-        // Sidebar
-        renderSidebar(g, mx, my);
-        g.fill(px + SIDEBAR_W + 1, py + HEADER_H + 1, px + SIDEBAR_W + 2, py + ph - FOOTER_H, border);
+        int toolW = 26;
+        int toolsStart = bx + bw - toolW * 2;
+        int tabStart = bx + brandW;
+        int tabCount = Category.values().length + 1;
+        int tabW = Math.max(22, (toolsStart - tabStart) / tabCount);
+        String[] icons = { UiIcons.BOX, UiIcons.SPARKLES, UiIcons.TEXT, UiIcons.SHIELD, UiIcons.EYE, UiIcons.LAYERS };
+        String[] labels = {
+                Component.translatable("ankinbt.cat.general").getString(),
+                Component.translatable("ankinbt.cat.enchant").getString(),
+                Component.translatable("ankinbt.cat.lore").getString(),
+                Component.translatable("ankinbt.cat.attribute").getString(),
+                Component.translatable("ankinbt.cat.visual").getString(),
+                Component.translatable("ankinbt.cat.misc").getString()
+        };
+        float hoverSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1.0f;
+        for (int i = 0; i < Category.values().length; i++) {
+            int tx = tabStart + i * tabW;
+            boolean hover = mx >= tx && mx < tx + tabW && my >= by && my < by + bh;
+            boolean active = Category.values()[i] == activeCat;
+            categoryHoverAnim[i] = UiTheme.approach(categoryHoverAnim[i], hover ? 1f : 0f, hoverSpeed);
+            if ("segmented".equals(AnkiConfig.getUiNavigationStyle()) && active) {
+                g.fill(tx + 2, by + 3, tx + tabW - 2, by + bh - 3,
+                        UiTheme.withAlpha(accent & 0x00FFFFFF, 86));
+            } else if (categoryHoverAnim[i] > 0.01f) {
+                g.fill(tx + 1, by + 2, tx + tabW - 1, by + bh - 2,
+                        UiTheme.mix(0x00000000, HOVER, categoryHoverAnim[i]));
+            }
+            if ("compact".equals(AnkiConfig.getUiNavigationStyle()) && active) {
+                g.fill(tx + 3, by + 7, tx + 5, by + bh - 7, accent);
+            }
+            Component icon = UiIcons.component(icons[i]);
+            if (tabW >= 46) {
+                int totalW = font.width(icon) + 4 + font.width(labels[i]);
+                g.drawString(font, icon, tx + Math.max(3, (tabW - totalW) / 2), by + 10, Category.values()[i] == activeCat ? UiTheme.textMain() : UiTheme.textDim(), false);
+                g.drawString(font, labels[i], tx + Math.max(3, (tabW - totalW) / 2) + font.width(icon) + 4,
+                        by + 10, Category.values()[i] == activeCat ? UiTheme.textMain() : UiTheme.textDim(), false);
+            } else {
+                g.drawString(font, icon, tx + (tabW - font.width(icon)) / 2, by + 10,
+                        Category.values()[i] == activeCat ? UiTheme.textMain() : UiTheme.textDim(), false);
+                if (hover) VersionCompat.get().renderTooltip(g, font, Component.literal(labels[i]), mx, my);
+            }
+        }
 
-        // Content
+        int advancedX = tabStart + Category.values().length * tabW;
+        boolean advancedHover = mx >= advancedX && mx < advancedX + tabW && my >= by && my < by + bh;
+        Component advancedIcon = UiIcons.component(UiIcons.CODE);
+        g.fill(advancedX, by + 4, advancedX + 1, by + bh - 4, UiTheme.themedBorder(1f, 1f));
+        g.drawString(font, advancedIcon, advancedX + (tabW - font.width(advancedIcon)) / 2, by + 10,
+                advancedHover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (advancedHover) VersionCompat.get().renderTooltip(g, font,
+                Component.translatable("ankinbt.btn.switch_advanced"), mx, my);
+
+        int activeX = tabStart + activeCat.ordinal() * tabW;
+        if (activeIndicatorX < 0f) activeIndicatorX = activeX;
+        activeIndicatorX = UiTheme.approach(activeIndicatorX, activeX, hoverSpeed);
+        if ("underline".equals(AnkiConfig.getUiNavigationStyle())) {
+            g.fill(Math.round(activeIndicatorX) + 5, by + bh - 3,
+                    Math.round(activeIndicatorX) + tabW - 5, by + bh - 1, accent);
+        }
+
+        renderTool(g, mx, my, toolsStart, by, toolW, 0, UiIcons.SAVE,
+                Component.translatable(InventoryEditorOverlay.isItemEditorPreviewMode()
+                        ? "ankinbt.btn.save.preview_tip" : "ankinbt.btn.save.tip"));
+        renderTool(g, mx, my, toolsStart + toolW, by, toolW, 1, UiIcons.CLOSE,
+                Component.translatable("ankinbt.btn.close"));
+    }
+
+    private void renderTool(GuiGraphics g, int mx, int my, int x, int y, int width, int index,
+                            String iconGlyph, Component tooltip) {
+        boolean hover = mx >= x && mx < x + width && my >= y && my < y + EditorDock.MENU_BAR_HEIGHT;
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1f;
+        toolHoverAnim[index] = UiTheme.approach(toolHoverAnim[index], hover ? 1f : 0f, speed);
+        g.fill(x, y + 2, x + width, y + EditorDock.MENU_BAR_HEIGHT - 2,
+                UiTheme.mix(0x00000000, HOVER, toolHoverAnim[index]));
+        Component icon = UiIcons.component(iconGlyph);
+        g.drawString(font, icon, x + (width - font.width(icon)) / 2, y + 10, hover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (hover) VersionCompat.get().renderTooltip(g, font, tooltip, mx, my);
+    }
+
+    private void renderSizeControl(GuiGraphics g, int mx, int my) {
+        if (activeSubEditor != null) return;
+        sizeControlHoverAnim = EditorDock.renderSizeControl(g, font, width, height, mx, my,
+                editorScale, sizeControlHoverAnim, resizingEditor || editorSizeFocused, accentColor());
+    }
+
+    private void renderDrawer(GuiGraphics g, int mx, int my) {
+        if (drawerAnim <= 0.01f) return;
+        if (activeSubEditor != lastRenderedSubEditor) {
+            contentAnim = AnkiConfig.isUiAnimationEnabled() ? 0f : 1f;
+            lastRenderedSubEditor = activeSubEditor;
+        }
+        int reveal = Math.max(1, Math.round(ph * drawerAnim));
+        int clipTop = drawerAbove ? py + ph - reveal : py;
+        int clipBottom = drawerAbove ? py + ph : py + reveal;
+        g.enableScissor(px, clipTop, px + pw, clipBottom);
+        g.fill(px, py, px + pw, py + ph, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+        drawBorder(g, px, py, pw, ph, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+
+        g.renderItem(editStack, px + 9, py + 8);
+        String itemName = editStack.getHoverName().getString();
+        int nameBudget = Math.max(60, pw - 150);
+        if (font.width(itemName) > nameBudget) itemName = font.plainSubstrByWidth(itemName, nameBudget - 10) + "..";
+        g.drawString(font, itemName, px + 31, py + 9, UiTheme.textMain(), false);
+        String category = Component.translatable(categoryTranslation(activeCat)).getString();
+        g.drawString(font, category, px + pw - font.width(category) - 10, py + 9, accentColor(), false);
+        g.fill(px + 8, py + 29, px + pw - 8, py + 30, UiTheme.themedBorder(1f, 1f));
+
+        int baseContentY = py + 34;
+        contentY = baseContentY + Math.round((1f - contentAnim) * (drawerAbove ? -7f : 7f));
         if (activeSubEditor != null) {
             activeSubEditor.render(g, font, mx, my, contentX, contentY, contentW, contentH);
         } else {
             renderCategoryContent(g, mx, my);
         }
-
-        // Footer
-        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, border);
+        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, UiTheme.themedBorder(1f, 1f));
         renderFooter(g);
+        boolean loreTipHovered = renderLoreTip(g, mx, my);
+        boolean homeTipHovered = renderHomeTip(g, mx, my);
+        g.disableScissor();
+        if (mx >= px + 9 && mx < px + 25 && my >= py + 8 && my < py + 24) {
+            g.renderTooltip(font, editStack, mx, my);
+        }
+        if (loreTipHovered) {
+            VersionCompat.get().renderTooltip(g, font,
+                    Component.translatable("ankinbt.simple.lore_color_hint"), mx, my);
+        }
+        if (homeTipHovered) {
+            VersionCompat.get().renderTooltip(g, font,
+                    Component.translatable("ankinbt.simple.layout_tip"), mx, my);
+        }
+    }
+
+    private String categoryTranslation(Category category) {
+        return switch (category) {
+            case GENERAL -> "ankinbt.cat.general";
+            case ENCHANT -> "ankinbt.cat.enchant";
+            case LORE -> "ankinbt.cat.lore";
+            case ATTRIBUTE -> "ankinbt.cat.attribute";
+            case VISUAL -> "ankinbt.cat.visual";
+            case MISC -> "ankinbt.cat.misc";
+        };
     }
 
     private int fadeColor(int color, float factor) {
@@ -453,9 +651,9 @@ public class SimpleEditorScreen extends Screen {
         headerY += 24;
         String name = editStack.getHoverName().getString();
         if (font.width(name) > sideW - 16) name = font.plainSubstrByWidth(name, sideW - 22) + "...";
-        g.drawString(font, name, lx, headerY, C1, false);
+        g.drawString(font, name, lx, headerY, UiTheme.textMain(), false);
         headerY += 14;
-        g.fill(lx, headerY, sideX + sideW - 8, headerY + 1, BORDER);
+        g.fill(lx, headerY, sideX + sideW - 8, headerY + 1, UiTheme.themedBorder(1f, 1f));
         headerY += 8;
 
         // Scrollable category area
@@ -484,9 +682,13 @@ public class SimpleEditorScreen extends Screen {
             int cw = sideW - 16;
             boolean hover = mx >= lx && mx < lx + cw && my >= cy && my < cy + CAT_H && my >= catAreaY && my < sideY + sideH;
             boolean active = cats[i] == activeCat;
-            g.fill(lx, cy, lx + cw, cy + CAT_H, active ? accentColor() : (hover ? BTN_HOVER : CAT_BG));
+            float hoverTarget = hover ? 1.0f : 0.0f;
+            float hoverSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1.0f;
+            categoryHoverAnim[i] = UiTheme.approach(categoryHoverAnim[i], hoverTarget, hoverSpeed);
+            int categoryColor = active ? accentColor() : UiTheme.mix(CAT_BG, BTN_HOVER, categoryHoverAnim[i]);
+            g.fill(lx, cy, lx + cw, cy + CAT_H, categoryColor);
             if (active) g.fill(lx, cy, lx + 2, cy + CAT_H, 0xFFFFFFFF);
-            g.drawString(font, catNames[i], lx + 8, cy + (CAT_H - 8) / 2, active ? C1 : C2, false);
+            g.drawString(font, catNames[i], lx + 8, cy + (CAT_H - 8) / 2, active ? UiTheme.textMain() : UiTheme.textDim(), false);
         }
         g.disableScissor();
 
@@ -504,15 +706,46 @@ public class SimpleEditorScreen extends Screen {
 
     private void renderCategoryContent(GuiGraphics g, int mx, int my) {
         List<ActionRow> rows = getRowsForCategory(activeCat);
+        if ("cards".equals(AnkiConfig.getUiOptionStyle())) {
+            renderCategoryCards(g, mx, my, rows);
+            return;
+        }
+        scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, rows.size() - maxRows)));
         hoverRow = -1;
         int end = Math.min(scrollOff + maxRows, rows.size());
         for (int i = scrollOff; i < end; i++) {
             int ry = contentY + (i - scrollOff) * ROW_H;
             ActionRow row = rows.get(i);
+            boolean loreLine = row.reorderIndex >= 0;
             boolean hovered = mx >= contentX && mx < contentX + contentW && my >= ry && my < ry + ROW_H;
             if (hovered) { hoverRow = i; g.fill(contentX, ry, contentX + contentW, ry + ROW_H, HOVER); }
+            if (row.sectionHeader) {
+                int headerFill = UiTheme.withAlpha(accentColor() & 0x00FFFFFF, hovered ? 42 : 24);
+                g.fill(contentX, ry, contentX + contentW, ry + ROW_H, headerFill);
+                g.fill(contentX, ry + ROW_H - 2, contentX + 28, ry + ROW_H, accentColor());
+                g.drawString(font, row.label, contentX + 8, ry + (ROW_H - 8) / 2,
+                        hovered ? UiTheme.textMain() : accentColor(), false);
+                continue;
+            }
+            if (draggingLoreIndex >= 0 && row.reorderIndex == loreDropIndex) {
+                drawBorder(g, contentX + 1, ry + 1, contentW - 2, ROW_H - 2, accentColor());
+            }
+            if (draggingLoreIndex == row.reorderIndex) {
+                g.fill(contentX + 1, ry + 1, contentX + contentW - 1, ry + ROW_H - 1, 0x48000000);
+            }
             g.fill(contentX, ry + ROW_H - 1, contentX + contentW, ry + ROW_H, 0x10FFFFFF);
             int labelX = contentX + 8;
+            if (loreLine) {
+                Component grip = UiIcons.component(UiIcons.MOVE);
+                boolean gripHovered = isLoreDragHandle(i, mx, my);
+                g.drawString(font, grip, contentX + 7, ry + 8,
+                        gripHovered || draggingLoreIndex == row.reorderIndex ? accentColor() : UiTheme.textDim(), false);
+                labelX += 20;
+                if (gripHovered && draggingLoreIndex < 0) {
+                    VersionCompat.get().renderTooltip(g, font,
+                            Component.translatable("ankinbt.simple.lore_drag_tip"), mx, my);
+                }
+            }
             if (row.icon != null && !row.icon.isEmpty()) {
                 g.renderItem(row.icon, contentX + 5, ry + 4);
                 labelX += 22;
@@ -528,7 +761,7 @@ public class SimpleEditorScreen extends Screen {
                 rightX -= delW;
                 boolean delHover = mx >= rightX && mx < rightX + delW && my >= delY && my < delY + delH;
                 g.fill(rightX, delY, rightX + delW, delY + delH, delHover ? BTN_HOVER : BTN_BG);
-                g.drawString(font, "X", rightX + (delW - font.width("X")) / 2, delY + 4, delHover ? ERROR_C : C3, false);
+                g.drawString(font, "X", rightX + (delW - font.width("X")) / 2, delY + 4, delHover ? ERROR_C : UiTheme.textDim(), false);
                 rightX -= 4;
             }
             // Inline move buttons (right side, before value)
@@ -538,13 +771,13 @@ public class SimpleEditorScreen extends Screen {
                     rightX -= btnW + 2;
                     boolean dHover = mx >= rightX && mx < rightX + btnW && my >= btnY && my < btnY + btnH;
                     g.fill(rightX, btnY, rightX + btnW, btnY + btnH, dHover ? BTN_HOVER : BTN_BG);
-                    g.drawString(font, "v", rightX + (btnW - font.width("v")) / 2, btnY + 4, dHover ? C1 : C3, false);
+                    g.drawString(font, "v", rightX + (btnW - font.width("v")) / 2, btnY + 4, dHover ? UiTheme.textMain() : UiTheme.textDim(), false);
                 }
                 if (row.moveUp != null) {
                     rightX -= btnW + 2;
                     boolean uHover = mx >= rightX && mx < rightX + btnW && my >= btnY && my < btnY + btnH;
                     g.fill(rightX, btnY, rightX + btnW, btnY + btnH, uHover ? BTN_HOVER : BTN_BG);
-                    g.drawString(font, "^", rightX + (btnW - font.width("^")) / 2, btnY + 4, uHover ? C1 : C3, false);
+                    g.drawString(font, "^", rightX + (btnW - font.width("^")) / 2, btnY + 4, uHover ? UiTheme.textMain() : UiTheme.textDim(), false);
                 }
                 rightX -= 4;
             }
@@ -553,7 +786,7 @@ public class SimpleEditorScreen extends Screen {
                 String val = row.currentValue;
                 int maxValW = rightX - (contentX + contentW / 2);
                 if (font.width(val) > maxValW) val = font.plainSubstrByWidth(val, maxValW - 10) + "..";
-                g.drawString(font, val, rightX - font.width(val), ry + (ROW_H - 8) / 2, C2, false);
+                g.drawString(font, val, rightX - font.width(val), ry + (ROW_H - 8) / 2, UiTheme.textDim(), false);
             }
         }
         if (rows.size() > maxRows) {
@@ -567,14 +800,308 @@ public class SimpleEditorScreen extends Screen {
         }
     }
 
+    private void renderCategoryCards(GuiGraphics g, int mx, int my, List<ActionRow> rows) {
+        hoverRow = -1;
+        int columns = cardColumns();
+        int gap = cardGap();
+        int cardHeight = cardHeight();
+        int cardWidth = Math.max(88, (contentW - gap * (columns - 1)) / columns);
+        int visibleRows = Math.max(1, contentH / (cardHeight + gap));
+        int capacity = visibleRows * columns;
+        int totalRows = (rows.size() + columns - 1) / columns;
+        int maxOffset = Math.max(0, (totalRows - visibleRows) * columns);
+        scrollOff = Math.max(0, Math.min(scrollOff, maxOffset));
+        int end = Math.min(rows.size(), scrollOff + capacity);
+        float speed = AnkiConfig.isUiAnimationEnabled()
+                ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1f;
+        for (int i = scrollOff; i < end; i++) {
+            int local = i - scrollOff;
+            int col = local % columns;
+            int gridRow = local / columns;
+            int cx = contentX + col * (cardWidth + gap);
+            int cy = contentY + gridRow * (cardHeight + gap);
+            ActionRow row = rows.get(i);
+            boolean loreLine = row.reorderIndex >= 0;
+            boolean hovered = mx >= cx && mx < cx + cardWidth && my >= cy && my < cy + cardHeight;
+            if (hovered) hoverRow = i;
+            float hover = UiTheme.approach(cardHoverAnim.getOrDefault(i, 0f), hovered ? 1f : 0f, speed);
+            cardHoverAnim.put(i, hover);
+            int cardBg = UiTheme.mix(UiTheme.card(AnkiConfig.getUiOpacity(), openAnim),
+                    UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 54), hover);
+            g.fill(cx, cy, cx + cardWidth, cy + cardHeight, cardBg);
+            drawBorder(g, cx, cy, cardWidth, cardHeight, hovered
+                    ? UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 208)
+                    : UiTheme.themedBorder(0.8f, openAnim));
+            if (row.sectionHeader) {
+                g.fill(cx, cy + cardHeight - 2, cx + Math.min(cardWidth, 34), cy + cardHeight, accentColor());
+                g.drawString(font, row.label, cx + 8, cy + (cardHeight - 8) / 2,
+                        hovered ? UiTheme.textMain() : accentColor(), false);
+                continue;
+            }
+            if (draggingLoreIndex >= 0 && row.reorderIndex == loreDropIndex) {
+                drawBorder(g, cx + 1, cy + 1, cardWidth - 2, cardHeight - 2, accentColor());
+            }
+            if (draggingLoreIndex == row.reorderIndex) {
+                g.fill(cx + 1, cy + 1, cx + cardWidth - 1, cy + cardHeight - 1, 0x48000000);
+            }
+
+            int labelX = cx + 8;
+            if (loreLine) {
+                Component grip = UiIcons.component(UiIcons.MOVE);
+                boolean gripHovered = isLoreDragHandle(i, mx, my);
+                g.drawString(font, grip, cx + 7, cy + 8,
+                        gripHovered || draggingLoreIndex == row.reorderIndex ? accentColor() : UiTheme.textDim(), false);
+                labelX += 20;
+                if (gripHovered && draggingLoreIndex < 0) {
+                    VersionCompat.get().renderTooltip(g, font,
+                            Component.translatable("ankinbt.simple.lore_drag_tip"), mx, my);
+                }
+            }
+            if (row.icon != null && !row.icon.isEmpty()) {
+                g.renderItem(row.icon, cx + 6, cy + 6);
+                labelX += 22;
+            }
+            int actionReserve = row.deleteAction != null ? 24 : 7;
+            String label = row.label;
+            int labelWidth = Math.max(24, cx + cardWidth - actionReserve - labelX - 4);
+            if (font.width(label) > labelWidth) label = font.plainSubstrByWidth(label, Math.max(8, labelWidth - 8)) + "..";
+            g.drawString(font, label, labelX, cy + 8, row.labelColor, false);
+
+            if (row.currentValue != null) {
+                String value = row.currentValue;
+                int valueWidth = cardWidth - 16;
+                if (font.width(value) > valueWidth) value = font.plainSubstrByWidth(value, Math.max(8, valueWidth - 8)) + "..";
+                g.drawString(font, value, cx + 8, cy + 26, UiTheme.textDim(), false);
+            }
+            renderCardActions(g, row, mx, my, cx, cy, cardWidth, cardHeight);
+        }
+        if (rows.size() > capacity) {
+            int sbx = px + pw - SCROLLBAR_W - 3;
+            g.fill(sbx, contentY, sbx + SCROLLBAR_W, contentY + contentH, SB_TRACK);
+            float ratio = (float) capacity / rows.size();
+            int thumbH = Math.max(16, (int) (contentH * ratio));
+            float sr = (float) scrollOff / Math.max(1, rows.size() - capacity);
+            int thumbY = contentY + (int) ((contentH - thumbH) * sr);
+            g.fill(sbx, thumbY, sbx + SCROLLBAR_W, thumbY + thumbH, SB_THUMB);
+        }
+    }
+
+    private void renderCardActions(GuiGraphics g, ActionRow row, int mx, int my,
+                                   int x, int y, int width, int height) {
+        int right = x + width - 6;
+        if (row.deleteAction != null) {
+            int bx = right - 18;
+            boolean hover = mx >= bx && mx < bx + 18 && my >= y + 5 && my < y + 21;
+            g.fill(bx, y + 5, bx + 18, y + 21, hover ? 0x66EF4444 : 0x28EF4444);
+            g.drawString(font, "X", bx + (18 - font.width("X")) / 2, y + 9, hover ? ERROR_C : UiTheme.textDim(), false);
+            right = bx - 3;
+        }
+        int buttonY = y + height - 19;
+        if (row.moveDown != null) {
+            int bx = right - 16;
+            boolean hover = mx >= bx && mx < bx + 16 && my >= buttonY && my < buttonY + 14;
+            g.fill(bx, buttonY, bx + 16, buttonY + 14, hover ? BTN_HOVER : BTN_BG);
+            g.drawString(font, "v", bx + (16 - font.width("v")) / 2, buttonY + 3, UiTheme.textDim(), false);
+            right = bx - 2;
+        }
+        if (row.moveUp != null) {
+            int bx = right - 16;
+            boolean hover = mx >= bx && mx < bx + 16 && my >= buttonY && my < buttonY + 14;
+            g.fill(bx, buttonY, bx + 16, buttonY + 14, hover ? BTN_HOVER : BTN_BG);
+            g.drawString(font, "^", bx + (16 - font.width("^")) / 2, buttonY + 3, UiTheme.textDim(), false);
+        }
+    }
+
+    private int cardColumns() {
+        // Lore is an ordered line list even when the global option style uses cards.
+        // Keeping it single-column makes the visual order match drag-and-drop order.
+        if (activeCat == Category.LORE || activeCat == Category.ENCHANT) return 1;
+        // The default 854-wide Minecraft GUI produces about 500 logical pixels of
+        // content width.  Use three cards there, while retaining useful fallbacks
+        // for narrow editor resolutions.
+        if (contentW >= 400) return 3;
+        if (contentW >= 270) return 2;
+        return 1;
+    }
+
+    private int cardHeight() {
+        return activeCat == Category.LORE ? ROW_H : CARD_H;
+    }
+
+    private int cardGap() {
+        return activeCat == Category.LORE ? LORE_CARD_GAP : CARD_GAP;
+    }
+
+    private int cardStride() {
+        return cardHeight() + cardGap();
+    }
+
+    private int cardCapacity() {
+        return Math.max(1, contentH / cardStride()) * cardColumns();
+    }
+
+    private boolean isLoreDragHandle(int rowIndex, double mx, double my) {
+        if (activeCat != Category.LORE || rowIndex < scrollOff) return false;
+        if ("cards".equals(AnkiConfig.getUiOptionStyle())) {
+            int columns = cardColumns();
+            int gap = cardGap();
+            int cardHeight = cardHeight();
+            int cardWidth = Math.max(88, (contentW - gap * (columns - 1)) / columns);
+            int local = rowIndex - scrollOff;
+            if (local < 0 || local >= cardCapacity()) return false;
+            int x = contentX + local % columns * (cardWidth + gap);
+            int y = contentY + local / columns * (cardHeight + gap);
+            return mx >= x + 4 && mx < x + 27 && my >= y + 4 && my < y + 25;
+        }
+        int local = rowIndex - scrollOff;
+        if (local < 0 || local >= maxRows) return false;
+        int y = contentY + local * ROW_H;
+        return mx >= contentX + 3 && mx < contentX + 27 && my >= y && my < y + ROW_H;
+    }
+
+    private void updateLoreDropTarget(double mx, double my) {
+        if (draggingLoreIndex < 0) return;
+        List<ActionRow> rows = getLoreRows();
+        if (rows.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastLoreAutoScrollAt >= 110L) {
+            int step = "cards".equals(AnkiConfig.getUiOptionStyle()) ? cardColumns() : 1;
+            int maxOffset = "cards".equals(AnkiConfig.getUiOptionStyle())
+                    ? Math.max(0, rows.size() - cardCapacity())
+                    : Math.max(0, rows.size() - maxRows);
+            if (my < contentY + 12 && scrollOff > 0) {
+                scrollOff = Math.max(0, scrollOff - step);
+                lastLoreAutoScrollAt = now;
+            } else if (my > contentY + contentH - 12 && scrollOff < maxOffset) {
+                scrollOff = Math.min(maxOffset, scrollOff + step);
+                lastLoreAutoScrollAt = now;
+            }
+        }
+
+        int visualIndex;
+        if ("cards".equals(AnkiConfig.getUiOptionStyle())) {
+            int columns = cardColumns();
+            int gap = cardGap();
+            int cardHeight = cardHeight();
+            int cardWidth = Math.max(88, (contentW - gap * (columns - 1)) / columns);
+            int col = Math.max(0, Math.min(columns - 1,
+                    (int) Math.floor((mx - contentX) / Math.max(1.0, cardWidth + gap))));
+            int gridRow = Math.max(0, (int) Math.floor((my - contentY) / (double) (cardHeight + gap)));
+            visualIndex = scrollOff + gridRow * columns + col;
+        } else {
+            int localRow = Math.max(0, (int) Math.floor((my - contentY) / (double) ROW_H));
+            visualIndex = scrollOff + localRow;
+        }
+        visualIndex = Math.max(0, Math.min(rows.size() - 1, visualIndex));
+
+        int nearest = -1;
+        int nearestDistance = Integer.MAX_VALUE;
+        for (int i = 0; i < rows.size(); i++) {
+            int reorderIndex = rows.get(i).reorderIndex;
+            if (reorderIndex < 0) continue;
+            int distance = Math.abs(i - visualIndex);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = reorderIndex;
+            }
+        }
+        if (nearest >= 0) loreDropIndex = nearest;
+    }
+
+    private void finishLoreDrag() {
+        int from = draggingLoreIndex;
+        int to = loreDropIndex;
+        resetLoreDrag();
+        if (from >= 0 && to >= 0 && from != to) moveLore(from, to);
+    }
+
+    private void resetLoreDrag() {
+        draggingLoreIndex = -1;
+        loreDropIndex = -1;
+        lastLoreAutoScrollAt = 0L;
+    }
+
     private void renderFooter(GuiGraphics g) {
         int fy = py + ph - FOOTER_H + 5;
+        String footerText;
+        int footerColor;
         if (statusMsg != null && System.currentTimeMillis() - statusTime < 3000) {
-            g.drawString(font, statusMsg, px + SIDEBAR_W + 8, fy, statusColor, false);
+            footerText = statusMsg;
+            footerColor = statusColor;
         } else {
             statusMsg = null;
-            g.drawString(font, Component.translatable("ankinbt.simple.hint"), px + SIDEBAR_W + 8, fy, C3, false);
+            footerText = Component.translatable("ankinbt.simple.hint").getString();
+            footerColor = UiTheme.textDim();
         }
+        int reserve = (activeCat == Category.LORE || activeCat == Category.GENERAL)
+                && activeSubEditor == null ? 44 : 18;
+        int maxWidth = Math.max(24, pw - reserve);
+        if (font.width(footerText) > maxWidth) {
+            footerText = font.plainSubstrByWidth(footerText, Math.max(4, maxWidth - font.width(".."))) + "..";
+        }
+        g.drawString(font, footerText, px + 9, fy, footerColor, false);
+    }
+
+    private boolean renderLoreTip(GuiGraphics g, int mx, int my) {
+        boolean visible = activeCat == Category.LORE && drawerOpen && activeSubEditor == null;
+        if (!visible) {
+            loreTipHoverAnim = UiTheme.approach(loreTipHoverAnim, 0f, 0.25f);
+            return false;
+        }
+        int x = px + pw - 30;
+        int y = py + ph - FOOTER_H + 2;
+        int size = 16;
+        boolean hovered = mx >= x && mx < x + size && my >= y && my < y + size;
+        float speed = AnkiConfig.isUiAnimationEnabled()
+                ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1f;
+        loreTipHoverAnim = UiTheme.approach(loreTipHoverAnim, hovered ? 1f : 0f, speed);
+        int accent = accentColor();
+        g.fill(x, y, x + size, y + size,
+                UiTheme.mix(0x1CFFFFFF, UiTheme.withAlpha(accent & 0x00FFFFFF, 78), loreTipHoverAnim));
+        drawBorder(g, x, y, size, size,
+                UiTheme.mix(UiTheme.themedBorder(0.8f, 1f), accent, loreTipHoverAnim));
+        Component icon = UiIcons.component(UiIcons.HELP);
+        g.drawString(font, icon, x + (size - font.width(icon)) / 2, y + 4,
+                hovered ? UiTheme.textMain() : UiTheme.textDim(), false);
+        return hovered;
+    }
+
+    private boolean isLoreTip(double mx, double my) {
+        if (activeCat != Category.LORE || !drawerOpen || activeSubEditor != null) return false;
+        int x = px + pw - 30;
+        int y = py + ph - FOOTER_H + 2;
+        return mx >= x && mx < x + 16 && my >= y && my < y + 16;
+    }
+
+    private boolean renderHomeTip(GuiGraphics g, int mx, int my) {
+        boolean visible = activeCat == Category.GENERAL && drawerOpen && activeSubEditor == null;
+        if (!visible) {
+            homeTipHoverAnim = UiTheme.approach(homeTipHoverAnim, 0f, 0.25f);
+            return false;
+        }
+        int x = px + pw - 30;
+        int y = py + ph - FOOTER_H + 2;
+        int size = 16;
+        boolean hovered = mx >= x && mx < x + size && my >= y && my < y + size;
+        float speed = AnkiConfig.isUiAnimationEnabled()
+                ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1f;
+        homeTipHoverAnim = UiTheme.approach(homeTipHoverAnim, hovered ? 1f : 0f, speed);
+        int accent = accentColor();
+        g.fill(x, y, x + size, y + size,
+                UiTheme.mix(0x1CFFFFFF, UiTheme.withAlpha(accent & 0x00FFFFFF, 78), homeTipHoverAnim));
+        drawBorder(g, x, y, size, size,
+                UiTheme.mix(UiTheme.themedBorder(0.8f, 1f), accent, homeTipHoverAnim));
+        Component icon = UiIcons.component(UiIcons.HELP);
+        g.drawString(font, icon, x + (size - font.width(icon)) / 2, y + 4,
+                hovered ? UiTheme.textMain() : UiTheme.textDim(), false);
+        return hovered;
+    }
+
+    private boolean isHomeTip(double mx, double my) {
+        if (activeCat != Category.GENERAL || !drawerOpen || activeSubEditor != null) return false;
+        int x = px + pw - 30;
+        int y = py + ph - FOOTER_H + 2;
+        return mx >= x && mx < x + 16 && my >= y && my < y + 16;
     }
 
     private int accentColor() { return UiTheme.accent(AnkiConfig.getUiAccentPreset()); }
@@ -582,26 +1109,117 @@ public class SimpleEditorScreen extends Screen {
     // ==================== INPUT ====================
 
     private boolean handleMouseClicked(double mx, double my, int btn) {
-        for (Btn b : headerBtns) if (b.isHover((int) mx, (int) my)) { UiSound.playClick(); b.action.run(); return true; }
-        if (activeSubEditor != null) return activeSubEditor.mouseClicked(mx, my, btn, contentX, contentY, contentW, contentH);
-
-        int lx = sideX + 8;
-        int catStartY = sideY + 8 + 24 + 14 + 1 + 8;
-        int catAreaBottom = sideY + sideH;
-        Category[] cats = Category.values();
-        for (int i = 0; i < cats.length; i++) {
-            int cy = catStartY + i * (CAT_H + 2) - sideScrollOff;
-            int cw = sideW - 16;
-            if (cy + CAT_H < catStartY || cy > catAreaBottom) continue;
-            if (mx >= lx && mx < lx + cw && my >= cy && my < cy + CAT_H && my >= catStartY && my < catAreaBottom) {
+        if (activeSubEditor instanceof ConfirmCloseSubEditor) {
+            if (btn != 0 || !drawerOpen || drawerAnim < 0.92f || contentAnim < 0.92f) return true;
+            return activeSubEditor.mouseClicked(mx, my, btn, contentX, contentY, contentW, contentH);
+        }
+        if (inventoryParent == null && btn == 0 && EditorBrandLayer.isSettingsButton(mx, my, width)) {
+            UiSound.playClick();
+            openChildScreen(new AnkiConfigScreen(this));
+            return true;
+        }
+        if (btn == 0) editorSizeFocused = false;
+        if (activeSubEditor == null && (btn == 0 || btn == 1)) {
+            EditorDock.SizeControl sizeControl = EditorDock.sizeControl(width, height, editorScale);
+            if (btn == 0 && sizeControl.reset().contains(mx, my)) {
+                resetEditorScale();
+                return true;
+            }
+            if (sizeControl.horizontal().contains(mx, my)) {
+                adjustEditorAxes(btn == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP, 0.0f);
                 UiSound.playClick();
-                activeCat = cats[i]; scrollOff = 0; return true;
+                return true;
+            }
+            if (sizeControl.vertical().contains(mx, my)) {
+                adjustEditorAxes(0.0f, btn == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP);
+                UiSound.playClick();
+                return true;
+            }
+            if (btn == 0 && sizeControl.hit().contains(mx, my)) {
+                resizingEditor = true;
+                editorSizeFocused = true;
+                draggingMenuBar = false;
+                resetLoreDrag();
+                updateEditorScale(mx);
+                return true;
             }
         }
+        if (barBounds != null && barBounds.contains(mx, my)) {
+            int brandW = Math.min(72, Math.max(58, barBounds.width() / 7));
+            if (btn == 0 && mx < barBounds.x() + brandW) {
+                draggingMenuBar = true;
+                dragOffsetX = (int) Math.round(mx) - barBounds.x();
+                dragOffsetY = (int) Math.round(my) - barBounds.y();
+                return true;
+            }
+            int toolW = 26;
+            int toolsStart = barBounds.x() + barBounds.width() - toolW * 2;
+            int tabStart = barBounds.x() + brandW;
+            int tabCount = Category.values().length + 1;
+            int tabW = Math.max(22, (toolsStart - tabStart) / tabCount);
+            for (int i = 0; i < Category.values().length; i++) {
+                int tx = tabStart + i * tabW;
+                if (mx >= tx && mx < tx + tabW) {
+                    UiSound.playClick();
+                    resetLoreDrag();
+                    if (activeCat == Category.values()[i]) {
+                        drawerOpen = !drawerOpen;
+                    } else {
+                        activeCat = Category.values()[i];
+                        drawerOpen = true;
+                        contentAnim = 0f;
+                        scrollOff = 0;
+                        activeSubEditor = null;
+                    }
+                    return true;
+                }
+            }
+            int advancedX = tabStart + Category.values().length * tabW;
+            if (mx >= advancedX && mx < advancedX + tabW) {
+                UiSound.playClick();
+                switchToAdvanced();
+                return true;
+            }
+            if (mx >= toolsStart && mx < toolsStart + toolW) {
+                UiSound.playClick();
+                saveToItem();
+                return true;
+            }
+            if (mx >= toolsStart + toolW) {
+                UiSound.playClick();
+                tryClose();
+                return true;
+            }
+            return true;
+        }
+        if (!drawerOpen || drawerAnim < 0.92f || contentAnim < 0.92f
+                || drawerBounds == null || !drawerBounds.contains(mx, my)) return false;
+        if (activeSubEditor != null) return activeSubEditor.mouseClicked(mx, my, btn, contentX, contentY, contentW, contentH);
+        if (isLoreTip(mx, my) || isHomeTip(mx, my)) return true;
         if (hoverRow >= 0) {
             List<ActionRow> rows = getRowsForCategory(activeCat);
             if (hoverRow < rows.size()) {
                 ActionRow row = rows.get(hoverRow);
+                if (row.sectionHeader) {
+                    UiSound.playClick();
+                    return true;
+                }
+                if (btn == 0 && row.reorderIndex >= 0 && drawerAnim >= 0.9f && contentAnim >= 0.9f
+                        && isLoreDragHandle(hoverRow, mx, my)) {
+                    UiSound.playClick();
+                    draggingLoreIndex = row.reorderIndex;
+                    loreDropIndex = row.reorderIndex;
+                    lastLoreAutoScrollAt = System.currentTimeMillis();
+                    return true;
+                }
+                if ("cards".equals(AnkiConfig.getUiOptionStyle())) {
+                    if (handleCardActionClick(row, hoverRow, mx, my)) return true;
+                    UiSound.playClick();
+                    row.action.run();
+                    return true;
+                }
                 if (row.deleteAction != null) {
                     int ry = contentY + (hoverRow - scrollOff) * ROW_H;
                     int delW = 24, delH = 16, delY = ry + (ROW_H - delH) / 2;
@@ -638,23 +1256,59 @@ public class SimpleEditorScreen extends Screen {
         return false;
     }
 
+    private boolean handleCardActionClick(ActionRow row, int index, double mx, double my) {
+        int columns = cardColumns();
+        int gap = cardGap();
+        int cardHeight = cardHeight();
+        int cardWidth = Math.max(88, (contentW - gap * (columns - 1)) / columns);
+        int local = index - scrollOff;
+        int x = contentX + local % columns * (cardWidth + gap);
+        int y = contentY + local / columns * (cardHeight + gap);
+        int right = x + cardWidth - 6;
+        if (row.deleteAction != null) {
+            int bx = right - 18;
+            if (mx >= bx && mx < bx + 18 && my >= y + 5 && my < y + 21) {
+                UiSound.playClick();
+                row.deleteAction.run();
+                return true;
+            }
+            right = bx - 3;
+        }
+        int buttonY = y + cardHeight - 19;
+        if (row.moveDown != null) {
+            int bx = right - 16;
+            if (mx >= bx && mx < bx + 16 && my >= buttonY && my < buttonY + 14) {
+                UiSound.playClick();
+                row.moveDown.run();
+                return true;
+            }
+            right = bx - 2;
+        }
+        if (row.moveUp != null) {
+            int bx = right - 16;
+            if (mx >= bx && mx < bx + 16 && my >= buttonY && my < buttonY + 14) {
+                UiSound.playClick();
+                row.moveUp.run();
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         double mx = event.x();
         double my = event.y();
         int btn = event.button();
         if (handleMouseClicked(mx, my, btn)) return true;
+        if (isInsideEditor(mx, my)) return true;
 
-        if (minecraft != null) {
-            double sw = minecraft.getWindow().getScreenWidth();
-            double sh = minecraft.getWindow().getScreenHeight();
-            if (sw > 0.0 && sh > 0.0) {
-                double sx = mx * width / sw;
-                double sy = my * height / sh;
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && handleMouseClicked(sx, sy, btn)) {
-                    return true;
-                }
+        if (inventoryParent != null) {
+            Slot hovered = EditorDock.hoveredSlot(inventoryParent);
+            if (btn == 0 && EditorDock.isPlayerInventorySlot(hovered) && hovered.hasItem()) {
+                return selectInventoryItem(hovered.getItem(), hovered.getContainerSlot());
             }
+            return inventoryParent.mouseClicked(event, isDoubleClick);
         }
         return super.mouseClicked(event, isDoubleClick);
     }
@@ -663,37 +1317,124 @@ public class SimpleEditorScreen extends Screen {
         double mx = event.x();
         double my = event.y();
         int button = event.button();
+        if (resizingEditor && button == 0) {
+            updateEditorScale(mx);
+            return true;
+        }
+        if (draggingLoreIndex >= 0 && button == 0) {
+            updateLoreDropTarget(mx, my);
+            return true;
+        }
+        if (draggingMenuBar && button == 0) {
+            applyMenuLayout(EditorDock.menuLayoutAt(width, height, 286, inventoryParent != null,
+                    (int) Math.round(mx) - dragOffsetX, (int) Math.round(my) - dragOffsetY,
+                    editorScale, editorWidthAdjustment, editorHeightAdjustment));
+            return true;
+        }
         if (this.activeSubEditor != null && this.activeSubEditor.mouseDragged(mx, my, button, dragX, dragY, this.contentX, this.contentY, this.contentW, this.contentH)) {
             return true;
         }
         return super.mouseDragged(event, dragX, dragY);
     }
-    public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        if (activeSubEditor != null) return activeSubEditor.mouseScrolled(sx, sy);
-        // Sidebar scroll
-        if (mx >= sideX && mx < sideX + sideW && my >= sideY && my < sideY + sideH) {
-            sideScrollOff -= (int) sy * 10;
-            Category[] cats = Category.values();
-            int catAreaY = sideY + 8 + 24 + 14 + 1 + 8;
-            int catAreaH = sideY + sideH - catAreaY;
-            int totalCatH = cats.length * (CAT_H + 2);
-            int maxSideScroll = Math.max(0, totalCatH - catAreaH);
-            sideScrollOff = Math.max(0, Math.min(sideScrollOff, maxSideScroll));
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (resizingEditor) {
+            resizingEditor = false;
+            AnkiConfig.setItemEditorScale(editorScale);
             return true;
         }
-        // Content scroll
+        if (draggingLoreIndex >= 0) {
+            finishLoreDrag();
+            return true;
+        }
+        if (draggingMenuBar) {
+            draggingMenuBar = false;
+            if (inventoryParent != null && barBounds != null) {
+                AnkiConfig.setItemEditorCustomPosition(barBounds.x(), barBounds.y());
+            }
+            return true;
+        }
+        if (activeSubEditor != null
+                && activeSubEditor.mouseReleased(event.x(), event.y(), event.button(),
+                contentX, contentY, contentW, contentH)) {
+            return true;
+        }
+        return super.mouseReleased(event);
+    }
+
+    private void updateEditorScale(double mouseX) {
+        editorScale = EditorDock.sizeScaleFromMouse(width, mouseX);
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 286, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+    }
+
+    private void adjustEditorScale(float delta) {
+        editorScale = Math.max(0.0f, Math.min(1.0f, editorScale + delta));
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 286, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        AnkiConfig.setItemEditorScale(editorScale);
+    }
+
+    private void adjustEditorAxes(float widthDelta, float heightDelta) {
+        editorWidthAdjustment = EditorDock.adjustAxis(editorWidthAdjustment, widthDelta);
+        editorHeightAdjustment = EditorDock.adjustAxis(editorHeightAdjustment, heightDelta);
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 286, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        AnkiConfig.setItemEditorAxisAdjustments(editorWidthAdjustment, editorHeightAdjustment);
+    }
+
+    private void resetEditorScale() {
+        editorScale = EditorDock.DEFAULT_EDITOR_SCALE;
+        editorWidthAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+        editorHeightAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 286, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        AnkiConfig.setItemEditorScale(editorScale);
+        AnkiConfig.setItemEditorAxisAdjustments(editorWidthAdjustment, editorHeightAdjustment);
+        UiSound.playClick();
+    }
+    public boolean mouseScrolled(double mx, double my, double sx, double sy) {
+        if (!drawerOpen || drawerAnim < 0.92f || contentAnim < 0.92f) return false;
+        if (draggingLoreIndex >= 0) return true;
+        if (activeSubEditor != null) return activeSubEditor.mouseScrolled(sx, sy);
         List<ActionRow> rows = getRowsForCategory(activeCat);
-        scrollOff -= (int) sy * 3;
-        scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, rows.size() - maxRows)));
+        if ("cards".equals(AnkiConfig.getUiOptionStyle())) {
+            int columns = cardColumns();
+            scrollOff -= (int) Math.signum(sy) * columns;
+            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, rows.size() - cardCapacity())));
+        } else {
+            scrollOff -= (int) sy * 3;
+            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, rows.size() - maxRows)));
+        }
         return true;
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key(); int scan = event.scancode(); int mod = event.modifiers();
+        if (draggingLoreIndex >= 0) {
+            if (key == 256) resetLoreDrag();
+            return true;
+        }
         if (activeSubEditor != null) {
             if (key == 256) { activeSubEditor.onClosed(); activeSubEditor = null; return true; }
             return activeSubEditor.keyPressed(key, scan, mod);
+        }
+        if (editorSizeFocused) {
+            if (key == 263) { adjustEditorScale(-0.05f); return true; }
+            if (key == 262) { adjustEditorScale(0.05f); return true; }
+            if (key == 268) { adjustEditorScale(-1.0f); return true; }
+            if (key == 269) { adjustEditorScale(1.0f); return true; }
+            if (key == 256) { editorSizeFocused = false; return true; }
         }
         if (key == 256) { tryClose(); return true; }
         if (key == 83 && (mod & 2) != 0) { saveToItem(); return true; }
@@ -702,6 +1443,8 @@ public class SimpleEditorScreen extends Screen {
 
     private void tryClose() {
         if (dirty && com.ankinbt.config.AnkiConfig.isConfirmOnClose()) {
+            drawerOpen = true;
+            contentAnim = 0f;
             activeSubEditor = new ConfirmCloseSubEditor();
         } else {
             onClose();
@@ -710,8 +1453,7 @@ public class SimpleEditorScreen extends Screen {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        char c = (char) event.codepoint(); int mod = 0;
-        if (activeSubEditor != null) return activeSubEditor.charTyped(c, mod);
+        if (activeSubEditor != null) return activeSubEditor.charTyped(event.codepoint(), 0);
         return super.charTyped(event);
     }
 
@@ -804,15 +1546,26 @@ public class SimpleEditorScreen extends Screen {
         rows.add(new ActionRow(tr("ankinbt.simple.hide_enchantments"),
                 EnchantmentTooltipHelper.isHidden(editStack) ? tr("ankinbt.simple.on") : tr("ankinbt.simple.off"),
                 this::toggleEnchantmentsHidden));
+        List<EnchantRowData> sorted = new ArrayList<>();
         enchants.entrySet().forEach(entry -> {
             Holder<Enchantment> ench = entry.getKey();
-            int level = entry.getIntValue();
             String eId = ench.unwrapKey().map(this::registryKeyToString).orElse("?");
-            String displayName = getEnchantDisplayName(eId);
-            rows.add(new ActionRow(displayName, tr("ankinbt.simple.level") + level,
-                    () -> openInlineEditor("ench_level:" + eId, String.valueOf(level)), C1, null, null, ItemEditorVisuals.enchantIconStack(eId),
-                    () -> removeEnchantment(eId)));
+            sorted.add(new EnchantRowData(eId, entry.getIntValue(), enchantGroup(ench.value())));
         });
+        sorted.sort(Comparator.comparingInt(EnchantRowData::group)
+                .thenComparing(data -> getEnchantDisplayName(data.id()), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(EnchantRowData::id));
+        int lastGroup = -1;
+        for (EnchantRowData data : sorted) {
+            if (data.group() != lastGroup) {
+                lastGroup = data.group();
+                rows.add(ActionRow.section(tr(enchantGroupKey(lastGroup)), accentColor()));
+            }
+            String displayName = getEnchantDisplayName(data.id());
+            rows.add(new ActionRow(displayName, tr("ankinbt.simple.level") + data.level(),
+                    () -> openInlineEditor("ench_level:" + data.id(), String.valueOf(data.level())), UiTheme.textMain(), null, null,
+                    ItemEditorVisuals.enchantIconStack(data.id()), () -> removeEnchantment(data.id())));
+        }
         rows.add(new ActionRow(tr("ankinbt.simple.add_enchant"), null,
                 () -> activeSubEditor = new EnchantPickerSubEditor(), accentColor()));
         if (!enchants.isEmpty()) {
@@ -823,37 +1576,24 @@ public class SimpleEditorScreen extends Screen {
 
     private List<ActionRow> getLoreRows() {
         List<ActionRow> rows = new ArrayList<>();
-        // Color code hint
-        rows.add(new ActionRow(tr("ankinbt.simple.lore_color_hint"), null, () -> activeSubEditor = new ColorPickerSubEditor(-1), C3));
-
-        // Full text editor for all lore
-        rows.add(new ActionRow(tr("ankinbt.simple.lore_text_editor"), null,
-                () -> activeSubEditor = new LoreTextEditorSubEditor(), accentColor()));
-
         List<Component> lore = getLore();
+        if (lore.isEmpty()) {
+            rows.add(new ActionRow(tr("ankinbt.simple.lore_empty"), null,
+                    () -> activeSubEditor = new LoreTextEditorSubEditor(false), UiTheme.textDim()));
+        }
         for (int i = 0; i < lore.size(); i++) {
-            int idx = i;
             String text = lore.get(i).getString();
             if (text.length() > 30) text = text.substring(0, 27) + "...";
             String prefix = (i + 1) + ". " + text;
-            // Build inline move hint with clickable areas handled in renderCategoryContent
-            String moveHint = "";
-            if (lore.size() > 1) {
-                if (i > 0 && i < lore.size() - 1) moveHint = "^ v";
-                else if (i > 0) moveHint = "^";
-                else if (i < lore.size() - 1) moveHint = "v";
-            }
             final int fi = i;
-            final int loreSize = lore.size();
-            rows.add(new ActionRow(prefix, moveHint.isEmpty() ? null : moveHint,
+            rows.add(new ActionRow(prefix, null,
                     () -> openLoreEditor("lore:" + fi, getLoreRawText(fi)),
-                    C1, fi > 0 ? () -> moveLore(fi, fi - 1) : null,
-                    fi < loreSize - 1 ? () -> moveLore(fi, fi + 1) : null));
+                    UiTheme.textMain(), null, null,
+                    ItemStack.EMPTY, () -> removeLore(fi)).reorderable(fi));
         }
         rows.add(new ActionRow(tr("ankinbt.simple.add_lore"), null,
-                () -> openLoreEditor("lore_add", ""), accentColor()));
+                () -> activeSubEditor = new LoreTextEditorSubEditor(true), accentColor()));
         if (!lore.isEmpty()) {
-            rows.add(new ActionRow(tr("ankinbt.simple.remove_last_lore"), null, this::removeLastLore));
             rows.add(new ActionRow(tr("ankinbt.simple.clear_lore"), null, this::clearLore, ERROR_C));
         }
         return rows;
@@ -874,12 +1614,12 @@ public class SimpleEditorScreen extends Screen {
             String slotName = getSlotDisplayName(entry.slot());
             String valueStr = String.format("%.2f %s [%s]", amount, opName, slotName);
             rows.add(new ActionRow(displayName, valueStr,
-                    () -> openInlineEditor("attr_amount:" + idx, String.valueOf(amount)), C1, null, null, ItemEditorVisuals.attributeIconStack(attrId),
+                    () -> openInlineEditor("attr_amount:" + idx, String.valueOf(amount)), UiTheme.textMain(), null, null, ItemEditorVisuals.attributeIconStack(attrId),
                     () -> removeAttribute(idx)));
             if (AnkiConfig.isAttributeNotesEnabled()) {
                 String note = getAttrNote(attrId);
                 if (note != null && !note.isBlank()) {
-                    rows.add(new ActionRow("i  " + note, null, () -> {}, C3));
+                    rows.add(new ActionRow("i  " + note, null, () -> {}, UiTheme.textDim()));
                 }
             }
         }
@@ -1241,7 +1981,7 @@ public class SimpleEditorScreen extends Screen {
     private void clearAttributes() {
         editStack.set(DataComponents.ATTRIBUTE_MODIFIERS, ItemAttributeModifiers.EMPTY);
         markDirty();
-        setStatus(tr("ankinbt.simple.attrs_cleared"), C2);
+        setStatus(tr("ankinbt.simple.attrs_cleared"), UiTheme.textDim());
     }
 
     private void addAttribute(String attrId, double amount, AttributeModifier.Operation op, EquipmentSlotGroup slot) {
@@ -1312,7 +2052,7 @@ public class SimpleEditorScreen extends Screen {
         if (supportsContainerPreview(editStack)) {
             rows.add(new ActionRow(tr("ankinbt.simple.container_preview"), null, () -> activeSubEditor = new ContainerPreviewSubEditor(), accentColor()));
         }
-        rows.add(new ActionRow(tr("ankinbt.simple.reset"), null, this::resetItem, ERROR_C));
+        rows.add(new ActionRow(tr("ankinbt.simple.reset"), null, this::openResetConfirm, ERROR_C));
         return rows;
     }
 
@@ -1471,7 +2211,14 @@ public class SimpleEditorScreen extends Screen {
     /** Convert a Component back to &-coded string for editing */
     private String componentToColorCoded(Component comp) {
         StringBuilder sb = new StringBuilder();
+        boolean[] firstSegment = {true};
         comp.visit((style, text) -> {
+            if (text.isEmpty()) return Optional.empty();
+            if (!firstSegment[0]) {
+                // Each component segment has a complete style. Reset before reapplying it so
+                // disabled color and format flags do not leak into the following segment.
+                sb.append("&r");
+            }
             TextColor color = style.getColor();
             if (color != null) {
                 // Try to match to MC color code
@@ -1492,6 +2239,7 @@ public class SimpleEditorScreen extends Screen {
             if (style.isStrikethrough()) sb.append("&m");
             if (style.isObfuscated()) sb.append("&k");
             sb.append(text);
+            firstSegment[0] = false;
             return Optional.empty();
         }, Style.EMPTY);
         return sb.toString();
@@ -1573,7 +2321,11 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private void setLore(List<Component> lines) {
-        editStack.set(DataComponents.LORE, new net.minecraft.world.item.component.ItemLore(lines));
+        if (lines == null || lines.isEmpty()) {
+            editStack.remove(DataComponents.LORE);
+        } else {
+            editStack.set(DataComponents.LORE, new net.minecraft.world.item.component.ItemLore(lines));
+        }
         dirty = true;
     }
 
@@ -1583,17 +2335,25 @@ public class SimpleEditorScreen extends Screen {
         Component moved = lore.remove(from);
         lore.add(to, moved);
         setLore(lore);
-        setStatus(tr("ankinbt.simple.lore_moved"), C2);
+        setStatus(tr("ankinbt.simple.lore_moved"), UiTheme.textDim());
     }
 
     private void removeLastLore() {
         List<Component> lore = new ArrayList<>(getLore());
-        if (!lore.isEmpty()) { lore.remove(lore.size() - 1); setLore(lore); setStatus(tr("ankinbt.status.deleted"), C2); }
+        if (!lore.isEmpty()) { lore.remove(lore.size() - 1); setLore(lore); setStatus(tr("ankinbt.status.deleted"), UiTheme.textDim()); }
+    }
+
+    private void removeLore(int index) {
+        List<Component> lore = new ArrayList<>(getLore());
+        if (index < 0 || index >= lore.size()) return;
+        lore.remove(index);
+        setLore(lore);
+        setStatus(tr("ankinbt.status.deleted"), UiTheme.textDim());
     }
 
     private void clearLore() {
         editStack.remove(DataComponents.LORE); dirty = true;
-        setStatus(tr("ankinbt.simple.lore_cleared"), C2);
+        setStatus(tr("ankinbt.simple.lore_cleared"), UiTheme.textDim());
     }
 
     private void toggleEnchantmentsHidden() {
@@ -1607,18 +2367,16 @@ public class SimpleEditorScreen extends Screen {
 
     private void clearEnchantments() {
         boolean hidden = EnchantmentTooltipHelper.isHidden(editStack);
-        editStack.set(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
-        if (hidden) {
-            EnchantmentTooltipHelper.setHidden(editStack, true);
-        }
+        EnchantmentHelper.setEnchantments(editStack, ItemEnchantments.EMPTY);
+        if (hidden) EnchantmentTooltipHelper.setHidden(editStack, true);
         dirty = true;
-        setStatus(tr("ankinbt.simple.enchants_cleared"), C2);
+        setStatus(tr("ankinbt.simple.enchants_cleared"), UiTheme.textDim());
     }
 
     private void removeEnchantment(String enchId) {
         if (applyEnchantLevel(enchId, 0)) {
             dirty = true;
-            setStatus(tr("ankinbt.status.deleted"), C2);
+            setStatus(tr("ankinbt.status.deleted"), UiTheme.textDim());
         } else {
             setStatus(tr("ankinbt.status.save_error"), ERROR_C);
         }
@@ -1642,9 +2400,13 @@ public class SimpleEditorScreen extends Screen {
         }
     }
 
+    private void openResetConfirm() {
+        activeSubEditor = new ConfirmResetSubEditor();
+    }
+
     private void resetItem() {
         editStack = originalStack.copy(); dirty = false;
-        setStatus(tr("ankinbt.simple.reset_done"), C2);
+        setStatus(tr("ankinbt.simple.reset_done"), UiTheme.textDim());
     }
 
     private String getEnchantDisplayName(String enchId) {
@@ -1657,6 +2419,55 @@ public class SimpleEditorScreen extends Screen {
             if (zh != null) return formatLocalizedId(zh, enchId);
         }
         return formatLocalizedId(prettifyRegistryId(enchId), enchId);
+    }
+
+    /**
+     * Enchantment priority follows the item's own Minecraft definition:
+     * primary (item-specific) first, supported (general) second, and entries
+     * that are not declared for this item last.  Keeping this in one helper
+     * makes the picker and the applied-enchantment list use identical rules.
+     */
+    private int enchantGroup(Enchantment enchantment) {
+        if (enchantment == null) return 2;
+        try {
+            if (enchantment.isPrimaryItem(editStack)) return 0;
+            if (enchantment.isSupportedItem(editStack)) return 1;
+        } catch (Throwable ignored) {
+            // A datapack can provide an incomplete definition; keep it visible
+            // in the final group instead of breaking the editor.
+        }
+        return 2;
+    }
+
+    private int enchantGroup(String enchantId) {
+        try {
+            Optional<Holder.Reference<Enchantment>> holder = VersionCompat.get().getEnchantHolder(enchantId);
+            return holder.map(reference -> enchantGroup(reference.value())).orElse(2);
+        } catch (Throwable ignored) {
+            return 2;
+        }
+    }
+
+    private Set<String> appliedEnchantIds() {
+        Set<String> applied = new HashSet<>();
+        try {
+            EnchantmentHelper.getEnchantmentsForCrafting(editStack).entrySet().forEach(entry ->
+                    entry.getKey().unwrapKey().map(this::registryKeyToString)
+                            .map(this::normalizeRegistryDisplayId)
+                            .filter(Objects::nonNull)
+                            .ifPresent(applied::add));
+        } catch (Throwable ignored) {
+            // A malformed component must not prevent the picker from opening.
+        }
+        return applied;
+    }
+
+    private String enchantGroupKey(int group) {
+        return switch (group) {
+            case 0 -> "ankinbt.simple.enchant_group_specific";
+            case 1 -> "ankinbt.simple.enchant_group_general";
+            default -> "ankinbt.simple.enchant_group_other";
+        };
     }
 
     private String formatLocalizedId(String label, String id) {
@@ -1764,12 +2575,14 @@ public class SimpleEditorScreen extends Screen {
                 int idx = Integer.parseInt(field.substring(5));
                 List<Component> lore = new ArrayList<>(getLore());
                 if (idx >= 0 && idx < lore.size()) {
-                    lore.set(idx, isLore ? colorCodedToComponent(value) : Component.literal(value));
+                    List<Component> replacement = loreComponentsFromInput(value, isLore);
+                    lore.remove(idx);
+                    lore.addAll(idx, replacement);
                     setLore(lore);
                 }
             } else if (field.equals("lore_add")) {
                 List<Component> lore = new ArrayList<>(getLore());
-                lore.add(isLore ? colorCodedToComponent(value) : Component.literal(value));
+                lore.addAll(loreComponentsFromInput(value, isLore));
                 setLore(lore);
             } else if (field.startsWith("ench_level:")) {
                 String enchId = field.substring(11);
@@ -1801,11 +2614,20 @@ public class SimpleEditorScreen extends Screen {
                 }
             }
             dirty = true;
-            setStatus(tr("ankinbt.status.edited"), C2);
+            setStatus(tr("ankinbt.status.edited"), UiTheme.textDim());
         } catch (NumberFormatException e) {
             setStatus(tr("ankinbt.simple.invalid_number"), ERROR_C);
         }
         activeSubEditor = null;
+    }
+
+    private List<Component> loreComponentsFromInput(String value, boolean colorCoded) {
+        String[] lines = (value == null ? "" : value).split("\\R", -1);
+        List<Component> result = new ArrayList<>(Math.max(1, lines.length));
+        for (String line : lines) {
+            result.add(colorCoded ? colorCodedToComponent(line) : Component.literal(line));
+        }
+        return result;
     }
 
     private boolean applyEnchantLevel(String enchId, int level) {
@@ -1818,7 +2640,7 @@ public class SimpleEditorScreen extends Screen {
             if (holder.isEmpty()) return false;
             mutable.set(holder.get(), level);
         }
-        editStack.set(DataComponents.ENCHANTMENTS, mutable.toImmutable());
+        EnchantmentHelper.setEnchantments(editStack, mutable.toImmutable());
         return true;
     }
 
@@ -1833,63 +2655,50 @@ public class SimpleEditorScreen extends Screen {
 
     // ==================== SAVE ====================
 
-    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
-        if (creativeSlot >= 36 && creativeSlot < 45) {
-            return creativeSlot - 36;
-        }
-        if (creativeSlot >= 9 && creativeSlot < 36) {
-            return creativeSlot;
-        }
-        return -1;
-    }
-    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
-        if (editedSlot >= 36 && editedSlot < 45) {
-            return editedSlot;
-        }
-        if (editedSlot >= 0 && editedSlot < 9) {
-            return 36 + editedSlot;
-        }
-        if (editedSlot >= 9 && editedSlot < 36) {
-            return editedSlot;
-        }
-        return -1;
-    }
-
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        if (!mc.player.hasInfiniteMaterials()) { setStatus(tr("ankinbt.status.creative_only"), ERROR_C); return; }
+        if (InventoryEditorOverlay.isItemEditorPreviewMode()) {
+            setStatus(tr("ankinbt.status.preview_only"), ERROR_C);
+            return;
+        }
+        if (!mc.player.hasInfiniteMaterials()) {
+            setStatus(tr("ankinbt.status.creative_only"), ERROR_C);
+            return;
+        }
 
         VersionCompat.get().sanitizeForCreativeSave(editStack);
         if (inventorySlot >= 0) {
-            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(inventorySlot);
-            if (creativeSlot < 0) {
-                setStatus(tr("ankinbt.status.save_error"), ERROR_C);
-                return;
-            }
-            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
-            if (playerSlot >= 0) {
-                mc.player.getInventory().setItem(playerSlot, editStack.copy());
-            }
-            mc.gameMode.handleCreativeModeItemAdd(editStack.copy(), creativeSlot);
+            // Save to specific inventory slot
+            mc.player.getInventory().setItem(inventorySlot, editStack.copy());
+            mc.gameMode.handleCreativeModeItemAdd(editStack.copy(), packetSlot(inventorySlot));
         } else {
             int slot = VersionCompat.get().getSelectedSlot(mc.player.getInventory());
             mc.player.getInventory().setItem(slot, editStack.copy());
             mc.gameMode.handleCreativeModeItemAdd(editStack.copy(), 36 + slot);
         }
+        originalStack = editStack.copy();
         dirty = false;
         setStatus(tr("ankinbt.status.saved"), SUCCESS);
     }
 
     private void switchToAdvanced() {
-        Minecraft.getInstance().setScreen(new NbtEditorScreen(editStack, inventorySlot));
+        resetLoreDrag();
+        if (inventoryParent != null) {
+            InventoryEditorOverlay.switchToAdvanced(inventoryParent, editStack, originalStack, inventorySlot, dirty);
+        } else {
+            NbtEditorScreen next = new NbtEditorScreen(editStack, inventorySlot);
+            next.restoreEditorState(originalStack, dirty);
+            AnkiConfig.setPreferredItemEditor("advanced");
+            Minecraft.getInstance().setScreen(next);
+        }
     }
 
     private void openInventorySwitch() {
         activeSubEditor = new InventorySwitchSubEditor();
     }
 
-    private void markDirty() { dirty = true; setStatus(tr("ankinbt.status.edited"), C2); }
+    private void markDirty() { dirty = true; setStatus(tr("ankinbt.status.edited"), UiTheme.textDim()); }
 
     private void setStatus(String msg, int color) {
         statusMsg = msg; statusColor = color; statusTime = System.currentTimeMillis();
@@ -1898,11 +2707,7 @@ public class SimpleEditorScreen extends Screen {
     private static String tr(String key) { return Component.translatable(key).getString(); }
 
     private int currentEditedSlot() {
-        if (inventorySlot >= 0) {
-            int creativeSlot = SimpleEditorScreen.creativePacketSlotFromEditedSlot(inventorySlot);
-            int playerSlot = SimpleEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
-            return playerSlot >= 0 ? playerSlot : inventorySlot;
-        }
+        if (inventorySlot >= 0) return inventorySlot;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return -1;
         return VersionCompat.get().getSelectedSlot(mc.player.getInventory());
@@ -1925,13 +2730,82 @@ public class SimpleEditorScreen extends Screen {
             activeSubEditor = null;
             return;
         }
-        Minecraft.getInstance().setScreen(new SimpleEditorScreen(stack.copy(), slot));
+        selectInventoryItem(stack, slot);
+    }
+
+    boolean selectInventoryItem(ItemStack stack, int slot) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (slot == inventorySlot && ItemStack.isSameItemSameComponents(stack, originalStack)) return true;
+        if (dirty) {
+            setStatus(tr("ankinbt.status.save_before_switch"), ERROR_C);
+            return true;
+        }
+        originalStack = stack.copy();
+        editStack = stack.copy();
+        resetLoreDrag();
+        inventorySlot = slot;
+        activeSubEditor = null;
+        scrollOff = 0;
+        sideScrollOff = 0;
+        hoverRow = -1;
+        openAnim = AnkiConfig.isUiAnimationEnabled() ? 0.62f : 1.0f;
+        setStatus(Component.translatable("ankinbt.status.item_switched", stack.getHoverName().getString()).getString(), SUCCESS);
+        return true;
+    }
+
+    @Override
+    public void onClose() {
+        if (inventoryParent != null) InventoryEditorOverlay.close(inventoryParent);
+        else super.onClose();
+    }
+
+    void requestOverlayClose() {
+        tryClose();
+    }
+
+    boolean isInsideEditor(double mouseX, double mouseY) {
+        if (activeSubEditor instanceof ConfirmCloseSubEditor) return true;
+        if (activeSubEditor == null) {
+            EditorDock.SizeControl sizeControl = EditorDock.sizeControl(width, height, editorScale);
+            if (sizeControl.hit().contains(mouseX, mouseY)
+                    || sizeControl.reset().contains(mouseX, mouseY)
+                    || sizeControl.horizontal().contains(mouseX, mouseY)
+                    || sizeControl.vertical().contains(mouseX, mouseY)) return true;
+        }
+        if (barBounds != null && barBounds.contains(mouseX, mouseY)) return true;
+        return drawerOpen && drawerAnim > 0.08f && drawerBounds != null && drawerBounds.contains(mouseX, mouseY);
+    }
+
+    boolean isDraggingMenuBar() {
+        return draggingMenuBar || resizingEditor || draggingLoreIndex >= 0;
+    }
+
+    void restoreEditorState(ItemStack original, boolean wasDirty) {
+        originalStack = original.copy();
+        dirty = wasDirty;
+        drawerOpen = true;
+    }
+
+    void returnFromChildScreen() {
+        if (inventoryParent != null) InventoryEditorOverlay.returnFromModal(inventoryParent);
+        else Minecraft.getInstance().setScreen(this);
+    }
+
+    private void openChildScreen(Screen child) {
+        if (inventoryParent != null) InventoryEditorOverlay.openModal(inventoryParent, child);
+        else Minecraft.getInstance().setScreen(child);
+    }
+
+    private static int packetSlot(int inventorySlot) {
+        if (inventorySlot == 40) return 45;
+        return inventorySlot < 9 ? 36 + inventorySlot : inventorySlot;
     }
 
     private boolean hasTinyFd() {
         try {
-            Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
-            return true;
+            Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            return pickTinyFdMethod(clazz, "tinyfd_saveFileDialog") != null
+                    && pickTinyFdMethod(clazz, "tinyfd_openFileDialog") != null;
         } catch (Throwable ignored) {
             return false;
         }
@@ -1965,21 +2839,36 @@ public class SimpleEditorScreen extends Screen {
     }
 
     private Method pickTinyFdMethod(Class<?> clazz, String methodName) {
+        Method charSequenceMethod = null;
+        Method stringArrayMethod = null;
         Method fallback = null;
         for (Method method : clazz.getMethods()) {
             if (!method.getName().equals(methodName)) continue;
             Class<?>[] types = method.getParameterTypes();
             boolean hasStringArray = false;
             boolean hasPointerBuffer = false;
+            boolean hasByteBuffer = false;
+            boolean hasUnsupported = false;
             for (Class<?> type : types) {
                 if (type == String[].class) hasStringArray = true;
                 if (type.getName().equals("org.lwjgl.PointerBuffer")) hasPointerBuffer = true;
+                if (type.getName().equals("java.nio.ByteBuffer")) hasByteBuffer = true;
+                if (type != String.class && type != CharSequence.class
+                        && type != String[].class && type != boolean.class && type != Boolean.class
+                        && !type.getName().equals("org.lwjgl.PointerBuffer")
+                        && !type.getName().equals("java.nio.ByteBuffer")) {
+                    hasUnsupported = true;
+                }
             }
-            if (hasStringArray) return method;
-            if (fallback == null && !hasPointerBuffer) fallback = method;
-            if (fallback == null) fallback = method;
+            if (hasUnsupported) continue;
+            if (hasStringArray && stringArrayMethod == null) stringArrayMethod = method;
+            if (!hasByteBuffer && hasPointerBuffer) {
+                if (charSequenceMethod == null) charSequenceMethod = method;
+            }
+            if (!hasByteBuffer && fallback == null) fallback = method;
         }
-        return fallback;
+        return charSequenceMethod != null ? charSequenceMethod
+                : (stringArrayMethod != null ? stringArrayMethod : fallback);
     }
 
     private Object[] tinyFdArgs(Class<?>[] parameterTypes, String defaultPath, boolean isOpen) {
@@ -2045,6 +2934,44 @@ public class SimpleEditorScreen extends Screen {
             best = safeStart + i;
         }
         return Math.max(0, Math.min(best, value.length()));
+    }
+
+    private void renderTextBuffer(GuiGraphics g, net.minecraft.client.gui.Font font, TextEditBuffer buffer,
+                                  int x, int y, int w, int h, boolean focused, String hint) {
+        String value = buffer.value();
+        if (value.isEmpty()) {
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, hint == null ? "" : hint,
+                    x + 4, y + Math.max(4, (h - 8) / 2), UiTheme.textDim(), false);
+            return;
+        }
+        int maxWidth = Math.max(1, w - 8);
+        int start = textViewStart(font, value, buffer.cursor(), maxWidth);
+        String shown = visibleText(font, value, start, maxWidth);
+        com.ankinbt.compat.VersionCompat.get().drawString(g, font, shown, x + 4,
+                y + Math.max(4, (h - 8) / 2), UiTheme.textMain(), false);
+        if (buffer.hasSelection()) {
+            int selectionStart = Math.max(start, buffer.selectionStart());
+            int selectionEnd = Math.min(value.length(), Math.max(selectionStart, buffer.selectionEnd()));
+            if (selectionStart < selectionEnd) {
+                int sx = x + 4 + font.width(value.substring(start, selectionStart));
+                int ex = x + 4 + font.width(value.substring(start, selectionEnd));
+                g.fill(sx, y + 3, Math.max(sx + 1, ex), y + h - 3, 0x663B82F6);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font,
+                        value.substring(selectionStart, selectionEnd), sx,
+                        y + Math.max(4, (h - 8) / 2), UiTheme.textMain(), false);
+            }
+        }
+        if (focused && !buffer.hasSelection() && System.currentTimeMillis() % 1000L < 500L) {
+            int cursor = Math.max(start, Math.min(buffer.cursor(), value.length()));
+            int cx = x + 4 + font.width(value.substring(start, cursor));
+            g.fill(cx, y + 3, cx + 1, y + h - 3, UiTheme.textMain());
+        }
+    }
+
+    private int bufferCursorFromMouse(net.minecraft.client.gui.Font font, TextEditBuffer buffer,
+                                      int relX, int maxWidth) {
+        return plainCursorFromMouse(font, buffer.value(),
+                textViewStart(font, buffer.value(), buffer.cursor(), maxWidth), relX, maxWidth);
     }
 
     private int renderedCursorFromMouse(net.minecraft.client.gui.Font font, String raw, int relX, boolean rawMode) {
@@ -2153,59 +3080,155 @@ public class SimpleEditorScreen extends Screen {
 
     // ==================== CONFIRM CLOSE DIALOG ====================
 
-    class ConfirmCloseSubEditor implements SubEditor {
+    class ConfirmResetSubEditor implements SubEditor {
+        private float modalAnim;
+        private final float[] buttonHover = new float[2];
+
         @Override
-        public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
-            int dw = 260, dh = 110;
-            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ERROR_C);
+        public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my,
+                           int x, int y, int w, int h) {
+            float speed = AnkiConfig.isUiAnimationEnabled()
+                    ? Math.max(0.12f, AnkiConfig.getUiAnimationSpeed() * 1.8f) : 1f;
+            modalAnim = UiTheme.approach(modalAnim, 1f, speed);
+            g.fill(x, y, x + w, y + h, UiTheme.withAlpha(0x000000, Math.round(92 * modalAnim)));
+            int dw = Math.min(320, w - 12), dh = Math.min(118, h - 8);
+            int dx = x + (w - dw) / 2;
+            int dy = y + (h - dh) / 2 + Math.round((1f - modalAnim) * 12f);
+            int accent = accentColor();
+            g.fill(dx, dy, dx + dw, dy + dh,
+                    UiTheme.surface(Math.max(0.72f, AnkiConfig.getUiOpacity()), modalAnim));
+            drawBorder(g, dx, dy, dw, dh,
+                    UiTheme.withAlpha(0xEF4444, Math.round(230 * modalAnim)));
+            g.fill(dx + 1, dy + 1, dx + dw - 1, dy + 3,
+                    UiTheme.withAlpha(0xEF4444, Math.round(220 * modalAnim)));
+            g.drawString(font, tr("ankinbt.simple.reset"), dx + 12, dy + 12, UiTheme.textMain(), false);
+            g.drawString(font, tr("ankinbt.confirm.unsaved"), dx + 12, dy + 35, UiTheme.textMain(), false);
+            g.drawString(font, tr("ankinbt.confirm.discard_hint"), dx + 12, dy + 50, UiTheme.textDim(), false);
 
-            g.drawString(font, tr("ankinbt.confirm.title"), dx + 10, dy + 10, C1, false);
-            g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, BORDER);
-            g.drawString(font, tr("ankinbt.confirm.unsaved"), dx + 10, dy + 32, C2, false);
-            g.drawString(font, tr("ankinbt.confirm.discard_hint"), dx + 10, dy + 46, C3, false);
+            int by = dy + dh - 34;
+            int gap = 8;
+            int bw = (dw - 24 - gap) / 2;
+            renderResetButton(g, font, mx, my, dx + 12, by, bw, 24,
+                    tr("ankinbt.edit.cancel"), 0, accent, speed);
+            renderResetButton(g, font, mx, my, dx + 12 + bw + gap, by, bw, 24,
+                    tr("ankinbt.simple.reset"), 1, 0xFFEF4444, speed);
+        }
 
-            int by = dy + dh - 32;
-            int bw2 = 70, bh2 = 22;
-
-            // Save & Close
-            int saveX = dx + 10;
-            boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
-            g.fill(saveX, by, saveX + bw2, by + bh2, sh ? 0xFF16A34A : SUCCESS);
-            String saveLabel = tr("ankinbt.confirm.save_close");
-            g.drawString(font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, C1, false);
-
-            // Discard
-            int discardX = dx + dw / 2 - bw2 / 2;
-            boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
-            g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? 0x80EF4444 : 0x40EF4444);
-            String discardLabel = tr("ankinbt.confirm.discard");
-            g.drawString(font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, C1, false);
-
-            // Cancel
-            int cancelX = dx + dw - bw2 - 10;
-            boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
-            g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            g.drawString(font, tr("ankinbt.edit.cancel"), cancelX + (bw2 - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 7, C2, false);
+        private void renderResetButton(GuiGraphics g, net.minecraft.client.gui.Font font,
+                                       int mx, int my, int x, int y, int w, int h,
+                                       String label, int index, int color, float speed) {
+            boolean hover = mx >= x && mx < x + w && my >= y && my < y + h;
+            buttonHover[index] = UiTheme.approach(buttonHover[index], hover ? 1f : 0f, speed);
+            g.fill(x, y, x + w, y + h,
+                    UiTheme.withAlpha(color & 0x00FFFFFF, 42 + Math.round(58 * buttonHover[index])));
+            drawBorder(g, x, y, w, h,
+                    UiTheme.withAlpha(color & 0x00FFFFFF, 170 + Math.round(70 * buttonHover[index])));
+            String shown = font.width(label) <= w - 12 ? label : font.plainSubstrByWidth(label, w - 18) + "...";
+            g.drawString(font, shown, x + (w - font.width(shown)) / 2, y + 8, UiTheme.textMain(), false);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-            int dw = 260, dh = 110;
-            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            int by = dy + dh - 32;
-            int bw2 = 70, bh2 = 22;
-
-            int saveX = dx + 10;
-            if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
-                saveToItem(); onClose(); return true;
+            if (btn != 0) return true;
+            int dw = Math.min(320, w - 12), dh = Math.min(118, h - 8);
+            int dx = x + (w - dw) / 2;
+            int dy = y + (h - dh) / 2 + Math.round((1f - modalAnim) * 12f);
+            int by = dy + dh - 34;
+            int gap = 8;
+            int bw = (dw - 24 - gap) / 2;
+            if (mx >= dx + 12 && mx < dx + 12 + bw && my >= by && my < by + 24) {
+                activeSubEditor = null;
+                return true;
             }
-            int discardX = dx + dw / 2 - bw2 / 2;
+            int resetX = dx + 12 + bw + gap;
+            if (mx >= resetX && mx < resetX + bw && my >= by && my < by + 24) {
+                resetItem();
+                activeSubEditor = null;
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mod) {
+            if (key == 256) activeSubEditor = null;
+            return true;
+        }
+
+        @Override public boolean charTyped(char c, int mod) { return true; }
+    }
+
+    class ConfirmCloseSubEditor implements SubEditor {
+        private float modalAnim;
+        private final float[] buttonHover = new float[3];
+
+        @Override
+        public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
+            float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.12f, AnkiConfig.getUiAnimationSpeed() * 1.8f) : 1f;
+            modalAnim = UiTheme.approach(modalAnim, 1f, speed);
+            g.fill(x, y, x + w, y + h, UiTheme.withAlpha(0x000000, Math.round(92 * modalAnim)));
+            int dw = Math.min(320, w - 12), dh = Math.min(126, h - 8);
+            int dx = x + (w - dw) / 2, dy = dialogY(y, h, dh);
+            int accent = accentColor();
+            g.fill(dx, dy, dx + dw, dy + dh,
+                    UiTheme.surface(Math.max(0.72f, AnkiConfig.getUiOpacity()), modalAnim));
+            drawBorder(g, dx, dy, dw, dh, UiTheme.withAlpha(accent & 0x00FFFFFF, Math.round(230 * modalAnim)));
+
+            g.drawString(font, tr("ankinbt.confirm.title"), dx + 12, dy + 10, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 25, dx + dw - 1, dy + 27, accent);
+            g.drawString(font, tr("ankinbt.confirm.unsaved"), dx + 12, dy + 38, UiTheme.textMain(), false);
+            g.drawString(font, tr("ankinbt.confirm.discard_hint"), dx + 12, dy + 53, UiTheme.textDim(), false);
+
+            int by = dy + dh - 34;
+            int gap = 7;
+            int bw2 = Math.max(66, (dw - 24 - gap * 2) / 3), bh2 = 24;
+
+            // Save & Close
+            int saveX = dx + 12;
+            boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
+            buttonHover[0] = UiTheme.approach(buttonHover[0], sh ? 1f : 0f, speed);
+            g.fill(saveX, by, saveX + bw2, by + bh2,
+                    UiTheme.mix(UiTheme.withAlpha(accent & 0x00FFFFFF, 164), accent, buttonHover[0]));
+            String saveLabel = tr("ankinbt.confirm.save_close");
+            g.drawString(font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, UiTheme.textMain(), false);
+
+            // Discard
+            int discardX = saveX + bw2 + gap;
+            boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
+            buttonHover[1] = UiTheme.approach(buttonHover[1], dh2 ? 1f : 0f, speed);
+            g.fill(discardX, by, discardX + bw2, by + bh2,
+                    UiTheme.mix(0x35EF4444, 0x88EF4444, buttonHover[1]));
+            String discardLabel = tr("ankinbt.confirm.discard");
+            g.drawString(font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, UiTheme.textMain(), false);
+
+            // Cancel
+            int cancelX = discardX + bw2 + gap;
+            boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
+            buttonHover[2] = UiTheme.approach(buttonHover[2], ch ? 1f : 0f, speed);
+            g.fill(cancelX, by, cancelX + bw2, by + bh2,
+                    UiTheme.mix(0x24FFFFFF, 0x58FFFFFF, buttonHover[2]));
+            g.drawString(font, tr("ankinbt.edit.cancel"), cancelX + (bw2 - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 7, UiTheme.textDim(), false);
+        }
+
+        @Override
+        public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            int dw = Math.min(320, w - 12), dh = Math.min(126, h - 8);
+            int dx = x + (w - dw) / 2, dy = dialogY(y, h, dh);
+            int by = dy + dh - 34;
+            int gap = 7;
+            int bw2 = Math.max(66, (dw - 24 - gap * 2) / 3), bh2 = 24;
+
+            int saveX = dx + 12;
+            if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+                saveToItem();
+                if (!dirty) onClose();
+                return true;
+            }
+            int discardX = saveX + bw2 + gap;
             if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
                 dirty = false; onClose(); return true;
             }
-            int cancelX = dx + dw - bw2 - 10;
+            int cancelX = discardX + bw2 + gap;
             if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
                 activeSubEditor = null; return true;
             }
@@ -2218,184 +3241,191 @@ public class SimpleEditorScreen extends Screen {
             return true;
         }
 
-        @Override public boolean charTyped(char c, int mod) { return false; }
+        @Override public boolean charTyped(char c, int mod) { return true; }
+
+        private int dialogY(int y, int h, int dialogHeight) {
+            return y + (h - dialogHeight) / 2 + Math.round((1f - modalAnim) * 12f);
+        }
     }
 
     // ==================== NBT EXPORT ====================
 
     class NbtExportSubEditor implements SubEditor {
-        String fileName;
-        String category;
-        String alias;
-        int cursor;
+        final TextEditBuffer fileNameInput;
+        final TextEditBuffer categoryInput;
+        final TextEditBuffer aliasInput;
         int focusField = 0; // 0=filename, 1=category, 2=alias
+        boolean draggingText = false;
         String message = null;
-        int msgColor = C2;
-        List<String> existingCats;
+        int msgColor = UiTheme.textDim();
 
         NbtExportSubEditor() {
             String itemId = resolveStackRegistryPath(editStack);
             long ts = System.currentTimeMillis() / 1000;
-            fileName = itemId + "_" + ts;
-            category = com.ankinbt.config.AnkiConfig.getLastExportCategory();
-            alias = "";
-            cursor = fileName.length();
-            existingCats = com.ankinbt.config.AnkiConfig.listExportCategories();
+            fileNameInput = new TextEditBuffer(itemId + "_" + ts);
+            categoryInput = new TextEditBuffer(com.ankinbt.config.AnkiConfig.getLastExportCategory());
+            aliasInput = new TextEditBuffer("");
         }
 
         @Override
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
-            int dw = Math.min(w - 10, 380), dh = 240;
+            int dw = Math.min(Math.max(1, w - 16), 420), dh = Math.min(Math.max(1, h - 10), 210);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
             drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.export_nbt"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.title"), dx + 12, dy + 9, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 25, dx + dw - 1, dy + 26, UiTheme.themedBorder(1f, 1f));
 
-            int fieldX = dx + 10, fieldW = dw - 20, fieldH = 20;
-            int curY = dy + 28;
+            int labelW = Math.max(font.width(tr("ankinbt.export.category")),
+                    Math.max(font.width(tr("ankinbt.export.filename")), font.width(tr("ankinbt.export.alias")))) + 12;
+            int labelX = dx + 12;
+            int fieldX = labelX + labelW;
+            int fieldW = Math.max(50, dx + dw - 12 - fieldX);
+            int fieldH = 20;
+            String category = categoryInput.value();
+            int categoryY = dy + 34;
+            int fileNameY = categoryY + 30;
+            int aliasY = fileNameY + 30;
 
-            // Category field
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.category"), fieldX, curY, C2, false);
-            curY += 12;
-            g.fill(fieldX, curY, fieldX + fieldW, curY + fieldH, 0xFF12121E);
-            drawBorder(g, fieldX, curY, fieldW, fieldH, focusField == 1 ? ACCENT : BORDER);
-            String catDisp = category.isEmpty() ? tr("ankinbt.export.no_category") : category;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, catDisp + (focusField == 1 && System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
-                    fieldX + 4, curY + 6, category.isEmpty() ? C3 : C1, false);
-            curY += fieldH + 4;
+            renderExportLabel(g, font, tr("ankinbt.export.category"), labelX, categoryY);
+            renderExportInput(g, font, categoryInput, fieldX, categoryY, fieldW, fieldH,
+                    focusField == 1, tr("ankinbt.export.no_category"));
 
-            // Quick category tags
-            if (!existingCats.isEmpty()) {
-                int tagX = fieldX;
-                for (String cat : existingCats) {
-                    int tw = font.width(cat) + 10;
-                    if (tagX + tw > fieldX + fieldW) { tagX = fieldX; curY += 16; }
-                    boolean hover = mx >= tagX && mx < tagX + tw && my >= curY && my < curY + 14;
-                    boolean active = cat.equals(category);
-                    g.fill(tagX, curY, tagX + tw, curY + 14, active ? ACCENT : (hover ? BTN_HOVER : BTN_BG));
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, cat, tagX + 5, curY + 3, active ? C1 : C2, false);
-                    tagX += tw + 4;
-                }
-                curY += 18;
+            renderExportLabel(g, font, tr("ankinbt.export.filename"), labelX, fileNameY);
+            g.fill(fieldX, fileNameY, fieldX + fieldW, fileNameY + fieldH, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, fieldX, fileNameY, fieldW, fieldH,
+                    focusField == 0 ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            int suffixW = font.width(".nbt") + 6;
+            renderTextBuffer(g, font, fileNameInput, fieldX, fileNameY,
+                    Math.max(12, fieldW - suffixW), fieldH, focusField == 0, "");
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, ".nbt", fieldX + fieldW - font.width(".nbt") - 4,
+                    fileNameY + 6, UiTheme.textDim(), false);
+
+            renderExportLabel(g, font, tr("ankinbt.export.alias"), labelX, aliasY);
+            renderExportInput(g, font, aliasInput, fieldX, aliasY, fieldW, fieldH,
+                    focusField == 2, tr("ankinbt.export.alias_hint"));
+
+            int pathY = aliasY + 30;
+            g.fill(labelX, pathY, dx + dw - 12, pathY + 32, UiTheme.card(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, labelX, pathY, dw - 24, 32, UiTheme.themedBorder(1f, 1f));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.dir"), labelX + 7, pathY + 5, accentColor(), false);
+            String safeCategory = category.isBlank() ? null : category.trim();
+            String fileName = fileNameInput.value().isBlank() ? tr("ankinbt.export.empty_name") : fileNameInput.value() + ".nbt";
+            String pathPreview = com.ankinbt.config.AnkiConfig.getExportPath(safeCategory).resolve(fileName).toString();
+            pathPreview = tailToWidth(pathPreview, Math.max(20, dw - 38));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, pathPreview, labelX + 7, pathY + 18, UiTheme.textDim(), false);
+
+            int by = dy + dh - 27;
+            if (message != null) {
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, message, labelX, by - 13, msgColor, false);
             }
-
-            // Filename field
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.filename"), fieldX, curY, C2, false);
-            curY += 12;
-            g.fill(fieldX, curY, fieldX + fieldW, curY + fieldH, 0xFF12121E);
-            drawBorder(g, fieldX, curY, fieldW, fieldH, focusField == 0 ? ACCENT : BORDER);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, fileName + ".nbt" + (focusField == 0 && System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
-                    fieldX + 4, curY + 6, C1, false);
-            curY += fieldH + 4;
-
-            // Alias field
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.alias"), fieldX, curY, C2, false);
-            curY += 12;
-            g.fill(fieldX, curY, fieldX + fieldW, curY + fieldH, 0xFF12121E);
-            drawBorder(g, fieldX, curY, fieldW, fieldH, focusField == 2 ? ACCENT : BORDER);
-            String aliasDisp = alias.isEmpty() ? tr("ankinbt.export.alias_hint") : alias;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, aliasDisp + (focusField == 2 && System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
-                    fieldX + 4, curY + 6, alias.isEmpty() ? C3 : C1, false);
-            curY += fieldH + 6;
-
-            // Path preview
-            String pathPreview = com.ankinbt.config.AnkiConfig.getNbtExportDir();
-            if (!category.isEmpty()) pathPreview += "/" + category;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.dir") + ": " + pathPreview, fieldX, curY, C3, false);
-            curY += 12;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font,
-                    AnkiConfig.isNativeFileDialogEnabled() ? tr("ankinbt.export.native_dialog_on") : tr("ankinbt.export.native_dialog_off"),
-                    fieldX, curY, C3, false);
-            curY += 12;
-
-            if (message != null) { com.ankinbt.compat.VersionCompat.get().drawString(g, font, message, fieldX, curY, msgColor, false); }
-
-            // Buttons
-            int by = dy + dh - 28, bw2 = 70, bh2 = 20;
-            int cancelX = dx + dw / 2 - bw2 - 6;
-            boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
-            g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw2 - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, C2, false);
-
-            int okX = dx + dw / 2 + 6;
-            boolean oh = mx >= okX && mx < okX + bw2 && my >= by && my < by + bh2;
-            g.fill(okX, by, okX + bw2, by + bh2, oh ? ACCENT : 0xFF4F46E5);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.export.do_export"), okX + (bw2 - font.width(tr("ankinbt.export.do_export"))) / 2, by + 6, C1, false);
+            int gap = 6, cancelW = 64, saveAsW = 82, saveW = 68, bh = 20;
+            int totalW = cancelW + saveAsW + saveW + gap * 2;
+            int cancelX = dx + (dw - totalW) / 2;
+            int saveAsX = cancelX + cancelW + gap;
+            int saveX = saveAsX + saveAsW + gap;
+            renderExportButton(g, font, mx, my, cancelX, by, cancelW, bh,
+                    tr("ankinbt.edit.cancel"), false, true);
+            renderExportButton(g, font, mx, my, saveAsX, by, saveAsW, bh,
+                    tr("ankinbt.export.save_as"), false, hasTinyFd());
+            renderExportButton(g, font, mx, my, saveX, by, saveW, bh,
+                    tr("ankinbt.export.save"), true, true);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-            int dw = Math.min(w - 10, 380), dh = 240;
+            draggingText = false;
+            int dw = Math.min(Math.max(1, w - 16), 420), dh = Math.min(Math.max(1, h - 10), 210);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            int fieldX = dx + 10, fieldW = dw - 20, fieldH = 20;
+            int labelW = Math.max(font.width(tr("ankinbt.export.category")),
+                    Math.max(font.width(tr("ankinbt.export.filename")), font.width(tr("ankinbt.export.alias")))) + 12;
+            int fieldX = dx + 12 + labelW, fieldW = Math.max(50, dx + dw - 12 - fieldX), fieldH = 20;
+            int categoryY = dy + 34;
+            int fileNameY = categoryY + 30;
+            int aliasY = fileNameY + 30;
 
-            int curY = dy + 28 + 12;
-            // Category input click
-            if (mx >= fieldX && mx < fieldX + fieldW && my >= curY && my < curY + fieldH) { focusField = 1; return true; }
-            curY += fieldH + 4;
-
-            // Quick category tag clicks
-            if (!existingCats.isEmpty()) {
-                int tagX = fieldX;
-                for (String cat : existingCats) {
-                    int tw = font.width(cat) + 10;
-                    if (tagX + tw > fieldX + fieldW) { tagX = fieldX; curY += 16; }
-                    if (mx >= tagX && mx < tagX + tw && my >= curY && my < curY + 14) {
-                        category = cat.equals(category) ? "" : cat;
-                        return true;
-                    }
-                    tagX += tw + 4;
-                }
-                curY += 18;
+            if (mx >= fieldX && mx < fieldX + fieldW && my >= categoryY && my < categoryY + fieldH) {
+                focusField = 1;
+                categoryInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, categoryInput,
+                        (int) Math.round(mx) - fieldX - 4, fieldW - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
+            int suffixW = font.width(".nbt") + 6;
+            if (mx >= fieldX && mx < fieldX + fieldW && my >= fileNameY && my < fileNameY + fieldH) {
+                focusField = 0;
+                fileNameInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, fileNameInput,
+                        (int) Math.round(mx) - fieldX - 4, Math.max(12, fieldW - suffixW - 8)), false);
+                draggingText = btn == 0;
+                return true;
+            }
+            if (mx >= fieldX && mx < fieldX + fieldW && my >= aliasY && my < aliasY + fieldH) {
+                focusField = 2;
+                aliasInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, aliasInput,
+                        (int) Math.round(mx) - fieldX - 4, fieldW - 8), false);
+                draggingText = btn == 0;
+                return true;
             }
 
-            // Filename input click
-            curY += 12;
-            if (mx >= fieldX && mx < fieldX + fieldW && my >= curY && my < curY + fieldH) { focusField = 0; return true; }
-            curY += fieldH + 4;
-
-            // Alias input click
-            curY += 12;
-            if (mx >= fieldX && mx < fieldX + fieldW && my >= curY && my < curY + fieldH) { focusField = 2; return true; }
-
             // Buttons
-            int by = dy + dh - 28, bw2 = 70, bh2 = 20;
-            int cancelX = dx + dw / 2 - bw2 - 6;
-            if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) { activeSubEditor = null; return true; }
-            int okX = dx + dw / 2 + 6;
-            if (mx >= okX && mx < okX + bw2 && my >= by && my < by + bh2) { doExport(); return true; }
+            int by = dy + dh - 27;
+            int gap = 6, cancelW = 64, saveAsW = 82, saveW = 68, bh = 20;
+            int totalW = cancelW + saveAsW + saveW + gap * 2;
+            int cancelX = dx + (dw - totalW) / 2;
+            int saveAsX = cancelX + cancelW + gap;
+            int saveX = saveAsX + saveAsW + gap;
+            if (hit(mx, my, cancelX, by, cancelW, bh)) { activeSubEditor = null; return true; }
+            if (hit(mx, my, saveAsX, by, saveAsW, bh)) { doExport(true); return true; }
+            if (hit(mx, my, saveX, by, saveW, bh)) { doExport(false); return true; }
             return true;
         }
 
         @Override
-        public boolean keyPressed(int key, int scan, int mod) {
-            if (key == 257 || key == 335) { doExport(); return true; }
-            if (key == 258) { focusField = (focusField + 1) % 3; return true; } // Tab
-            if ((mod & 2) != 0 && key == 86) {
-                String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
-                if (clip != null) {
-                    for (int i = 0; i < clip.length(); i++) charTyped(clip.charAt(i), 0);
-                }
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            int dw = Math.min(Math.max(1, w - 16), 420), dh = Math.min(Math.max(1, h - 10), 210);
+            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+            int labelW = Math.max(font.width(tr("ankinbt.export.category")),
+                    Math.max(font.width(tr("ankinbt.export.filename")), font.width(tr("ankinbt.export.alias")))) + 12;
+            int fieldX = dx + 12 + labelW, fieldW = Math.max(50, dx + dw - 12 - fieldX), fieldH = 20;
+            int categoryY = dy + 34;
+            int fileNameY = categoryY + 30;
+            int aliasY = fileNameY + 30;
+            int suffixW = font.width(".nbt") + 6;
+            if (focusField == 1 && my >= categoryY - 8 && my <= categoryY + fieldH + 8) {
+                categoryInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, categoryInput,
+                        (int) Math.round(mx) - fieldX - 4, fieldW - 8), true);
                 return true;
             }
-            String target = focusField == 0 ? fileName : (focusField == 1 ? category : alias);
-            int cur = focusField == 0 ? cursor : (focusField == 1 ? category.length() : alias.length());
+            if (focusField == 0 && my >= fileNameY - 8 && my <= fileNameY + fieldH + 8) {
+                fileNameInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, fileNameInput,
+                        (int) Math.round(mx) - fieldX - 4, Math.max(12, fieldW - suffixW - 8)), true);
+                return true;
+            }
+            if (focusField == 2 && my >= aliasY - 8 && my <= aliasY + fieldH + 8) {
+                aliasInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, aliasInput,
+                        (int) Math.round(mx) - fieldX - 4, fieldW - 8), true);
+                return true;
+            }
+            return true;
+        }
 
-            if (key == 259 && cur > 0) {
-                target = target.substring(0, cur - 1) + target.substring(cur);
-                cur--;
-                applyField(target, cur);
-                return true;
-            }
-            if (key == 261 && cur < target.length()) {
-                target = target.substring(0, cur) + target.substring(cur + 1);
-                applyField(target, cur);
-                return true;
-            }
-            if (key == 263 && cur > 0) { cur--; if (focusField == 0) cursor = cur; return true; }
-            if (key == 262 && cur < target.length()) { cur++; if (focusField == 0) cursor = cur; return true; }
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
+        }
+
+        @Override
+        public boolean keyPressed(int key, int scan, int mod) {
+            if (key == 257 || key == 335) { doExport(false); return true; }
+            if (key == 83 && (mod & 2) != 0) { doExport((mod & 1) != 0); return true; }
+            if (key == 258) { focusField = (focusField + 1) % 3; return true; } // Tab
+            TextEditBuffer target = focusField == 0 ? fileNameInput : (focusField == 1 ? categoryInput : aliasInput);
+            target.keyPressed(key, mod);
             return true;
         }
 
@@ -2404,36 +3434,32 @@ public class SimpleEditorScreen extends Screen {
             if (c < 32) return false;
             if (focusField == 0) {
                 if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') return false;
-                fileName = fileName.substring(0, cursor) + c + fileName.substring(cursor);
-                cursor++;
+                fileNameInput.charTyped(c);
             } else if (focusField == 1) {
                 if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' || c == '.') return false;
-                category = category + c;
+                categoryInput.charTyped(c);
             } else {
-                alias = alias + c;
+                aliasInput.charTyped(c);
             }
             return true;
         }
 
-        @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return true;
-        }
-
-        private void applyField(String val, int cur) {
-            if (focusField == 0) { fileName = val; cursor = cur; }
-            else if (focusField == 1) { category = val; }
-            else { alias = val; }
-        }
-
-        private void doExport() {
+        private void doExport(boolean saveAs) {
+            String fileName = fileNameInput.value().trim();
+            String category = categoryInput.value();
+            String alias = aliasInput.value();
             if (fileName.isEmpty()) { message = tr("ankinbt.export.empty_name"); msgColor = ERROR_C; return; }
             var opt = NbtHelper.serializeItemStack(editStack);
             if (opt.isEmpty()) { message = tr("ankinbt.export.failed"); msgColor = ERROR_C; return; }
             var path = (Path) null;
             String safeCategory = category.isBlank() ? null : category.trim();
             AnkiConfig.setLastExportCategory(safeCategory == null ? "" : safeCategory);
-            if (hasTinyFd()) {
+            if (saveAs) {
+                if (!hasTinyFd()) {
+                    message = tr("ankinbt.export.dialog_unavailable");
+                    msgColor = ERROR_C;
+                    return;
+                }
                 Path base = com.ankinbt.config.AnkiConfig.getExportPath(safeCategory);
                 String picked = tinyFdSavePath(base.resolve(fileName + ".nbt").toString());
                 if (picked == null || picked.isBlank()) return;
@@ -2447,6 +3473,45 @@ public class SimpleEditorScreen extends Screen {
             } else {
                 message = tr("ankinbt.export.failed"); msgColor = ERROR_C;
             }
+        }
+
+        private void renderExportLabel(GuiGraphics g, net.minecraft.client.gui.Font font,
+                                       String label, int x, int y) {
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, x, y + 6, UiTheme.textDim(), false);
+        }
+
+        private void renderExportInput(GuiGraphics g, net.minecraft.client.gui.Font font,
+                                       TextEditBuffer buffer, int x, int y, int w, int h,
+                                       boolean focused, String hint) {
+            g.fill(x, y, x + w, y + h, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, x, y, w, h, focused ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            renderTextBuffer(g, font, buffer, x, y, w, h, focused, hint);
+        }
+
+        private void renderExportButton(GuiGraphics g, net.minecraft.client.gui.Font font,
+                                        int mx, int my, int x, int y, int w, int h,
+                                        String label, boolean primary, boolean enabled) {
+            boolean hover = enabled && hit(mx, my, x, y, w, h);
+            int color = !enabled ? UiTheme.withAlpha(UiTheme.baseRgb(), 90)
+                    : primary ? (hover ? accentColor() : UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 190))
+                    : (hover ? BTN_HOVER : BTN_BG);
+            g.fill(x, y, x + w, y + h, color);
+            drawBorder(g, x, y, w, h, primary && enabled ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            int textColor = enabled ? (primary ? UiTheme.textMain() : UiTheme.textDim()) : UiTheme.withAlpha(UiTheme.textDim() & 0x00FFFFFF, 110);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, label,
+                    x + (w - font.width(label)) / 2, y + 6, textColor, false);
+        }
+
+        private String tailToWidth(String value, int maxWidth) {
+            if (value == null || font.width(value) <= maxWidth) return value == null ? "" : value;
+            String prefix = "...";
+            int start = 0;
+            while (start < value.length() && font.width(prefix + value.substring(start)) > maxWidth) start++;
+            return prefix + value.substring(Math.min(start, value.length()));
+        }
+
+        private boolean hit(double mx, double my, int x, int y, int w, int h) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
         }
     }
 
@@ -2478,11 +3543,11 @@ public class SimpleEditorScreen extends Screen {
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 10, 440), dh = Math.min(h - 10, 320);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            g.drawString(font, tr("ankinbt.import.title"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            g.drawString(font, tr("ankinbt.import.title"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             // Category tabs
             int tabY = dy + 26;
@@ -2492,8 +3557,8 @@ public class SimpleEditorScreen extends Screen {
             int allW = font.width(allLabel) + 10;
             boolean allHover = mx >= tabX && mx < tabX + allW && my >= tabY && my < tabY + 16;
             boolean allActive = currentCategory.isEmpty();
-            g.fill(tabX, tabY, tabX + allW, tabY + 16, allActive ? ACCENT : (allHover ? BTN_HOVER : BTN_BG));
-            g.drawString(font, allLabel, tabX + 5, tabY + 4, allActive ? C1 : C2, false);
+            g.fill(tabX, tabY, tabX + allW, tabY + 16, allActive ? accentColor() : (allHover ? BTN_HOVER : BTN_BG));
+            g.drawString(font, allLabel, tabX + 5, tabY + 4, allActive ? UiTheme.textMain() : UiTheme.textDim(), false);
             tabX += allW + 4;
 
             for (String cat : categories) {
@@ -2501,8 +3566,8 @@ public class SimpleEditorScreen extends Screen {
                 if (tabX + cw > dx + dw - 8) break;
                 boolean hover = mx >= tabX && mx < tabX + cw && my >= tabY && my < tabY + 16;
                 boolean active = cat.equals(currentCategory);
-                g.fill(tabX, tabY, tabX + cw, tabY + 16, active ? ACCENT : (hover ? BTN_HOVER : BTN_BG));
-                g.drawString(font, cat, tabX + 5, tabY + 4, active ? C1 : C2, false);
+                g.fill(tabX, tabY, tabX + cw, tabY + 16, active ? accentColor() : (hover ? BTN_HOVER : BTN_BG));
+                g.drawString(font, cat, tabX + 5, tabY + 4, active ? UiTheme.textMain() : UiTheme.textDim(), false);
                 tabX += cw + 4;
             }
 
@@ -2510,13 +3575,13 @@ public class SimpleEditorScreen extends Screen {
             int listX = dx + 8, listY = tabY + 22;
             int listW = dw / 2 - 12, listH = dh - 110;
             g.fill(listX, listY, listX + listW, listY + listH, 0xFF0A0A14);
-            drawBorder(g, listX, listY, listW, listH, BORDER);
+            drawBorder(g, listX, listY, listW, listH, UiTheme.themedBorder(1f, 1f));
 
             int rowH = 20;
             int maxItems = listH / rowH;
             hoverIdx = -1;
             if (files.isEmpty()) {
-                g.drawString(font, tr("ankinbt.import.no_files"), listX + 8, listY + 8, C3, false);
+                g.drawString(font, tr("ankinbt.import.no_files"), listX + 8, listY + 8, UiTheme.textDim(), false);
             } else {
                 int end = Math.min(scrollOff + maxItems, files.size());
                 for (int i = scrollOff; i < end; i++) {
@@ -2532,7 +3597,7 @@ public class SimpleEditorScreen extends Screen {
                     if (!icon.isEmpty()) g.renderItem(icon, listX + 3, ry + 2);
                     String name = entry.displayName();
                     if (font.width(name) > listW - 34) name = font.plainSubstrByWidth(name, listW - 40) + "..";
-                    g.drawString(font, name, listX + 22, ry + 6, sel ? C1 : C2, false);
+                    g.drawString(font, name, listX + 22, ry + 6, sel ? UiTheme.textMain() : UiTheme.textDim(), false);
                 }
             }
 
@@ -2540,17 +3605,17 @@ public class SimpleEditorScreen extends Screen {
             int prevX = dx + dw / 2 + 4, prevY = listY;
             int prevW = dw / 2 - 12, prevH = listH;
             g.fill(prevX, prevY, prevX + prevW, prevY + prevH, 0xFF0A0A14);
-            drawBorder(g, prevX, prevY, prevW, prevH, BORDER);
+            drawBorder(g, prevX, prevY, prevW, prevH, UiTheme.themedBorder(1f, 1f));
 
-            g.drawString(font, tr("ankinbt.import.preview"), prevX + 6, prevY + 4, C2, false);
+            g.drawString(font, tr("ankinbt.import.preview"), prevX + 6, prevY + 4, UiTheme.textDim(), false);
             if (selectedIdx >= 0 && selectedIdx < files.size()) {
                 var entry = files.get(selectedIdx);
-                g.drawString(font, entry.name(), prevX + 6, prevY + 18, C1, false);
+                g.drawString(font, entry.name(), prevX + 6, prevY + 18, UiTheme.textMain(), false);
                 if (entry.alias() != null) {
-                    g.drawString(font, tr("ankinbt.export.alias") + " " + entry.alias(), prevX + 6, prevY + 30, ACCENT, false);
-                    g.drawString(font, entry.sizeDisplay(), prevX + 6, prevY + 42, C3, false);
+                    g.drawString(font, tr("ankinbt.export.alias") + " " + entry.alias(), prevX + 6, prevY + 30, accentColor(), false);
+                    g.drawString(font, entry.sizeDisplay(), prevX + 6, prevY + 42, UiTheme.textDim(), false);
                 } else {
-                    g.drawString(font, entry.sizeDisplay(), prevX + 6, prevY + 30, C3, false);
+                    g.drawString(font, entry.sizeDisplay(), prevX + 6, prevY + 30, UiTheme.textDim(), false);
                 }
 
                 int infoStartY = entry.alias() != null ? prevY + 56 : prevY + 44;
@@ -2559,11 +3624,11 @@ public class SimpleEditorScreen extends Screen {
                     for (int i = 0; i < Math.min(infoLines.length, (prevH - 60) / 11); i++) {
                         String line = infoLines[i];
                         if (font.width(line) > prevW - 12) line = font.plainSubstrByWidth(line, prevW - 18) + "..";
-                        g.drawString(font, line, prevX + 6, infoStartY + i * 11, C2, false);
+                        g.drawString(font, line, prevX + 6, infoStartY + i * 11, UiTheme.textDim(), false);
                     }
                 }
             } else {
-                g.drawString(font, tr("ankinbt.import.select_file"), prevX + 6, prevY + 20, C3, false);
+                g.drawString(font, tr("ankinbt.import.select_file"), prevX + 6, prevY + 20, UiTheme.textDim(), false);
             }
 
             // Buttons
@@ -2573,22 +3638,22 @@ public class SimpleEditorScreen extends Screen {
             int refX = dx + 10;
             boolean rh = mx >= refX && mx < refX + 50 && my >= by && my < by + bh2;
             g.fill(refX, by, refX + 50, by + bh2, rh ? BTN_HOVER : BTN_BG);
-            g.drawString(font, tr("ankinbt.import.refresh"), refX + (50 - font.width(tr("ankinbt.import.refresh"))) / 2, by + 7, C2, false);
+            g.drawString(font, tr("ankinbt.import.refresh"), refX + (50 - font.width(tr("ankinbt.import.refresh"))) / 2, by + 7, UiTheme.textDim(), false);
             int openW = 76;
             int openX = refX + 56;
             boolean fh = mx >= openX && mx < openX + openW && my >= by && my < by + bh2;
             g.fill(openX, by, openX + openW, by + bh2, fh ? BTN_HOVER : BTN_BG);
-            g.drawString(font, tr("ankinbt.import.open_file"), openX + (openW - font.width(tr("ankinbt.import.open_file"))) / 2, by + 7, C2, false);
+            g.drawString(font, tr("ankinbt.import.open_file"), openX + (openW - font.width(tr("ankinbt.import.open_file"))) / 2, by + 7, UiTheme.textDim(), false);
 
             int cancelX = dx + dw / 2 - bw2 - 6;
             boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
             g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            g.drawString(font, tr("ankinbt.edit.cancel"), cancelX + (bw2 - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 7, C2, false);
+            g.drawString(font, tr("ankinbt.edit.cancel"), cancelX + (bw2 - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 7, UiTheme.textDim(), false);
 
             int okX = dx + dw / 2 + 6;
             boolean oh = mx >= okX && mx < okX + bw2 && my >= by && my < by + bh2;
-            g.fill(okX, by, okX + bw2, by + bh2, oh ? ACCENT : 0xFF4F46E5);
-            g.drawString(font, tr("ankinbt.import.do_import"), okX + (bw2 - font.width(tr("ankinbt.import.do_import"))) / 2, by + 7, C1, false);
+            g.fill(okX, by, okX + bw2, by + bh2, oh ? accentColor() : 0xFF4F46E5);
+            g.drawString(font, tr("ankinbt.import.do_import"), okX + (bw2 - font.width(tr("ankinbt.import.do_import"))) / 2, by + 7, UiTheme.textMain(), false);
         }
 
         @Override
@@ -2748,7 +3813,7 @@ public class SimpleEditorScreen extends Screen {
         private int page = 0;
         private StorageMode mode = StorageMode.CONTAINER;
         private String message = "";
-        private int msgColor = C2;
+        private int msgColor = UiTheme.textDim();
 
         ContainerPreviewSubEditor() {
             loadFromItem();
@@ -2758,12 +3823,12 @@ public class SimpleEditorScreen extends Screen {
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 10, 470), dh = Math.min(h - 10, 300);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            g.drawString(font, tr("ankinbt.container.title"), dx + 10, dy + 8, C1, false);
-            g.drawString(font, tr("ankinbt.container.mode") + ": " + modeName(), dx + 190, dy + 8, C2, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            g.drawString(font, tr("ankinbt.container.title"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.drawString(font, tr("ankinbt.container.mode") + ": " + modeName(), dx + 190, dy + 8, UiTheme.textDim(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             int gridX = dx + 14;
             int gridY = dy + 36;
@@ -2786,7 +3851,7 @@ public class SimpleEditorScreen extends Screen {
 
                 int bg = sel ? 0x805F3DC4 : hover ? 0x604F46E5 : 0x40212B43;
                 g.fill(sx, sy, sx + cell, sy + cell, bg);
-                drawBorder(g, sx, sy, cell, cell, sel ? ACCENT : BORDER);
+                drawBorder(g, sx, sy, cell, cell, sel ? accentColor() : UiTheme.themedBorder(1f, 1f));
 
                 ItemStack st = stackAt(global);
                 if (!st.isEmpty()) {
@@ -2796,9 +3861,9 @@ public class SimpleEditorScreen extends Screen {
             }
 
             String slotLabel = tr("ankinbt.container.slot") + " " + selectedSlot;
-            g.drawString(font, slotLabel, dx + 14, dy + 112, C2, false);
+            g.drawString(font, slotLabel, dx + 14, dy + 112, UiTheme.textDim(), false);
             String pageText = (page + 1) + " / " + Math.max(1, (slotTags.size() + PAGE_SIZE - 1) / PAGE_SIZE);
-            g.drawString(font, pageText, dx + 14 + font.width(slotLabel) + 18, dy + 112, C3, false);
+            g.drawString(font, pageText, dx + 14 + font.width(slotLabel) + 18, dy + 112, UiTheme.textDim(), false);
 
             int by = dy + dh - 30;
             int bw = 66;
@@ -2910,7 +3975,7 @@ public class SimpleEditorScreen extends Screen {
                 case LEGACY -> StorageMode.CONTAINER;
             };
             message = tr("ankinbt.container.mode") + ": " + modeName();
-            msgColor = C2;
+            msgColor = UiTheme.textDim();
         }
 
         private String modeName() {
@@ -2946,12 +4011,12 @@ public class SimpleEditorScreen extends Screen {
             slotTags.set(selectedSlot, copyTag(tag.get()));
             slotStacks.set(selectedSlot, hand.copy());
             message = tr("ankinbt.status.edited");
-            msgColor = C2;
+            msgColor = UiTheme.textDim();
         }
 
         private void openPicker() {
             final int slot = selectedSlot;
-            Minecraft.getInstance().setScreen(new ItemPickerScreen(SimpleEditorScreen.this, id -> {
+            ItemPickerScreen picker = new ItemPickerScreen(SimpleEditorScreen.this, id -> {
                 ensureSlots(slot + 1);
                 Item item = com.ankinbt.util.ItemRegistryHelper.resolveItem(id);
                 if (item == null) return;
@@ -2961,9 +4026,10 @@ public class SimpleEditorScreen extends Screen {
                     slotTags.set(slot, copyTag(tag.get()));
                     slotStacks.set(slot, stack.copy());
                     message = tr("ankinbt.status.edited");
-                    msgColor = C2;
+                    msgColor = UiTheme.textDim();
                 }
-            }));
+            }, SimpleEditorScreen.this::returnFromChildScreen);
+            openChildScreen(picker);
         }
 
         private void clearSelected() {
@@ -2971,7 +4037,7 @@ public class SimpleEditorScreen extends Screen {
             slotTags.set(selectedSlot, null);
             slotStacks.set(selectedSlot, ItemStack.EMPTY);
             message = tr("ankinbt.status.deleted");
-            msgColor = C2;
+            msgColor = UiTheme.textDim();
         }
 
         private void loadFromItem() {
@@ -3174,7 +4240,7 @@ public class SimpleEditorScreen extends Screen {
             g.fill(x, y, x + w, y + h, hover ? BTN_HOVER : BTN_BG);
             String draw = text;
             if (font.width(draw) > w - 8) draw = font.plainSubstrByWidth(draw, w - 12) + "..";
-            g.drawString(font, draw, x + (w - font.width(draw)) / 2, y + 6, C2, false);
+            g.drawString(font, draw, x + (w - font.width(draw)) / 2, y + 6, UiTheme.textDim(), false);
         }
 
         private boolean hit(double mx, double my, int x, int y, int w, int h) {
@@ -3267,10 +4333,34 @@ public class SimpleEditorScreen extends Screen {
 
     // ==================== INNER CLASSES ====================
 
+    private record EnchantRowData(String id, int level, int group) {}
+
+    private static final class EnchantPickerRow {
+        final boolean header;
+        final int enchantIndex;
+        final int group;
+
+        private EnchantPickerRow(boolean header, int enchantIndex, int group) {
+            this.header = header;
+            this.enchantIndex = enchantIndex;
+            this.group = group;
+        }
+
+        static EnchantPickerRow header(int group) {
+            return new EnchantPickerRow(true, -1, group);
+        }
+
+        static EnchantPickerRow enchant(int index, int group) {
+            return new EnchantPickerRow(false, index, group);
+        }
+    }
+
     static class ActionRow {
         final String label; final String currentValue; final Runnable action; final int labelColor;
         final Runnable moveUp; final Runnable moveDown; final ItemStack icon; final Runnable deleteAction;
-        ActionRow(String label, String currentValue, Runnable action) { this(label, currentValue, action, C1, null, null, ItemStack.EMPTY); }
+        boolean sectionHeader;
+        int reorderIndex = -1;
+        ActionRow(String label, String currentValue, Runnable action) { this(label, currentValue, action, UiTheme.textMain(), null, null, ItemStack.EMPTY); }
         ActionRow(String label, String currentValue, Runnable action, int labelColor) { this(label, currentValue, action, labelColor, null, null, ItemStack.EMPTY); }
         ActionRow(String label, String currentValue, Runnable action, int labelColor, Runnable moveUp, Runnable moveDown) { this(label, currentValue, action, labelColor, moveUp, moveDown, ItemStack.EMPTY); }
         ActionRow(String label, String currentValue, Runnable action, int labelColor, Runnable moveUp, Runnable moveDown, ItemStack icon) {
@@ -3281,18 +4371,32 @@ public class SimpleEditorScreen extends Screen {
             this.moveUp = moveUp; this.moveDown = moveDown; this.icon = icon == null ? ItemStack.EMPTY : icon;
             this.deleteAction = deleteAction;
         }
+
+        static ActionRow section(String label, int color) {
+            ActionRow row = new ActionRow(label, null, () -> {}, color);
+            row.sectionHeader = true;
+            return row;
+        }
+
+        ActionRow reorderable(int index) {
+            this.reorderIndex = index;
+            return this;
+        }
     }
 
     static class Btn {
         final int x, y, w, h; final String label; final Component tooltip; final Runnable action;
+        float hoverAnim;
         Btn(int x, int y, int w, int h, String label, Component tooltip, Runnable action) {
             this.x = x; this.y = y; this.w = w; this.h = h; this.label = label; this.tooltip = tooltip; this.action = action;
         }
         boolean isHover(int mx, int my) { return mx >= x && mx < x + w && my >= y && my < y + h; }
         void render(GuiGraphics g, net.minecraft.client.gui.Font f, int mx, int my) {
             boolean hv = isHover(mx, my);
-            g.fill(x, y, x + w, this.y + this.h, hv ? BTN_HOVER : BTN_BG);
-            g.drawString(f, label, x + (w - f.width(label)) / 2, y + (this.h - 8) / 2, C1, false);
+            float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1.0f;
+            hoverAnim = UiTheme.approach(hoverAnim, hv ? 1.0f : 0.0f, speed);
+            g.fill(x, y, x + w, this.y + this.h, UiTheme.mix(BTN_BG, BTN_HOVER, hoverAnim));
+            g.drawString(f, label, x + (w - f.width(label)) / 2, y + (this.h - 8) / 2, UiTheme.textMain(), false);
             if (hv && tooltip != null) VersionCompat.get().renderTooltip(g, f, tooltip, mx, my);
         }
     }
@@ -3302,10 +4406,17 @@ public class SimpleEditorScreen extends Screen {
         boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h);
         boolean keyPressed(int key, int scan, int mod);
         boolean charTyped(char c, int mod);
+        default boolean charTyped(int codePoint, int mod) {
+            if (!Character.isValidCodePoint(codePoint) || Character.isISOControl(codePoint)) return false;
+            boolean handled = false;
+            for (char unit : Character.toChars(codePoint)) handled |= charTyped(unit, mod);
+            return handled;
+        }
         default void onClosed() {}
-        default boolean preeditUpdated(PreeditEvent event) { return false; }
+        default boolean preeditUpdated(PreeditEvent event) { return true; }
         default boolean mouseScrolled(double sx, double sy) { return false; }
         default boolean mouseDragged(double mx, double my, int button, double dragX, double dragY, int x, int y, int w, int h) { return false; }
+        default boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) { return false; }
     }
 
     class InventorySwitchSubEditor implements SubEditor {
@@ -3318,12 +4429,12 @@ public class SimpleEditorScreen extends Screen {
             int dh = Math.min(h - 16, 150);
             int dx = x + (w - dw) / 2;
             int dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_pick"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_hint"), dx + 10, dy + 30, C3, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_pick"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.inventory_hint"), dx + 10, dy + 30, UiTheme.textDim(), false);
 
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) {
@@ -3346,7 +4457,7 @@ public class SimpleEditorScreen extends Screen {
                     boolean hover = mx >= sx && mx < sx + 18 && my >= sy && my < sy + 18;
                     boolean active = logical == currentSlot;
                     int bg = active ? SELECT_BG : (hover ? BTN_HOVER : BTN_BG);
-                    int edge = active ? ACCENT : BORDER;
+                    int edge = active ? accentColor() : UiTheme.themedBorder(1f, 1f);
                     g.fill(sx, sy, sx + 18, sy + 18, bg);
                     drawBorder(g, sx, sy, 18, 18, edge);
                     if (stack != null && !stack.isEmpty()) {
@@ -3364,8 +4475,8 @@ public class SimpleEditorScreen extends Screen {
             int bx = dx + dw - bw - 10;
             boolean hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
             g.fill(bx, by, bx + bw, by + bh, hover ? BTN_HOVER : BTN_BG);
-            drawBorder(g, bx, by, bw, bh, BORDER);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), bx + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 5, C1, false);
+            drawBorder(g, bx, by, bw, bh, UiTheme.themedBorder(1f, 1f));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), bx + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 5, UiTheme.textMain(), false);
         }
 
         @Override
@@ -3419,19 +4530,14 @@ public class SimpleEditorScreen extends Screen {
 
     class InlineFieldEditor implements SubEditor {
         final String field;
-        final FlatEditBox inputBox;
-        final String initialValue;
+        final TextEditBuffer input;
         String error = null;
         final boolean isLore;
-        boolean initialCursorSynced = false;
+        boolean draggingText;
 
         InlineFieldEditor(String field, String currentValue, boolean isLore) {
             this.field = field; this.isLore = isLore;
-            this.initialValue = currentValue != null ? currentValue : "";
-            this.inputBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 22, Component.empty());
-            this.inputBox.setMaxLength(2048);
-            this.inputBox.setResponder(value -> error = null);
-            this.focusInput();
+            this.input = new TextEditBuffer(currentValue);
         }
 
         @Override
@@ -3439,36 +4545,41 @@ public class SimpleEditorScreen extends Screen {
             boolean colorEditable = isLore || field.equals("rename");
             int dw = Math.min(w - 20, 360), dh = colorEditable ? 148 : 104;
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
             String title = getFieldLabel(field);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             // Input box
             int ix = dx + 10, iy = dy + 30, iw = dw - 20, ih = 22;
-            inputBox.setX(ix);
-            inputBox.setY(iy);
-            inputBox.setWidth(iw);
-            if (!initialCursorSynced) {
-                inputBox.setValue(initialValue);
-                int end = inputBox.getValue().length();
-                boolean fits = font.width(inputBox.getValue()) <= Math.max(1, iw - 8);
-                inputBox.setCursorPosition(fits ? end : 0);
-                inputBox.setHighlightPos(fits ? end : 0);
-                initialCursorSynced = true;
+            g.fill(ix, iy, ix + iw, iy + ih, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, ix, iy, iw, ih, accentColor());
+            int maxTextW = iw - 10;
+            int viewStart = textViewStart(font, input.value(), input.cursor(), maxTextW);
+            String disp = visibleText(font, input.value(), viewStart, maxTextW);
+            if (input.hasSelection()) {
+                int selStart = Math.max(input.selectionStart(), viewStart);
+                int selEnd = Math.min(input.selectionEnd(), viewStart + disp.length());
+                if (selStart < selEnd) {
+                    int sx = ix + 4 + font.width(input.value().substring(viewStart, selStart));
+                    int ex = ix + 4 + font.width(input.value().substring(viewStart, selEnd));
+                    g.fill(sx, iy + 4, ex, iy + ih - 4, 0x663B82F6);
+                }
             }
-            focusInput();
-            inputBox.renderWidget(g, mx, my, 0.0f);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, disp, ix + 4, iy + 7, UiTheme.textMain(), false);
+            if (!input.hasSelection() && System.currentTimeMillis() % 1000 < 500) {
+                int cursorX = ix + 4 + font.width(input.value().substring(viewStart, Math.max(viewStart, Math.min(input.cursor(), input.value().length()))));
+                g.fill(cursorX, iy + 4, cursorX + 1, iy + ih - 4, UiTheme.textMain());
+            }
 
             // Preview for name/lore color codes
-            String input = inputBox.getValue();
-            if (colorEditable && !input.isEmpty()) {
-                Component preview = colorCodedToComponent(input);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.preview") + ": ", ix, iy + ih + 4, C3, false);
+            if (colorEditable && !input.value().isEmpty()) {
+                Component preview = colorCodedToComponent(input.value());
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.preview") + ": ", ix, iy + ih + 4, UiTheme.textDim(), false);
                 int previewX = ix + font.width(tr("ankinbt.simple.preview") + ": ");
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, preview, previewX, iy + ih + 4, C1, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, preview, previewX, iy + ih + 4, UiTheme.textMain(), false);
             }
 
             if (error != null) com.ankinbt.compat.VersionCompat.get().drawString(g, font, error, ix, iy + ih + (colorEditable ? 16 : 4), ERROR_C, false);
@@ -3479,7 +4590,7 @@ public class SimpleEditorScreen extends Screen {
                 boolean palHover = mx >= palX && mx < palX + 70 && my >= palY && my < palY + 16;
                 g.fill(palX, palY, palX + 70, palY + 16, palHover ? BTN_HOVER : BTN_BG);
                 String palLabel = tr("ankinbt.simple.color_palette");
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, palLabel, palX + (70 - font.width(palLabel)) / 2, palY + 4, C2, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, palLabel, palX + (70 - font.width(palLabel)) / 2, palY + 4, UiTheme.textDim(), false);
             }
 
             // Buttons
@@ -3487,16 +4598,17 @@ public class SimpleEditorScreen extends Screen {
             int cancelX = dx + dw / 2 - bw - 6;
             boolean ch = mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh;
             g.fill(cancelX, by, cancelX + bw, by + bh, ch ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, UiTheme.textDim(), false);
 
             int okX = dx + dw / 2 + 6;
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh;
-            g.fill(okX, by, okX + bw, by + bh, oh ? ACCENT : 0xFF4F46E5);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, C1, false);
+            g.fill(okX, by, okX + bw, by + bh, oh ? accentColor() : 0xFF4F46E5);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, UiTheme.textMain(), false);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            draggingText = false;
             boolean colorEditable = isLore || field.equals("rename");
             int dw = Math.min(w - 20, 360), dh = colorEditable ? 148 : 104;
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
@@ -3505,84 +4617,80 @@ public class SimpleEditorScreen extends Screen {
             if (colorEditable) {
                 int palX = dx + dw - 80, palY = dy + 6;
                 if (mx >= palX && mx < palX + 70 && my >= palY && my < palY + 16) {
-                    releaseFocus();
                     activeSubEditor = new LoreColorInsertEditor(this);
                     return true;
                 }
             }
 
             int ix = dx + 10, iy = dy + 30, iw = dw - 20, ih = 22;
-            inputBox.setX(ix);
-            inputBox.setY(iy);
-            inputBox.setWidth(iw);
-            if (inputBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) {
-                focusInput();
+            if (mx >= ix && mx < ix + iw && my >= iy && my < iy + ih) {
+                int maxTextW = iw - 10;
+                int viewStart = textViewStart(font, input.value(), input.cursor(), maxTextW);
+                input.moveTo(plainCursorFromMouse(font, input.value(), viewStart, (int) mx - ix - 4, maxTextW), false);
+                draggingText = btn == 0;
                 return true;
             }
 
             int by = dy + dh - 28, bw = 70, bh = 20;
             int cancelX = dx + dw / 2 - bw - 6;
-            if (mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh) { releaseFocus(); activeSubEditor = null; return true; }
+            if (mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh) { activeSubEditor = null; return true; }
             int okX = dx + dw / 2 + 6;
             if (mx >= okX && mx < okX + bw && my >= by && my < by + bh) { apply(); return true; }
             return true;
         }
 
         @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            boolean colorEditable = isLore || field.equals("rename");
+            int dw = Math.min(w - 20, 360), dh = colorEditable ? 148 : 104;
+            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+            int ix = dx + 10, iy = dy + 30, iw = dw - 20, ih = 22;
+            if (my < iy - 8 || my > iy + ih + 8) return true;
+            int maxTextW = iw - 10;
+            int viewStart = textViewStart(SimpleEditorScreen.this.font,
+                    input.value(), input.cursor(), maxTextW);
+            int next = plainCursorFromMouse(SimpleEditorScreen.this.font, input.value(), viewStart,
+                    (int) Math.round(mx) - ix - 4, maxTextW);
+            input.moveTo(next, true);
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
+        }
+
+        @Override
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { apply(); return true; }
-            if (inputBox.keyPressed(new KeyEvent(key, scan, mod))) return true;
+            String before = input.value();
+            if (input.keyPressed(key, mod)) {
+                if (!before.equals(input.value())) error = null;
+                return true;
+            }
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (inputBox.charTyped(new CharacterEvent(c))) return true;
+            if (input.charTyped(c)) { error = null; return true; }
             return true;
         }
 
-        @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return inputBox.preeditUpdated(event);
-        }
-
-        @Override
-        public void onClosed() {
-            releaseFocus();
-        }
-
-        void focusInput() {
-            if (SimpleEditorScreen.this.getFocused() != inputBox) {
-                SimpleEditorScreen.this.setFocused(inputBox);
-            } else if (!inputBox.isFocused()) {
-                inputBox.setFocused(true);
-            }
-        }
-
-        void releaseFocus() {
-            if (SimpleEditorScreen.this.getFocused() == inputBox) {
-                SimpleEditorScreen.this.setFocused(null);
-            } else if (inputBox.isFocused()) {
-                inputBox.setFocused(false);
-            }
-        }
-
         void insertAtCursor(String text) {
-            String selected = inputBox.getHighlighted();
-            if (selected != null && !selected.isEmpty() && (text == null || !text.endsWith("r"))) {
-                inputBox.insertText((text == null ? "" : text) + selected + "&r");
-            } else {
-                inputBox.insertText(text == null ? "" : text);
-            }
+            boolean wrapsSelection = input.hasSelection() && (text == null || !text.endsWith("r"));
+            input.wrapSelectionOrInsert(text, wrapsSelection ? "&r" : "");
         }
 
         private void apply() {
-            String input = inputBox.getValue();
-            if (input.isEmpty() && !field.equals("rename") && !field.equals("lore_add") && !field.startsWith("lore:")) {
+            if (input.value().isEmpty() && !field.equals("rename") && !field.equals("lore_add") && !field.startsWith("lore:")) {
                 error = tr("ankinbt.simple.invalid_number"); return;
             }
-            releaseFocus();
-            applyInlineEdit(field, input, isLore);
+            applyInlineEdit(field, input.value(), isLore);
         }
 
         private String getFieldLabel(String f) {
@@ -3608,24 +4716,24 @@ public class SimpleEditorScreen extends Screen {
 
     class LoreTextEditorSubEditor
     implements SubEditor {
-        private final List<String> lines = new ArrayList<String>();
-        private final List<FlatEditBox> lineBoxes = new ArrayList<FlatEditBox>();
-        private int activeLine = 0;
+        private final MultiLineTextEditBuffer buffer;
         private int scrollOff = 0;
-        private boolean showRawCodes = true;
+        private boolean showRawCodes = false;
+        private boolean draggingText = false;
+        private boolean ensureCursorVisible = true;
 
-        LoreTextEditorSubEditor() {
+        LoreTextEditorSubEditor(boolean appendLine) {
+            ArrayList<String> initial = new ArrayList<String>();
             List<Component> lore = SimpleEditorScreen.this.getLore();
             if (lore.isEmpty()) {
-                this.lines.add("");
+                initial.add("");
             } else {
                 for (int i = 0; i < lore.size(); ++i) {
-                    this.lines.add(SimpleEditorScreen.this.getLoreRawText(i));
+                    initial.add(SimpleEditorScreen.this.getLoreRawText(i));
                 }
+                if (appendLine) initial.add("");
             }
-            this.activeLine = Math.max(0, this.lines.size() - 1);
-            this.rebuildLineBoxes();
-            this.activeBox().setCursorPosition(this.activeBox().getValue().length());
+            this.buffer = new MultiLineTextEditBuffer(initial);
         }
 
         @Override
@@ -3652,33 +4760,43 @@ public class SimpleEditorScreen extends Screen {
             int contentX = textX + 24;
             int lineH = 14;
             int maxVisLines = Math.max(1, textH / lineH);
-            this.scrollToCursor(maxVisLines);
+            if (this.ensureCursorVisible) {
+                this.scrollToCursor(maxVisLines);
+                this.ensureCursorVisible = false;
+            }
             g.fill(textX - 2, textY - 2, textX + textW + 2, textY + textH + 2, -15592930);
             SimpleEditorScreen.this.drawBorder(g, textX - 2, textY - 2, textW + 4, textH + 4, -14540234);
             g.enableScissor(textX, textY, textX + textW, textY + textH);
-            int end = Math.min(this.scrollOff + maxVisLines, this.lines.size());
+            int end = Math.min(this.scrollOff + maxVisLines, this.buffer.lines().size());
             for (int i = this.scrollOff; i < end; ++i) {
                 int ly = textY + (i - this.scrollOff) * lineH;
-                String line = this.lines.get(i);
-                FlatEditBox box = this.lineBoxes.get(i);
+                String line = this.buffer.lines().get(i);
                 g.drawString(font, String.valueOf(i + 1), textX, ly + 2, -10193781, false);
-                if (i == this.activeLine) {
+                if (i == this.buffer.cursorLine()) {
                     g.fill(contentX - 2, ly, textX + textW, ly + lineH, 0x18FFFFFF);
                 }
-                this.configureLineBox(box, contentX, ly, textW - 28, lineH);
+                if (this.buffer.lineHasSelection(i)) {
+                    int sx = contentX + this.textWidthForColumn(font, line, this.buffer.selectionStartCol(i));
+                    int ex = contentX + this.textWidthForColumn(font, line, this.buffer.selectionEndCol(i));
+                    g.fill(sx, ly + 1, Math.max(sx + 1, ex), ly + lineH - 1, 1715176182);
+                }
                 if (this.showRawCodes) {
-                    box.renderWidget(g, mx, my, 0.0f);
+                    g.drawString(font, line, contentX, ly + 2, -1906448, false);
                 } else {
                     g.drawString(font, SimpleEditorScreen.colorCodedToComponent(line), contentX, ly + 2, -1906448, false);
                 }
+                if (!this.buffer.hasSelection() && i == this.buffer.cursorLine() && System.currentTimeMillis() % 1000L < 500L) {
+                    int cx = contentX + this.textWidthForColumn(font, line, this.buffer.cursorCol());
+                    g.fill(cx, ly + 1, cx + 1, ly + lineH - 1, -1906448);
+                }
             }
             g.disableScissor();
-            if (this.lines.size() > maxVisLines) {
+            if (this.buffer.lines().size() > maxVisLines) {
                 int sbx = textX + textW - 4;
                 g.fill(sbx, textY, sbx + 4, textY + textH, 0x30FFFFFF);
-                float ratio = (float)maxVisLines / (float)this.lines.size();
+                float ratio = (float)maxVisLines / (float)this.buffer.lines().size();
                 int thumbH = Math.max(8, (int)((float)textH * ratio));
-                float sr = (float)this.scrollOff / (float)Math.max(1, this.lines.size() - maxVisLines);
+                float sr = (float)this.scrollOff / (float)Math.max(1, this.buffer.lines().size() - maxVisLines);
                 int thumbY = textY + (int)((float)(textH - thumbH) * sr);
                 g.fill(sbx, thumbY, sbx + 4, thumbY + thumbH, 0x70FFFFFF);
             }
@@ -3699,106 +4817,65 @@ public class SimpleEditorScreen extends Screen {
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
             g.fill(okX, by, okX + bw, by + bh2, oh ? -10262799 : -11581723);
             g.drawString(font, SimpleEditorScreen.tr("ankinbt.edit.apply"), okX + (bw - font.width(SimpleEditorScreen.tr("ankinbt.edit.apply"))) / 2, by + 6, -1906448, false);
-            String state = this.activeLine + 1 + ":" + this.cursorCol() + " | " + this.lines.size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix");
+            String state = this.buffer.cursorLine() + 1 + ":" + this.buffer.cursorCol() + " | " + this.buffer.lines().size() + SimpleEditorScreen.tr("ankinbt.simple.lore_lines_suffix");
             g.drawString(font, state, dx + dw - font.width(state) - 10, by + 6, -10193781, false);
         }
 
         private void scrollToCursor(int maxVisLines) {
-            if (this.activeLine < this.scrollOff) {
-                this.scrollOff = this.activeLine;
+            if (this.buffer.cursorLine() < this.scrollOff) {
+                this.scrollOff = this.buffer.cursorLine();
             }
-            if (this.activeLine >= this.scrollOff + maxVisLines) {
-                this.scrollOff = this.activeLine - maxVisLines + 1;
+            if (this.buffer.cursorLine() >= this.scrollOff + maxVisLines) {
+                this.scrollOff = this.buffer.cursorLine() - maxVisLines + 1;
             }
-            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - maxVisLines)));
+            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.buffer.lines().size() - maxVisLines)));
         }
 
-        private FlatEditBox activeBox() {
-            this.ensureLineBoxes();
-            return this.lineBoxes.get(Math.max(0, Math.min(this.activeLine, this.lineBoxes.size() - 1)));
-        }
-
-        private void ensureLineBoxes() {
-            while (this.lineBoxes.size() < this.lines.size()) {
-                this.lineBoxes.add(this.newLineBox(this.lines.get(this.lineBoxes.size())));
+        private int textWidthForColumn(Font font, String line, int col) {
+            int safeCol = Math.max(0, Math.min(col, line.length()));
+            if (this.showRawCodes) {
+                return font.width(line.substring(0, safeCol));
             }
-            while (this.lineBoxes.size() > this.lines.size()) {
-                this.lineBoxes.remove(this.lineBoxes.size() - 1);
+            return font.width(this.stripColorCodes(line.substring(0, safeCol)));
+        }
+
+        private int columnFromMouse(Font font, String line, double mx, int contentX) {
+            int local = Math.max(0, (int)mx - contentX);
+            int best = 0;
+            int bestDist = Integer.MAX_VALUE;
+            for (int i = 0; i <= line.length(); ++i) {
+                int x = this.textWidthForColumn(font, line, i);
+                int dist = Math.abs(x - local);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = i;
+                }
             }
+            return best;
         }
 
-        private FlatEditBox newLineBox(String value) {
-            FlatEditBox box = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 14, Component.empty());
-            box.setMaxLength(2048);
-            box.setBordered(false);
-            box.setValue(value == null ? "" : value);
-            return box;
-        }
-
-        private void rebuildLineBoxes() {
-            this.lineBoxes.clear();
-            for (String line : this.lines) {
-                this.lineBoxes.add(this.newLineBox(line));
+        private String stripColorCodes(String s) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < s.length(); ++i) {
+                if (s.charAt(i) == '&' && i + 1 < s.length()) {
+                    char next = s.charAt(i + 1);
+                    if (next == '#' && i + 7 < s.length()) {
+                        i += 7;
+                        continue;
+                    }
+                    if ("0123456789abcdefklmnorABCDEFKLMNOR".indexOf(next) >= 0) {
+                        ++i;
+                        continue;
+                    }
+                }
+                sb.append(s.charAt(i));
             }
-            this.focusActiveBox();
-        }
-
-        private void configureLineBox(FlatEditBox box, int x, int y, int w, int h) {
-            box.setX(x);
-            box.setY(y);
-            box.setWidth(Math.max(1, w));
-        }
-
-        private void focusActiveBox() {
-            this.ensureLineBoxes();
-            FlatEditBox active = this.activeBox();
-            for (FlatEditBox box : this.lineBoxes) {
-                if (box != active && box.isFocused()) box.setFocused(false);
-            }
-            SimpleEditorScreen.this.setFocused(active);
-            if (!active.isFocused()) active.setFocused(true);
-        }
-
-        private void releaseFocus() {
-            if (this.lineBoxes.contains(SimpleEditorScreen.this.getFocused())) {
-                SimpleEditorScreen.this.setFocused(null);
-            }
-            for (FlatEditBox box : this.lineBoxes) {
-                if (box.isFocused()) box.setFocused(false);
-            }
-        }
-
-        private int cursorCol() {
-            FlatEditBox box = this.activeBox();
-            return Math.max(0, Math.min(box.getCursorPosition(), box.getValue().length()));
-        }
-
-        private void syncLine(int index) {
-            if (index >= 0 && index < this.lines.size() && index < this.lineBoxes.size()) {
-                this.lines.set(index, this.lineBoxes.get(index).getValue());
-            }
-        }
-
-        private void syncAllLines() {
-            this.ensureLineBoxes();
-            for (int i = 0; i < this.lines.size(); ++i) {
-                this.syncLine(i);
-            }
-        }
-
-        private void setActiveLine(int line) {
-            this.syncLine(this.activeLine);
-            this.activeLine = Math.max(0, Math.min(line, this.lines.size() - 1));
-            this.focusActiveBox();
-        }
-
-        private boolean hasLineSelection(FlatEditBox box) {
-            String selected = box.getHighlighted();
-            return selected != null && !selected.isEmpty();
+            return sb.toString();
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            this.draggingText = false;
             int dw = Math.min(w - 10, Math.max(320, Math.min(500, w - 24)));
             int dh = Math.min(h - 10, Math.max(220, Math.min(340, h - 16)));
             int dx = x + (w - dw) / 2;
@@ -3815,13 +4892,12 @@ public class SimpleEditorScreen extends Screen {
             int bh2 = 20;
             int palX = dx + 10;
             if (mx >= (double)palX && mx < (double)(palX + 62) && my >= (double)by && my < (double)(by + bh2)) {
-                this.releaseFocus();
-                SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this);
+                InlineFieldEditor tempEditor = new InlineFieldEditor("lore_text_temp", this.buffer.lines().get(this.buffer.cursorLine()), true);
+                SimpleEditorScreen.this.activeSubEditor = new LoreColorInsertEditorForText(this, tempEditor);
                 return true;
             }
             int cancelX = dx + dw / 2 - bw - 6;
             if (mx >= (double)cancelX && mx < (double)(cancelX + bw) && my >= (double)by && my < (double)(by + bh2)) {
-                this.releaseFocus();
                 SimpleEditorScreen.this.activeSubEditor = null;
                 return true;
             }
@@ -3835,151 +4911,97 @@ public class SimpleEditorScreen extends Screen {
             int textW = dw - 20;
             int textH = dh - 74;
             if (mx >= (double)textX && mx < (double)(textX + textW) && my >= (double)textY && my < (double)(textY + textH)) {
-                int lineH = 14;
-                int clickedLine = (int)((my - (double)textY) / (double)lineH) + this.scrollOff;
-                if (clickedLine >= 0 && clickedLine < this.lines.size()) {
-                    int contentX = textX + 24;
-                    int ly = textY + (clickedLine - this.scrollOff) * lineH;
-                    FlatEditBox box = this.lineBoxes.get(clickedLine);
-                    this.configureLineBox(box, contentX, ly, textW - 28, lineH);
-                    this.setActiveLine(clickedLine);
-                    if (this.showRawCodes) {
-                        box.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false);
-                    } else {
-                        box.setCursorPosition(box.getValue().length());
-                    }
-                }
+                this.moveCursorFromMouse(mx, my, textX, textY, textW, textH, false);
+                this.draggingText = btn == 0;
                 return true;
             }
+            this.draggingText = false;
             return true;
         }
 
         @Override
         public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY, int x, int y, int w, int h) {
-            return false;
+            if (!this.draggingText || button != 0) {
+                return false;
+            }
+            int dw = Math.min(w - 10, Math.max(320, Math.min(500, w - 24)));
+            int dh = Math.min(h - 10, Math.max(220, Math.min(340, h - 16)));
+            int dx = x + (w - dw) / 2;
+            int dy = y + (h - dh) / 2;
+            this.moveCursorFromMouse(mx, my, dx + 10, dy + 30, dw - 20, dh - 74, true);
+            return true;
+        }
+
+        private void moveCursorFromMouse(double mx, double my, int textX, int textY, int textW, int textH, boolean selecting) {
+            int lineH = 14;
+            int maxVisLines = Math.max(1, textH / lineH);
+            int clickedLine = (int)((my - (double)textY) / (double)lineH) + this.scrollOff;
+            clickedLine = Math.max(0, Math.min(clickedLine, this.buffer.lines().size() - 1));
+            int contentX = textX + 24;
+            int col = this.columnFromMouse(SimpleEditorScreen.this.font, this.buffer.lines().get(clickedLine), mx, contentX);
+            this.buffer.moveTo(clickedLine, col, selecting);
+            this.scrollToCursor(maxVisLines);
+            this.ensureCursorVisible = false;
         }
 
         @Override
         public boolean keyPressed(int key, int scan, int mod) {
-            FlatEditBox box = this.activeBox();
             if (key == 257 || key == 335) {
-                this.syncLine(this.activeLine);
-                int col = this.cursorCol();
-                String line = this.lines.get(this.activeLine);
-                this.lines.set(this.activeLine, line.substring(0, col));
-                this.lines.add(this.activeLine + 1, line.substring(col));
-                this.rebuildLineBoxes();
-                this.setActiveLine(this.activeLine + 1);
-                this.activeBox().setCursorPosition(0);
+                this.buffer.insertNewLine();
+                this.ensureCursorVisible = true;
                 return true;
             }
-            if (key == 259 && this.cursorCol() == 0 && !this.hasLineSelection(box) && this.activeLine > 0) {
-                this.syncLine(this.activeLine);
-                String line = this.lines.remove(this.activeLine);
-                int prev = this.activeLine - 1;
-                int col = this.lines.get(prev).length();
-                this.lines.set(prev, this.lines.get(prev) + line);
-                this.rebuildLineBoxes();
-                this.setActiveLine(prev);
-                this.activeBox().setCursorPosition(col);
+            if (this.buffer.keyPressed(key, mod)) {
+                this.ensureCursorVisible = true;
                 return true;
             }
-            if (key == 261 && this.cursorCol() == box.getValue().length() && !this.hasLineSelection(box) && this.activeLine < this.lines.size() - 1) {
-                this.syncLine(this.activeLine);
-                this.lines.set(this.activeLine, this.lines.get(this.activeLine) + this.lines.remove(this.activeLine + 1));
-                this.rebuildLineBoxes();
-                this.setActiveLine(this.activeLine);
-                return true;
-            }
-            if (key == 265 && this.activeLine > 0) {
-                int col = this.cursorCol();
-                this.setActiveLine(this.activeLine - 1);
-                this.activeBox().setCursorPosition(Math.min(col, this.activeBox().getValue().length()));
-                return true;
-            }
-            if (key == 264 && this.activeLine < this.lines.size() - 1) {
-                int col = this.cursorCol();
-                this.setActiveLine(this.activeLine + 1);
-                this.activeBox().setCursorPosition(Math.min(col, this.activeBox().getValue().length()));
-                return true;
-            }
-            if (key == 263 && this.cursorCol() == 0 && this.activeLine > 0 && !this.hasLineSelection(box)) {
-                this.setActiveLine(this.activeLine - 1);
-                this.activeBox().setCursorPosition(this.activeBox().getValue().length());
-                return true;
-            }
-            if (key == 262 && this.cursorCol() == box.getValue().length() && this.activeLine < this.lines.size() - 1 && !this.hasLineSelection(box)) {
-                this.setActiveLine(this.activeLine + 1);
-                this.activeBox().setCursorPosition(0);
-                return true;
-            }
-            if (box.keyPressed(new KeyEvent(key, scan, mod))) {
-                this.syncLine(this.activeLine);
-                return true;
-            }
-            this.syncLine(this.activeLine);
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            FlatEditBox box = this.activeBox();
-            if (box.charTyped(new CharacterEvent(c))) {
-                this.syncLine(this.activeLine);
-                return true;
-            }
-            this.syncLine(this.activeLine);
-            return true;
-        }
-
-        @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return this.activeBox().preeditUpdated(event);
-        }
-
-        @Override
-        public void onClosed() {
-            this.releaseFocus();
+            boolean handled = this.buffer.charTyped(c);
+            if (handled) this.ensureCursorVisible = true;
+            return handled;
         }
 
         @Override
         public boolean mouseScrolled(double sx, double sy) {
             this.scrollOff -= (int)sy * 3;
-            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.lines.size() - 5)));
+            this.scrollOff = Math.max(0, Math.min(this.scrollOff, Math.max(0, this.buffer.lines().size() - 5)));
             return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = this.draggingText;
+            this.draggingText = false;
+            return handled;
         }
 
         void insertAtCursor(String text) {
             String suffix = text != null && text.length() == 2 && text.charAt(0) == '&' && "0123456789abcdefABCDEF".indexOf(text.charAt(1)) >= 0 ? "&r" : "";
-            FlatEditBox box = this.activeBox();
-            String selected = box.getHighlighted();
-            if (selected != null && !selected.isEmpty() && !suffix.isEmpty()) {
-                box.insertText((text == null ? "" : text) + selected + suffix);
-            } else {
-                box.insertText(text == null ? "" : text);
-            }
-            this.syncLine(this.activeLine);
+            this.buffer.wrapSelectionOrInsert(text, suffix);
         }
 
         private void applyAll() {
-            this.syncAllLines();
-            while (this.lines.size() > 1 && this.lines.get(this.lines.size() - 1).isEmpty()) {
-                this.lines.remove(this.lines.size() - 1);
+            List<String> lines = this.buffer.lines();
+            while (lines.size() > 1 && lines.get(lines.size() - 1).isEmpty()) {
+                lines.remove(lines.size() - 1);
             }
             ArrayList<Component> loreComponents = new ArrayList<Component>();
-            for (String line : this.lines) {
-                if (!line.isEmpty() || this.lines.size() == 1) {
+            for (String line : lines) {
+                if (!line.isEmpty() || lines.size() == 1) {
                     loreComponents.add(SimpleEditorScreen.colorCodedToComponent(line));
                     continue;
                 }
                 loreComponents.add((Component)Component.empty());
             }
-            if (loreComponents.size() == 1 && this.lines.get(0).isEmpty()) {
+            if (loreComponents.size() == 1 && lines.get(0).isEmpty()) {
                 SimpleEditorScreen.this.editStack.remove(DataComponents.LORE);
             } else {
                 SimpleEditorScreen.this.setLore(loreComponents);
             }
-            this.releaseFocus();
             SimpleEditorScreen.this.markDirty();
             SimpleEditorScreen.this.activeSubEditor = null;
         }
@@ -3987,21 +5009,23 @@ public class SimpleEditorScreen extends Screen {
 
     class LoreColorInsertEditorForText implements SubEditor {
         final LoreTextEditorSubEditor textEditor;
+        final InlineFieldEditor tempParent;
         private int hoveredColor = -1;
 
-        LoreColorInsertEditorForText(LoreTextEditorSubEditor textEditor) {
+        LoreColorInsertEditorForText(LoreTextEditorSubEditor textEditor, InlineFieldEditor tempParent) {
             this.textEditor = textEditor;
+            this.tempParent = tempParent;
         }
 
         @Override
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 10, 340), dh = 260;
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.color_palette"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.color_palette"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             // Color grid - 8x2 layout with larger cells
             int gridX = dx + 12, gridY = dy + 28;
@@ -4009,7 +5033,7 @@ public class SimpleEditorScreen extends Screen {
             hoveredColor = -1;
 
             // Row labels
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_bright"), dx + 10, gridY - 1, C3, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_bright"), dx + 10, gridY - 1, UiTheme.textDim(), false);
             // Bright colors (a-f + white)
             int[] brightOrder = {6, 14, 10, 11, 9, 13, 12, 15}; // gold, yellow, green, aqua, blue, pink, red, white
             for (int i = 0; i < 8; i++) {
@@ -4025,13 +5049,13 @@ public class SimpleEditorScreen extends Screen {
                     String tip = "&" + MC_COLOR_CODES[ci] + " " + (lang != null && lang.startsWith("zh") ? MC_COLOR_NAMES_ZH[ci] : MC_COLOR_CODES[ci]);
                     int tipW = font.width(tip) + 8;
                     g.fill(mx + 8, my - 14, mx + 8 + tipW, my - 1, 0xF0101020);
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tip, mx + 12, my - 12, C1, false);
+                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tip, mx + 12, my - 12, UiTheme.textMain(), false);
                 }
             }
 
             // Dark colors
             int darkY = gridY + cellH + 14;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_dark"), dx + 10, darkY - 1, C3, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_dark"), dx + 10, darkY - 1, UiTheme.textDim(), false);
             int[] darkOrder = {0, 8, 4, 5, 1, 3, 2, 7}; // black, dark_gray, dark_red, purple, dark_blue, dark_aqua, dark_green, gray
             for (int i = 0; i < 8; i++) {
                 int ci = darkOrder[i];
@@ -4048,13 +5072,13 @@ public class SimpleEditorScreen extends Screen {
                     String tip = "&" + MC_COLOR_CODES[ci] + " " + (lang != null && lang.startsWith("zh") ? MC_COLOR_NAMES_ZH[ci] : MC_COLOR_CODES[ci]);
                     int tipW = font.width(tip) + 8;
                     g.fill(mx + 8, my - 14, mx + 8 + tipW, my - 1, 0xF0101020);
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tip, mx + 12, my - 12, C1, false);
+                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tip, mx + 12, my - 12, UiTheme.textMain(), false);
                 }
             }
 
             // Format codes - pill-style buttons
             int fmtY = darkY + cellH + 20;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.format_codes"), dx + 10, fmtY, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.format_codes"), dx + 10, fmtY, UiTheme.textDim(), false);
             fmtY += 14;
             int fmtX = gridX;
             String lang = Minecraft.getInstance().options.languageCode;
@@ -4064,10 +5088,10 @@ public class SimpleEditorScreen extends Screen {
                 int pillW = font.width(fLabel) + 14;
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 boolean hover = mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18;
-                g.fill(fmtX, fmtY, fmtX + pillW, fmtY + 18, hover ? ACCENT : 0x30FFFFFF);
+                g.fill(fmtX, fmtY, fmtX + pillW, fmtY + 18, hover ? accentColor() : 0x30FFFFFF);
                 // Rounded feel with border
-                drawBorder(g, fmtX, fmtY, pillW, 18, hover ? ACCENT : 0x20FFFFFF);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, fLabel, fmtX + 7, fmtY + 5, hover ? C1 : C2, false);
+                drawBorder(g, fmtX, fmtY, pillW, 18, hover ? accentColor() : 0x20FFFFFF);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, fLabel, fmtX + 7, fmtY + 5, hover ? UiTheme.textMain() : UiTheme.textDim(), false);
                 fmtX += pillW + 6;
             }
 
@@ -4075,7 +5099,7 @@ public class SimpleEditorScreen extends Screen {
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             boolean bh2 = mx >= backX && mx < backX + backW && my >= backY && my < backY + 20;
             g.fill(backX, backY, backX + backW, backY + 20, bh2 ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.back"), backX + (backW - font.width(tr("ankinbt.simple.back"))) / 2, backY + 6, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.back"), backX + (backW - font.width(tr("ankinbt.simple.back"))) / 2, backY + 6, UiTheme.textDim(), false);
         }
 
         @Override
@@ -4093,7 +5117,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = gridY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     textEditor.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    restoreTextEditor();
+                    activeSubEditor = textEditor;
                     return true;
                 }
             }
@@ -4106,7 +5130,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = darkY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     textEditor.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    restoreTextEditor();
+                    activeSubEditor = textEditor;
                     return true;
                 }
             }
@@ -4122,7 +5146,7 @@ public class SimpleEditorScreen extends Screen {
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 if (mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18) {
                     textEditor.insertAtCursor("&" + MC_FORMAT_CODES[i]);
-                    restoreTextEditor();
+                    activeSubEditor = textEditor;
                     return true;
                 }
                 fmtX += pillW + 6;
@@ -4131,15 +5155,10 @@ public class SimpleEditorScreen extends Screen {
             // Back button
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             if (mx >= backX && mx < backX + backW && my >= backY && my < backY + 20) {
-                restoreTextEditor();
+                activeSubEditor = textEditor;
                 return true;
             }
             return true;
-        }
-
-        private void restoreTextEditor() {
-            textEditor.focusActiveBox();
-            activeSubEditor = textEditor;
         }
 
         @Override public boolean keyPressed(int key, int scan, int mod) { return true; }
@@ -4156,16 +5175,16 @@ public class SimpleEditorScreen extends Screen {
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 10, 340), dh = 260;
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.color_palette"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.color_palette"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             int gridX = dx + 12, gridY = dy + 28;
             int cellW = (dw - 24) / 8, cellH = 28;
 
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_bright"), dx + 10, gridY - 1, C3, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_bright"), dx + 10, gridY - 1, UiTheme.textDim(), false);
             int[] brightOrder = {6, 14, 10, 11, 9, 13, 12, 15};
             for (int i = 0; i < 8; i++) {
                 int ci = brightOrder[i];
@@ -4176,7 +5195,7 @@ public class SimpleEditorScreen extends Screen {
             }
 
             int darkY = gridY + cellH + 14;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_dark"), dx + 10, darkY - 1, C3, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.palette_dark"), dx + 10, darkY - 1, UiTheme.textDim(), false);
             int[] darkOrder = {0, 8, 4, 5, 1, 3, 2, 7};
             for (int i = 0; i < 8; i++) {
                 int ci = darkOrder[i];
@@ -4188,7 +5207,7 @@ public class SimpleEditorScreen extends Screen {
             }
 
             int fmtY = darkY + cellH + 20;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.format_codes"), dx + 10, fmtY, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.format_codes"), dx + 10, fmtY, UiTheme.textDim(), false);
             fmtY += 14;
             int fmtX = gridX;
             String lang = Minecraft.getInstance().options.languageCode;
@@ -4198,16 +5217,16 @@ public class SimpleEditorScreen extends Screen {
                 int pillW = font.width(fLabel) + 14;
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 boolean hover = mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18;
-                g.fill(fmtX, fmtY, fmtX + pillW, fmtY + 18, hover ? ACCENT : 0x30FFFFFF);
-                drawBorder(g, fmtX, fmtY, pillW, 18, hover ? ACCENT : 0x20FFFFFF);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, fLabel, fmtX + 7, fmtY + 5, hover ? C1 : C2, false);
+                g.fill(fmtX, fmtY, fmtX + pillW, fmtY + 18, hover ? accentColor() : 0x30FFFFFF);
+                drawBorder(g, fmtX, fmtY, pillW, 18, hover ? accentColor() : 0x20FFFFFF);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, fLabel, fmtX + 7, fmtY + 5, hover ? UiTheme.textMain() : UiTheme.textDim(), false);
                 fmtX += pillW + 6;
             }
 
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             boolean bh2 = mx >= backX && mx < backX + backW && my >= backY && my < backY + 20;
             g.fill(backX, backY, backX + backW, backY + 20, bh2 ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.back"), backX + (backW - font.width(tr("ankinbt.simple.back"))) / 2, backY + 6, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.back"), backX + (backW - font.width(tr("ankinbt.simple.back"))) / 2, backY + 6, UiTheme.textDim(), false);
         }
 
         @Override
@@ -4224,7 +5243,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = gridY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     parent.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    restoreParent();
+                    activeSubEditor = parent;
                     return true;
                 }
             }
@@ -4236,7 +5255,7 @@ public class SimpleEditorScreen extends Screen {
                 int cx = gridX + i * cellW, cy = darkY + 8;
                 if (mx >= cx && mx < cx + cellW - 2 && my >= cy && my < cy + cellH) {
                     parent.insertAtCursor("&" + MC_COLOR_CODES[ci]);
-                    restoreParent();
+                    activeSubEditor = parent;
                     return true;
                 }
             }
@@ -4251,7 +5270,7 @@ public class SimpleEditorScreen extends Screen {
                 if (fmtX + pillW > dx + dw - 12) { fmtX = gridX; fmtY += 22; }
                 if (mx >= fmtX && mx < fmtX + pillW && my >= fmtY && my < fmtY + 18) {
                     parent.insertAtCursor("&" + MC_FORMAT_CODES[i]);
-                    restoreParent();
+                    activeSubEditor = parent;
                     return true;
                 }
                 fmtX += pillW + 6;
@@ -4259,15 +5278,10 @@ public class SimpleEditorScreen extends Screen {
 
             int backY = dy + dh - 26, backW = 70, backX = dx + (dw - backW) / 2;
             if (mx >= backX && mx < backX + backW && my >= backY && my < backY + 20) {
-                restoreParent();
+                activeSubEditor = parent;
                 return true;
             }
             return true;
-        }
-
-        private void restoreParent() {
-            parent.focusInput();
-            activeSubEditor = parent;
         }
 
         @Override public boolean keyPressed(int key, int scan, int mod) { return true; }
@@ -4275,18 +5289,14 @@ public class SimpleEditorScreen extends Screen {
     }
 
     class PotionPickerSubEditor implements SubEditor {
-        private final FlatEditBox searchBox;
+        private final TextEditBuffer search = new TextEditBuffer("");
         private final List<String> filtered = new ArrayList<>();
         private int hoverIdx = -1;
         private int selectedIdx = 0;
         private int scrollOff = 0;
+        private boolean draggingText = false;
 
         PotionPickerSubEditor() {
-            searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
-            searchBox.setMaxLength(128);
-            searchBox.setHint(Component.translatable("ankinbt.search.hint"));
-            searchBox.setResponder(value -> filter());
-            searchBox.setFocused(true);
             filter();
             String current = getPotionId();
             for (int i = 0; i < filtered.size(); i++) {
@@ -4298,7 +5308,7 @@ public class SimpleEditorScreen extends Screen {
         }
 
         private void filter() {
-            String q = searchBox.getValue().toLowerCase(Locale.ROOT);
+            String q = search.value().toLowerCase(Locale.ROOT);
             filtered.clear();
             for (String id : POTION_IDS) {
                 if (q.isEmpty()
@@ -4315,17 +5325,15 @@ public class SimpleEditorScreen extends Screen {
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 20, 380), dh = Math.min(h - 20, 250);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_potion"), dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_potion"), dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             int sx = dx + 10, sy = dy + 30, sw = dw - 20, sh = 18;
-            searchBox.setX(sx);
-            searchBox.setY(sy);
-            searchBox.setWidth(sw);
-            searchBox.setFocused(true);
-            searchBox.renderWidget(g, mx, my, 0.0f);
+            g.fill(sx, sy, sx + sw, sy + sh, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, sx, sy, sw, sh, accentColor());
+            renderTextBuffer(g, font, search, sx, sy, sw, sh, true, tr("ankinbt.search.hint"));
 
             int listY = sy + sh + 6;
             int maxItems = Math.max(1, (dh - 92) / 18);
@@ -4341,30 +5349,30 @@ public class SimpleEditorScreen extends Screen {
                 g.renderItem(ItemEditorVisuals.potionRowIcon(id), dx + 14, ry + 1);
                 String label = potionDisplayName(id);
                 if (font.width(label) > dw - 64) label = font.plainSubstrByWidth(label, dw - 68) + "..";
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, dx + 36, ry + 5, selected ? C1 : C2, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, dx + 36, ry + 5, selected ? UiTheme.textMain() : UiTheme.textDim(), false);
             }
 
             int by = dy + dh - 28, bw = 70, bh2 = 20;
             int cancelX = dx + dw / 2 - bw - 6;
             boolean ch = mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh2;
             g.fill(cancelX, by, cancelX + bw, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, UiTheme.textDim(), false);
             int okX = dx + dw / 2 + 6;
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
             g.fill(okX, by, okX + bw, by + bh2, oh ? accentColor() : accentColor());
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, C1, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, UiTheme.textMain(), false);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            draggingText = false;
             int dw = Math.min(w - 20, 380), dh = Math.min(h - 20, 250);
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            int sx = dx + 10, sy = dy + 30, sw = dw - 20;
-            searchBox.setX(sx);
-            searchBox.setY(sy);
-            searchBox.setWidth(sw);
-            if (searchBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) {
-                searchBox.setFocused(true);
+            int sx = dx + 10, sy = dy + 30, sw = dw - 20, sh = 18;
+            if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) {
+                search.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, search,
+                        (int) Math.round(mx) - sx - 4, sw - 8), false);
+                draggingText = btn == 0;
                 return true;
             }
             int by = dy + dh - 28, bw = 70, bh2 = 20;
@@ -4381,23 +5389,42 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            int dw = Math.min(w - 20, 380), dh = Math.min(h - 20, 250);
+            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+            int sx = dx + 10, sy = dy + 30, sw = dw - 20, sh = 18;
+            if (my >= sy - 8 && my <= sy + sh + 8) {
+                search.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, search,
+                        (int) Math.round(mx) - sx - 4, sw - 8), true);
+                filter();
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
+        }
+
+        @Override
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { confirm(); return true; }
-            if (searchBox.keyPressed(new KeyEvent(key, scan, mod))) return true;
             if (key == 264 && selectedIdx < filtered.size() - 1) { selectedIdx++; if (selectedIdx >= scrollOff + 8) scrollOff++; return true; }
             if (key == 265 && selectedIdx > 0) { selectedIdx--; if (selectedIdx < scrollOff) scrollOff = selectedIdx; return true; }
+            String before = search.value();
+            if (search.keyPressed(key, mod)) { if (!before.equals(search.value())) filter(); return true; }
             return true;
         }
 
         @Override
         public boolean charTyped(char c, int mod) {
-            if (searchBox.charTyped(new CharacterEvent(c))) return true;
+            if (search.charTyped(c)) { filter(); return true; }
             return true;
-        }
-
-        @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return searchBox.preeditUpdated(event);
         }
 
         @Override
@@ -4416,9 +5443,9 @@ public class SimpleEditorScreen extends Screen {
     }
 
     class PotionEffectSubEditor implements SubEditor {
-        private final FlatEditBox searchBox;
-        private final FlatEditBox durationBox;
-        private final FlatEditBox amplifierBox;
+        private final TextEditBuffer search = new TextEditBuffer("");
+        private final TextEditBuffer duration = new TextEditBuffer("600");
+        private final TextEditBuffer amplifier = new TextEditBuffer("0");
         private final List<String> filtered = new ArrayList<>();
         private final Map<String, EffectDraft> selectedEffects = new LinkedHashMap<>();
         private String activeEffectId = null;
@@ -4432,6 +5459,7 @@ public class SimpleEditorScreen extends Screen {
         private boolean ambient = false;
         private boolean particles = true;
         private boolean icon = true;
+        private boolean draggingText = false;
 
         private class EffectDraft {
             String duration;
@@ -4449,27 +5477,119 @@ public class SimpleEditorScreen extends Screen {
             }
         }
 
+        /**
+         * Shared geometry for the effect picker. Keeping one calculation for
+         * painting and input prevents the compact layout from drifting or
+         * allowing rows to escape below the dialog footer.
+         */
+        private record EffectLayout(
+                int dx, int dy, int dw, int dh,
+                int leftX, int leftW, int rightX, int rightW,
+                int searchY, int searchH, int listY, int listBottom, int maxItems,
+                int selectedHeaderY, int selectedY, int selectedListH, int selectedRows,
+                int formY, int durationLabelX, int durationX, int durationY,
+                int amplifierLabelX, int amplifierX, int amplifierY,
+                int fieldW, int toggleY, int toggleGap, int toggleW,
+                int buttonY, int buttonW, int buttonH, int cancelX, int confirmX,
+                boolean stackedFields) {
+        }
+
+        private EffectLayout layout(int x, int y, int w, int h) {
+            int dw = Math.max(1, Math.min(760, Math.max(320, w - 12)));
+            dw = Math.min(dw, Math.max(1, w - 4));
+            int dh = Math.max(1, Math.min(420, Math.max(190, h - 8)));
+            dh = Math.min(dh, Math.max(1, h - 4));
+            int dx = x + Math.max(0, (w - dw) / 2);
+            int dy = y + Math.max(0, (h - dh) / 2);
+
+            int inner = 10;
+            int gap = 10;
+            int available = Math.max(2, dw - inner * 2 - gap);
+            int leftW = available < 330
+                    ? Math.max(120, available * 43 / 100)
+                    : Math.max(190, Math.min(340, available * 45 / 100));
+            leftW = Math.min(leftW, Math.max(1, available - 120));
+            int rightW = Math.max(1, available - leftW);
+            int leftX = dx + inner;
+            int rightX = leftX + leftW + gap;
+
+            int bodyTop = dy + 30;
+            int bodyBottom = Math.max(bodyTop + 1, dy + dh - 32);
+            int searchY = bodyTop;
+            int searchH = 22;
+            int listY = searchY + searchH + 7;
+            int listBottom = Math.max(listY + 1, bodyBottom);
+            int maxItems = Math.max(1, (listBottom - listY) / 22);
+
+            int selectedHeaderY = bodyTop;
+            int selectedY = selectedHeaderY + 29;
+            int availableRight = Math.max(36, bodyBottom - selectedY);
+            int selectedListH = Math.max(36, Math.min(126, availableRight - 78));
+            if (selectedY + selectedListH > bodyBottom - 38) {
+                selectedListH = Math.max(24, bodyBottom - selectedY - 38);
+            }
+            int selectedRows = Math.max(1, selectedListH / 22);
+            int formY = selectedY + selectedListH + 8;
+
+            int durationLabelW = Math.min(52, Math.max(28,
+                    SimpleEditorScreen.this.font.width(tr("ankinbt.simple.effect_duration"))));
+            int amplifierLabelW = Math.min(52, Math.max(28,
+                    SimpleEditorScreen.this.font.width(tr("ankinbt.simple.effect_amplifier"))));
+            boolean stacked = rightW < 245;
+            int fieldW;
+            int durationLabelX = rightX + 6;
+            int durationX;
+            int durationY = formY + 18;
+            int amplifierLabelX;
+            int amplifierX;
+            int amplifierY;
+            if (stacked) {
+                fieldW = Math.max(40, rightW - 12 - durationLabelW - 4);
+                durationX = durationLabelX + durationLabelW + 4;
+                amplifierLabelX = rightX + 6;
+                amplifierX = amplifierLabelX + amplifierLabelW + 4;
+                amplifierY = durationY + 23;
+            } else {
+                int fieldsGap = 9;
+                int availableFields = Math.max(72,
+                        rightW - 12 - durationLabelW - amplifierLabelW - fieldsGap - 8);
+                fieldW = Math.max(40, Math.min(86, availableFields / 2));
+                durationX = durationLabelX + durationLabelW + 4;
+                amplifierLabelX = durationX + fieldW + fieldsGap;
+                amplifierX = amplifierLabelX + amplifierLabelW + 4;
+                amplifierY = durationY;
+            }
+            int toggleY = stacked ? amplifierY + 23 : durationY + 23;
+            int toggleGap = 4;
+            int toggleW = Math.max(38, (rightW - 12 - toggleGap * 2) / 3);
+
+            int buttonH = 20;
+            int buttonY = dy + dh - buttonH - 7;
+            int buttonW = Math.max(62, Math.min(88, (dw - 34) / 2));
+            int cancelX = dx + dw / 2 - buttonW - 5;
+            int confirmX = dx + dw / 2 + 5;
+            return new EffectLayout(dx, dy, dw, dh, leftX, leftW, rightX, rightW,
+                    searchY, searchH, listY, listBottom, maxItems,
+                    selectedHeaderY, selectedY, selectedListH, selectedRows,
+                    formY, durationLabelX, durationX, durationY,
+                    amplifierLabelX, amplifierX, amplifierY, fieldW,
+                    toggleY, toggleGap, toggleW, buttonY, buttonW, buttonH,
+                    cancelX, confirmX, stacked);
+        }
+
+        private int visibleEffectRows() {
+            // During construction the screen geometry is not initialized yet.
+            // Keep the previous keyboard/filter fallback until the first frame.
+            if (contentW <= 0 || contentH <= 0) return 7;
+            return Math.max(1, layout(contentX, contentY, contentW, contentH).maxItems());
+        }
+
         PotionEffectSubEditor() {
-            searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
-            searchBox.setMaxLength(128);
-            searchBox.setHint(Component.translatable("ankinbt.search.hint"));
-            searchBox.setResponder(value -> filter());
-            searchBox.setFocused(true);
-            durationBox = numericBox("600");
-            amplifierBox = numericBox("0");
             loadExistingEffects();
             filter();
             if (activeEffectId == null && !selectedEffects.isEmpty()) {
                 setActiveEffect(selectedEffects.keySet().iterator().next());
             }
-        }
-
-        private FlatEditBox numericBox(String value) {
-            FlatEditBox box = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
-            box.setMaxLength(8);
-            box.setValue(value);
-            box.setResponder(v -> syncActiveDraft());
-            return box;
         }
 
         private void loadExistingEffects() {
@@ -4491,7 +5611,7 @@ public class SimpleEditorScreen extends Screen {
         }
 
         private void filter() {
-            String q = searchBox.getValue().toLowerCase(Locale.ROOT);
+            String q = search.value().toLowerCase(Locale.ROOT);
             filtered.clear();
             for (String id : EFFECT_IDS) {
                 if (q.isEmpty()
@@ -4501,127 +5621,161 @@ public class SimpleEditorScreen extends Screen {
                 }
             }
             selectedIdx = Math.min(selectedIdx, Math.max(0, filtered.size() - 1));
-            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, filtered.size() - 7)));
+            scrollOff = Math.max(0, Math.min(scrollOff,
+                    Math.max(0, filtered.size() - visibleEffectRows())));
         }
 
         @Override
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             lastMouseX = mx;
             lastMouseY = my;
-            int dw = Math.min(w - 20, Math.min(760, Math.max(520, w - 36))), dh = Math.min(h - 20, Math.min(360, Math.max(300, h - 30)));
-            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, accentColor());
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_effect"), dx + 10, dy + 8, C1, false);
+            EffectLayout l = layout(x, y, w, h);
+            g.fill(l.dx(), l.dy(), l.dx() + l.dw(), l.dy() + l.dh(), UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, l.dx(), l.dy(), l.dw(), l.dh(), accentColor());
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_effect"), l.dx() + 10, l.dy() + 8, UiTheme.textMain(), false);
             String count = String.format(tr("ankinbt.simple.potion_selected_count"), selectedEffects.size());
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, count, dx + dw - 10 - font.width(count), dy + 8, C2, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, count,
+                    l.dx() + l.dw() - 10 - font.width(count), l.dy() + 8, UiTheme.textDim(), false);
+            g.fill(l.dx() + 1, l.dy() + 25, l.dx() + l.dw() - 1, l.dy() + 26, UiTheme.themedBorder(1f, 1f));
 
-            int leftX = dx + 10, leftW = Math.max(230, Math.min(320, (dw - 34) * 45 / 100));
-            int rightX = leftX + leftW + 12, rightW = dw - (rightX - dx) - 10;
-            int sx = leftX, sy = dy + 30, sw = leftW, sh = 18;
-            renderSmallFlatEditBox(g, searchBox, sx, sy, sw, sh, focusField == 0, mx, my);
+            g.fill(l.leftX(), l.searchY(), l.leftX() + l.leftW(), l.listBottom(), UiTheme.card(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, l.leftX(), l.searchY(), l.leftW(), l.listBottom() - l.searchY(), UiTheme.themedBorder(0.9f, 1f));
+            renderSmallTextBox(g, font, l.leftX() + 6, l.searchY() + 5, l.leftW() - 12, l.searchH(),
+                    search, focusField == 0, tr("ankinbt.search.hint"));
 
-            int listY = sy + sh + 6;
-            int bottomSafeY = dy + dh - 34;
-            int maxItems = Math.max(5, Math.min(9, (bottomSafeY - listY) / 18));
+            int listY = l.listY();
+            int maxItems = l.maxItems();
             hoverIdx = -1;
             int end = Math.min(filtered.size(), scrollOff + maxItems);
+            g.enableScissor(l.leftX() + 1, listY, l.leftX() + l.leftW() - 1, l.listBottom());
             for (int i = scrollOff; i < end; i++) {
                 String id = filtered.get(i);
-                int ry = listY + (i - scrollOff) * 18;
-                boolean hover = mx >= leftX && mx < leftX + leftW && my >= ry && my < ry + 18;
+                int ry = listY + (i - scrollOff) * 22;
+                boolean hover = mx >= l.leftX() && mx < l.leftX() + l.leftW() && my >= ry && my < ry + 22;
                 if (hover) hoverIdx = i;
                 boolean focused = i == selectedIdx;
                 boolean checked = selectedEffects.containsKey(id);
                 boolean active = id.equals(activeEffectId);
-                g.fill(leftX, ry, leftX + leftW, ry + 17, active ? SELECT_BG : (checked ? 0x382A2A42 : (hover ? HOVER : 0x00000000)));
-                if (focused && !active) drawBorder(g, leftX, ry, leftW, 17, 0x668EA0FF);
-                g.renderItem(ItemEditorVisuals.effectIconStack(id), leftX + 4, ry + 1);
+                int rowFill = active ? SELECT_BG : (checked ? 0x382A2A42 : (hover ? HOVER : 0x18000000));
+                g.fill(l.leftX() + 5, ry, l.leftX() + l.leftW() - 5, ry + 21, rowFill);
+                if (focused && !active) drawBorder(g, l.leftX() + 5, ry, l.leftW() - 10, 21, 0x668EA0FF);
+                g.renderItem(ItemEditorVisuals.effectIconStack(id), l.leftX() + 9, ry + 2);
                 String label = effectDisplayName(id);
-                if (font.width(label) > leftW - 48) label = font.plainSubstrByWidth(label, leftW - 52) + "..";
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, leftX + 26, ry + 5, checked ? C1 : C2, false);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, checked ? "-" : "+", leftX + leftW - 14, ry + 5, checked ? C1 : C3, false);
+                if (font.width(label) > l.leftW() - 58) label = font.plainSubstrByWidth(label, Math.max(20, l.leftW() - 62)) + "..";
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, l.leftX() + 32, ry + 6,
+                        checked ? UiTheme.textMain() : UiTheme.textDim(), false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, checked ? "-" : "+",
+                        l.leftX() + l.leftW() - 18, ry + 6, checked ? UiTheme.textMain() : UiTheme.textDim(), false);
+            }
+            g.disableScissor();
+            if (filtered.size() > maxItems) {
+                int trackX = l.leftX() + l.leftW() - 5;
+                int trackY = listY;
+                int trackH = Math.max(1, l.listBottom() - listY);
+                int thumbH = Math.max(14, trackH * maxItems / Math.max(maxItems, filtered.size()));
+                int maxScroll = Math.max(1, filtered.size() - maxItems);
+                int thumbY = trackY + (trackH - thumbH) * scrollOff / maxScroll;
+                g.fill(trackX, trackY, trackX + 2, trackY + trackH, SB_TRACK);
+                g.fill(trackX, thumbY, trackX + 2, thumbY + thumbH, accentColor());
             }
 
-            g.fill(rightX, sy, rightX + rightW, sy + 18, 0x4012121E);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, count, rightX + 6, sy + 5, C2, false);
-            int selectedY = sy + 24;
-            int selectedListH = Math.min(92, Math.max(44, dh - 218));
-            int selectedRows = Math.max(1, selectedListH / 22);
-            selectedScrollOff = Math.max(0, Math.min(selectedScrollOff, Math.max(0, selectedEffects.size() - selectedRows)));
+            g.fill(l.rightX(), l.selectedHeaderY(), l.rightX() + l.rightW(), l.selectedY() - 6,
+                    UiTheme.card(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, l.rightX(), l.selectedHeaderY(), l.rightW(), l.selectedY() - l.selectedHeaderY() - 6,
+                    UiTheme.themedBorder(0.9f, 1f));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.potion_selected_list"),
+                    l.rightX() + 6, l.selectedHeaderY() + 7, UiTheme.textMain(), false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, count,
+                    l.rightX() + l.rightW() - 6 - font.width(count), l.selectedHeaderY() + 7, UiTheme.textDim(), false);
+            selectedScrollOff = Math.max(0, Math.min(selectedScrollOff,
+                    Math.max(0, selectedEffects.size() - l.selectedRows())));
             int idx = 0;
             int drawn = 0;
+            g.enableScissor(l.rightX() + 1, l.selectedY(), l.rightX() + l.rightW() - 1,
+                    l.selectedY() + l.selectedListH());
             for (Map.Entry<String, EffectDraft> entry : selectedEffects.entrySet()) {
                 if (idx++ < selectedScrollOff) continue;
-                if (drawn >= selectedRows) break;
+                if (drawn >= l.selectedRows()) break;
                 String id = entry.getKey();
                 EffectDraft draft = entry.getValue();
-                int ry = selectedY + drawn * 22;
+                int ry = l.selectedY() + drawn * 22;
                 boolean active = id.equals(activeEffectId);
-                g.fill(rightX, ry, rightX + rightW, ry + 20, active ? SELECT_BG : 0x2412121E);
-                g.renderItem(ItemEditorVisuals.effectIconStack(id), rightX + 4, ry + 2);
+                g.fill(l.rightX() + 5, ry, l.rightX() + l.rightW() - 5, ry + 21,
+                        active ? SELECT_BG : 0x2412121E);
+                g.renderItem(ItemEditorVisuals.effectIconStack(id), l.rightX() + 9, ry + 2);
                 String label = effectDisplayName(id);
                 int metaW = font.width(draft.duration + " / " + draft.amplifier);
-                if (font.width(label) > rightW - 58 - metaW) label = font.plainSubstrByWidth(label, Math.max(40, rightW - 62 - metaW)) + "..";
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, rightX + 26, ry + 6, active ? C1 : C2, false);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, draft.duration + " / " + draft.amplifier, rightX + rightW - 28 - metaW, ry + 6, C3, false);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, "X", rightX + rightW - 14, ry + 6, C2, false);
+                if (font.width(label) > l.rightW() - 62 - metaW) {
+                    label = font.plainSubstrByWidth(label, Math.max(20, l.rightW() - 66 - metaW)) + "..";
+                }
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, label, l.rightX() + 32, ry + 6,
+                        active ? UiTheme.textMain() : UiTheme.textDim(), false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, draft.duration + " / " + draft.amplifier,
+                        l.rightX() + l.rightW() - 28 - metaW, ry + 6, UiTheme.textDim(), false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, "×", l.rightX() + l.rightW() - 17, ry + 6,
+                        UiTheme.textDim(), false);
                 drawn++;
             }
-            if (selectedEffects.size() > selectedRows) {
-                int trackX = rightX + rightW - 4;
-                int trackY = selectedY;
-                int trackH = selectedRows * 22 - 2;
+            g.disableScissor();
+            if (selectedEffects.size() > l.selectedRows()) {
+                int trackX = l.rightX() + l.rightW() - 4;
+                int trackY = l.selectedY();
+                int trackH = Math.max(1, l.selectedListH());
                 g.fill(trackX, trackY, trackX + 3, trackY + trackH, SB_TRACK);
-                int thumbH = Math.max(12, trackH * selectedRows / Math.max(selectedRows, selectedEffects.size()));
-                int maxScroll = Math.max(1, selectedEffects.size() - selectedRows);
+                int thumbH = Math.max(12, trackH * l.selectedRows() / Math.max(l.selectedRows(), selectedEffects.size()));
+                int maxScroll = Math.max(1, selectedEffects.size() - l.selectedRows());
                 int thumbY = trackY + (trackH - thumbH) * selectedScrollOff / maxScroll;
                 g.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, accentColor());
             }
 
-            int formY = selectedY + selectedListH + 12;
+            int formY = l.formY();
+            g.enableScissor(l.rightX(), formY, l.rightX() + l.rightW(), l.buttonY() - 3);
             if (activeEffectId == null || !selectedEffects.containsKey(activeEffectId)) {
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.select_effect_first"), rightX + 6, formY + 8, C3, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.select_effect_first"),
+                        l.rightX() + 6, formY + 8, UiTheme.textDim(), false);
             } else {
                 String activeLabel = effectDisplayName(activeEffectId);
-                if (font.width(activeLabel) > rightW - 10) activeLabel = font.plainSubstrByWidth(activeLabel, rightW - 14) + "..";
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, activeLabel, rightX + 6, formY, C1, false);
-                int editY = formY + 18;
-                int fieldW = Math.max(50, Math.min(82, (rightW - 94) / 2));
-                int durLabelW = Math.min(46, Math.max(32, font.width(tr("ankinbt.simple.effect_duration"))));
-                int ampLabelW = Math.min(38, Math.max(26, font.width(tr("ankinbt.simple.effect_amplifier"))));
-                int durX = rightX + 6 + durLabelW + 4;
-                int ampX = Math.min(rightX + rightW - fieldW, durX + fieldW + 42);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.effect_duration"), rightX + 6, editY + 5, C2, false);
-                renderSmallFlatEditBox(g, durationBox, durX, editY, fieldW, 18, focusField == 1, mx, my);
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.effect_amplifier"), ampX - ampLabelW - 4, editY + 5, C2, false);
-                renderSmallFlatEditBox(g, amplifierBox, ampX, editY, fieldW, 18, focusField == 2, mx, my);
-                int toggleY = editY + 24;
-                int toggleGap = 4;
-                int toggleW = Math.max(42, (rightW - 12 - toggleGap * 2) / 3);
-                renderToggle(g, font, mx, my, rightX + 6, toggleY, toggleW, tr("ankinbt.simple.effect_ambient"), ambient);
-                renderToggle(g, font, mx, my, rightX + 6 + toggleW + toggleGap, toggleY, toggleW, tr("ankinbt.simple.effect_particles"), particles);
-                renderToggle(g, font, mx, my, rightX + 6 + (toggleW + toggleGap) * 2, toggleY, toggleW, tr("ankinbt.simple.effect_icon"), icon);
+                if (font.width(activeLabel) > l.rightW() - 12) activeLabel = font.plainSubstrByWidth(activeLabel, Math.max(20, l.rightW() - 16)) + "..";
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, activeLabel,
+                        l.rightX() + 6, formY, UiTheme.textMain(), false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.effect_duration"),
+                        l.durationLabelX(), l.durationY() + 5, UiTheme.textDim(), false);
+                renderSmallTextBox(g, font, l.durationX(), l.durationY(), l.fieldW(), 18,
+                        duration, focusField == 1, "");
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.effect_amplifier"),
+                        l.amplifierLabelX(), l.amplifierY() + 5, UiTheme.textDim(), false);
+                renderSmallTextBox(g, font, l.amplifierX(), l.amplifierY(), l.fieldW(), 18,
+                        amplifier, focusField == 2, "");
+                renderToggle(g, font, mx, my, l.rightX() + 6, l.toggleY(), l.toggleW(),
+                        tr("ankinbt.simple.effect_ambient"), ambient);
+                renderToggle(g, font, mx, my, l.rightX() + 6 + l.toggleW() + l.toggleGap(), l.toggleY(), l.toggleW(),
+                        tr("ankinbt.simple.effect_particles"), particles);
+                renderToggle(g, font, mx, my, l.rightX() + 6 + (l.toggleW() + l.toggleGap()) * 2, l.toggleY(), l.toggleW(),
+                        tr("ankinbt.simple.effect_icon"), icon);
             }
+            g.disableScissor();
 
-            int by = dy + dh - 28, bw = 70, bh2 = 20;
-            int cancelX = dx + dw / 2 - bw - 6;
-            boolean ch = mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh2;
-            g.fill(cancelX, by, cancelX + bw, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, C2, false);
-            int okX = dx + dw / 2 + 6;
-            boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
-            g.fill(okX, by, okX + bw, by + bh2, oh ? accentColor() : accentColor());
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.add.confirm"), okX + (bw - font.width(tr("ankinbt.add.confirm"))) / 2, by + 6, C1, false);
+            boolean ch = mx >= l.cancelX() && mx < l.cancelX() + l.buttonW() && my >= l.buttonY() && my < l.buttonY() + l.buttonH();
+            g.fill(l.cancelX(), l.buttonY(), l.cancelX() + l.buttonW(), l.buttonY() + l.buttonH(), ch ? BTN_HOVER : BTN_BG);
+            drawBorder(g, l.cancelX(), l.buttonY(), l.buttonW(), l.buttonH(), UiTheme.themedBorder(0.9f, 1f));
+            String cancel = tr("ankinbt.edit.cancel");
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, cancel,
+                    l.cancelX() + (l.buttonW() - font.width(cancel)) / 2, l.buttonY() + 6,
+                    UiTheme.textDim(), false);
+            boolean oh = mx >= l.confirmX() && mx < l.confirmX() + l.buttonW() && my >= l.buttonY() && my < l.buttonY() + l.buttonH();
+            g.fill(l.confirmX(), l.buttonY(), l.confirmX() + l.buttonW(), l.buttonY() + l.buttonH(), oh ? accentColor() : UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 210));
+            drawBorder(g, l.confirmX(), l.buttonY(), l.buttonW(), l.buttonH(), accentColor());
+            String confirm = tr("ankinbt.add.confirm");
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, confirm,
+                    l.confirmX() + (l.buttonW() - font.width(confirm)) / 2, l.buttonY() + 6,
+                    UiTheme.textMain(), false);
         }
 
-        private void renderSmallFlatEditBox(GuiGraphics g, FlatEditBox box, int x, int y, int w, int h, boolean focused, int mx, int my) {
-            box.setX(x);
-            box.setY(y);
-            box.setWidth(w);
-            box.setFocused(focused);
-            box.renderWidget(g, mx, my, 0.0f);
+        private void renderSmallTextBox(GuiGraphics g, net.minecraft.client.gui.Font font, int x, int y, int w, int h,
+                                        TextEditBuffer buffer, boolean focused, String hint) {
+            g.fill(x, y, x + w, y + h, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, x, y, w, h, focused ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            renderTextBuffer(g, font, buffer, x, y, w, h, focused, hint);
         }
 
         private void renderToggle(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int bw, String label, boolean on) {
@@ -4629,23 +5783,26 @@ public class SimpleEditorScreen extends Screen {
             g.fill(x, y, x + bw, y + 18, on ? accentColor() : (hover ? BTN_HOVER : BTN_BG));
             String text = label;
             if (font.width(text) > bw - 10) text = font.plainSubstrByWidth(text, Math.max(8, bw - 14)) + "..";
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, text, x + (bw - font.width(text)) / 2, y + 5, on ? C1 : C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, text, x + (bw - font.width(text)) / 2, y + 5, on ? UiTheme.textMain() : UiTheme.textDim(), false);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-            int dw = Math.min(w - 20, Math.min(760, Math.max(520, w - 36))), dh = Math.min(h - 20, Math.min(360, Math.max(300, h - 30)));
-            int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            int leftX = dx + 10, leftW = Math.max(230, Math.min(320, (dw - 34) * 45 / 100));
-            int rightX = leftX + leftW + 12, rightW = dw - (rightX - dx) - 10;
-            int sx = leftX, sy = dy + 30, sw = leftW, sh = 18;
-            setBoxBounds(searchBox, sx, sy, sw);
-            if (searchBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) { setFocusField(0); return true; }
-            int listY = sy + sh + 6;
-            int bottomSafeY = dy + dh - 34;
-            int maxItems = Math.max(5, Math.min(9, (bottomSafeY - listY) / 18));
-            if (mx >= leftX && mx < leftX + leftW && my >= listY && my < listY + maxItems * 18) {
-                int hitIdx = scrollOff + Math.max(0, (int) ((my - listY) / 18));
+            draggingText = false;
+            EffectLayout l = layout(x, y, w, h);
+            int sx = l.leftX() + 6, sy = l.searchY() + 5, sw = l.leftW() - 12, sh = l.searchH();
+            if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) {
+                focusField = 0;
+                search.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, search,
+                        (int) Math.round(mx) - sx - 4, sw - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
+            int listY = l.listY();
+            int maxItems = l.maxItems();
+            if (mx >= l.leftX() && mx < l.leftX() + l.leftW()
+                    && my >= listY && my < l.listBottom()) {
+                int hitIdx = scrollOff + Math.max(0, (int) ((my - listY) / 22));
                 if (hitIdx >= 0 && hitIdx < filtered.size()) {
                     selectedIdx = hitIdx;
                     selectEffect(filtered.get(hitIdx), btn);
@@ -4653,63 +5810,87 @@ public class SimpleEditorScreen extends Screen {
                 }
             }
 
-            int selectedY = sy + 24;
-            int selectedListH = Math.min(92, Math.max(44, dh - 218));
-            int selectedRows = Math.max(1, selectedListH / 22);
+            int selectedY = l.selectedY();
+            int selectedListH = l.selectedListH();
+            int selectedRows = l.selectedRows();
             int selectedIdx = 0;
             for (String id : new ArrayList<>(selectedEffects.keySet())) {
                 if (selectedIdx++ < selectedScrollOff) continue;
                 int visibleIdx = selectedIdx - selectedScrollOff - 1;
                 if (visibleIdx >= selectedRows) break;
                 int ry = selectedY + visibleIdx * 22;
-                if (mx >= rightX && mx < rightX + rightW && my >= ry && my < ry + 20) {
-                    if (mx >= rightX + rightW - 24) removeSelectedEffect(id);
+                if (mx >= l.rightX() && mx < l.rightX() + l.rightW() && my >= ry && my < ry + 21) {
+                    if (mx >= l.rightX() + l.rightW() - 26) removeSelectedEffect(id);
                     else setActiveEffect(id);
                     return true;
                 }
             }
 
-            int formY = selectedY + selectedListH + 12;
-            int editY = formY + 18;
-            int fieldW = Math.max(50, Math.min(82, (rightW - 94) / 2));
-            int durLabelW = Math.min(46, Math.max(32, font.width(tr("ankinbt.simple.effect_duration"))));
-            int ampLabelW = Math.min(38, Math.max(26, font.width(tr("ankinbt.simple.effect_amplifier"))));
-            int durX = rightX + 6 + durLabelW + 4;
-            int ampX = Math.min(rightX + rightW - fieldW, durX + fieldW + 42);
-            setBoxBounds(durationBox, durX, editY, fieldW);
-            if (durationBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) { setFocusField(1); return true; }
-            setBoxBounds(amplifierBox, ampX, editY, fieldW);
-            if (amplifierBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) { setFocusField(2); return true; }
-            int toggleY = editY + 24;
-            int toggleGap = 4;
-            int toggleW = Math.max(42, (rightW - 12 - toggleGap * 2) / 3);
-            if (clickToggle(mx, my, rightX + 6, toggleY, toggleW)) { ambient = !ambient; syncActiveDraft(); return true; }
-            if (clickToggle(mx, my, rightX + 6 + toggleW + toggleGap, toggleY, toggleW)) { particles = !particles; syncActiveDraft(); return true; }
-            if (clickToggle(mx, my, rightX + 6 + (toggleW + toggleGap) * 2, toggleY, toggleW)) { icon = !icon; syncActiveDraft(); return true; }
+            if (mx >= l.durationX() && mx < l.durationX() + l.fieldW()
+                    && my >= l.durationY() && my < l.durationY() + 18) {
+                focusField = 1;
+                duration.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, duration,
+                        (int) Math.round(mx) - l.durationX() - 4, l.fieldW() - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
+            if (mx >= l.amplifierX() && mx < l.amplifierX() + l.fieldW()
+                    && my >= l.amplifierY() && my < l.amplifierY() + 18) {
+                focusField = 2;
+                amplifier.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, amplifier,
+                        (int) Math.round(mx) - l.amplifierX() - 4, l.fieldW() - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
+            if (clickToggle(mx, my, l.rightX() + 6, l.toggleY(), l.toggleW())) { ambient = !ambient; syncActiveDraft(); return true; }
+            if (clickToggle(mx, my, l.rightX() + 6 + l.toggleW() + l.toggleGap(), l.toggleY(), l.toggleW())) { particles = !particles; syncActiveDraft(); return true; }
+            if (clickToggle(mx, my, l.rightX() + 6 + (l.toggleW() + l.toggleGap()) * 2, l.toggleY(), l.toggleW())) { icon = !icon; syncActiveDraft(); return true; }
 
-            int by = dy + dh - 28, bw = 70, bh2 = 20;
-            int cancelX = dx + dw / 2 - bw - 6;
-            if (mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh2) { activeSubEditor = null; return true; }
-            int okX = dx + dw / 2 + 6;
-            if (mx >= okX && mx < okX + bw && my >= by && my < by + bh2) { confirm(); return true; }
+            if (mx >= l.cancelX() && mx < l.cancelX() + l.buttonW()
+                    && my >= l.buttonY() && my < l.buttonY() + l.buttonH()) { activeSubEditor = null; return true; }
+            if (mx >= l.confirmX() && mx < l.confirmX() + l.buttonW()
+                    && my >= l.buttonY() && my < l.buttonY() + l.buttonH()) { confirm(); return true; }
             return true;
+        }
+
+        @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            EffectLayout l = layout(x, y, w, h);
+            int sx = l.leftX() + 6, sy = l.searchY() + 5, sw = l.leftW() - 12, sh = l.searchH();
+            if (focusField == 0 && my >= sy - 8 && my <= sy + sh + 8) {
+                search.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, search,
+                        (int) Math.round(mx) - sx - 4, sw - 8), true);
+                filter();
+                return true;
+            }
+            if (focusField == 1 && my >= l.durationY() - 8 && my <= l.durationY() + 26
+                    && mx >= l.durationX() - 8 && mx <= l.durationX() + l.fieldW() + 8) {
+                duration.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, duration,
+                        (int) Math.round(mx) - l.durationX() - 4, l.fieldW() - 8), true);
+                syncActiveDraft();
+                return true;
+            }
+            if (focusField == 2 && my >= l.amplifierY() - 8 && my <= l.amplifierY() + 26
+                    && mx >= l.amplifierX() - 8 && mx <= l.amplifierX() + l.fieldW() + 8) {
+                amplifier.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, amplifier,
+                        (int) Math.round(mx) - l.amplifierX() - 4, l.fieldW() - 8), true);
+                syncActiveDraft();
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
         }
 
         private boolean clickToggle(double mx, double my, int x, int y, int bw) {
             return mx >= x && mx < x + bw && my >= y && my < y + 18;
-        }
-
-        private void setBoxBounds(FlatEditBox box, int x, int y, int w) {
-            box.setX(x);
-            box.setY(y);
-            box.setWidth(w);
-        }
-
-        private void setFocusField(int field) {
-            focusField = field;
-            searchBox.setFocused(field == 0);
-            durationBox.setFocused(field == 1);
-            amplifierBox.setFocused(field == 2);
         }
 
         private void selectEffect(String id, int btn) {
@@ -4730,10 +5911,10 @@ public class SimpleEditorScreen extends Screen {
             activeEffectId = id;
             EffectDraft draft = selectedEffects.get(id);
             if (draft == null) return;
-            durationBox.setValue(draft.duration);
-            durationBox.setCursorPosition(durationBox.getValue().length());
-            amplifierBox.setValue(draft.amplifier);
-            amplifierBox.setCursorPosition(amplifierBox.getValue().length());
+            duration.setValue(draft.duration);
+            duration.moveTo(duration.value().length(), false);
+            amplifier.setValue(draft.amplifier);
+            amplifier.moveTo(amplifier.value().length(), false);
             ambient = draft.ambient;
             particles = draft.particles;
             icon = draft.icon;
@@ -4751,8 +5932,12 @@ public class SimpleEditorScreen extends Screen {
             if (activeEffectId == null) return;
             EffectDraft draft = selectedEffects.get(activeEffectId);
             if (draft == null) return;
-            draft.duration = String.valueOf(clampPotionInt(durationBox.getValue(), 600, 1, POTION_MAX_DURATION));
-            draft.amplifier = String.valueOf(clampPotionInt(amplifierBox.getValue(), 0, 0, POTION_MAX_AMPLIFIER));
+            // Keep the active text exactly as typed while the field has focus.  Eager
+            // normalization made a Ctrl+A replacement briefly become the fallback
+            // value, so entering a custom duration or level could not complete.
+            // Bounds are enforced once when the effect list is committed.
+            draft.duration = duration.value();
+            draft.amplifier = amplifier.value();
             draft.ambient = ambient;
             draft.particles = particles;
             draft.icon = icon;
@@ -4762,14 +5947,20 @@ public class SimpleEditorScreen extends Screen {
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { confirm(); return true; }
             if (key == 32 && focusField == 0 && selectedIdx >= 0 && selectedIdx < filtered.size()) { selectEffect(filtered.get(selectedIdx), 0); return true; }
-            if (key == 258) { setFocusField((focusField + 1) % 3); return true; }
+            if (key == 258) { focusField = (focusField + 1) % 3; return true; }
             if (focusField == 0) {
-                if (key == 264 && selectedIdx < filtered.size() - 1) { selectedIdx++; if (selectedIdx >= scrollOff + 7) scrollOff++; return true; }
+                int visibleRows = visibleEffectRows();
+                if (key == 264 && selectedIdx < filtered.size() - 1) {
+                    selectedIdx++;
+                    if (selectedIdx >= scrollOff + visibleRows) scrollOff++;
+                    return true;
+                }
                 if (key == 265 && selectedIdx > 0) { selectedIdx--; if (selectedIdx < scrollOff) scrollOff = selectedIdx; return true; }
-                if (searchBox.keyPressed(new KeyEvent(key, scan, mod))) return true;
+                String before = search.value();
+                if (search.keyPressed(key, mod)) { if (!before.equals(search.value())) filter(); return true; }
             } else {
-                FlatEditBox box = focusField == 1 ? durationBox : amplifierBox;
-                if (box.keyPressed(new KeyEvent(key, scan, mod))) { syncActiveDraft(); return true; }
+                TextEditBuffer buffer = focusField == 1 ? duration : amplifier;
+                if (buffer.keyPressed(key, mod)) { syncActiveDraft(); return true; }
             }
             return true;
         }
@@ -4777,9 +5968,9 @@ public class SimpleEditorScreen extends Screen {
         @Override
         public boolean charTyped(char c, int mod) {
             if (focusField == 0) {
-                if (searchBox.charTyped(new CharacterEvent(c))) return true;
-            } else {
-                (focusField == 1 ? durationBox : amplifierBox).charTyped(new CharacterEvent(c));
+                if (search.charTyped(c)) { filter(); return true; }
+            } else if ((c >= '0' && c <= '9') || c == '-') {
+                (focusField == 1 ? duration : amplifier).charTyped(c);
                 syncActiveDraft();
                 return true;
             }
@@ -4787,32 +5978,17 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            FlatEditBox box = focusField == 0 ? searchBox : (focusField == 1 ? durationBox : amplifierBox);
-            return box.preeditUpdated(event);
-        }
-
-        @Override
         public boolean mouseScrolled(double sx, double sy) {
-            int dw = Math.min(contentW - 20, Math.min(760, Math.max(520, contentW - 36)));
-            int dh = Math.min(contentH - 20, Math.min(360, Math.max(300, contentH - 30)));
-            int dx = contentX + (contentW - dw) / 2;
-            int dy = contentY + (contentH - dh) / 2;
-            int leftX = dx + 10;
-            int leftW = Math.max(230, Math.min(320, (dw - 34) * 45 / 100));
-            int rightX = leftX + leftW + 12;
-            int rightW = dw - (rightX - dx) - 10;
-            int syBox = dy + 30;
-            int selectedY = syBox + 24;
-            int selectedListH = Math.min(92, Math.max(44, dh - 218));
-            int selectedRows = Math.max(1, selectedListH / 22);
-            if (lastMouseX >= rightX && lastMouseX < rightX + rightW && lastMouseY >= selectedY && lastMouseY < selectedY + selectedRows * 22) {
+            EffectLayout l = layout(contentX, contentY, contentW, contentH);
+            if (lastMouseX >= l.rightX() && lastMouseX < l.rightX() + l.rightW()
+                    && lastMouseY >= l.selectedY() && lastMouseY < l.selectedY() + l.selectedListH()) {
                 selectedScrollOff -= (int) sy;
-                selectedScrollOff = Math.max(0, Math.min(selectedScrollOff, Math.max(0, selectedEffects.size() - selectedRows)));
+                selectedScrollOff = Math.max(0, Math.min(selectedScrollOff,
+                        Math.max(0, selectedEffects.size() - l.selectedRows())));
                 return true;
             }
             scrollOff -= (int) sy * 3;
-            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, filtered.size() - 7)));
+            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, filtered.size() - l.maxItems())));
             return true;
         }
 
@@ -4858,13 +6034,13 @@ public class SimpleEditorScreen extends Screen {
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             int dw = Math.min(w - 20, 280), dh = 160;
             int dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
-            g.fill(dx, dy, dx + dw, dy + dh, 0xF0080810);
-            drawBorder(g, dx, dy, dw, dh, ACCENT);
+            g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+            drawBorder(g, dx, dy, dw, dh, accentColor());
 
             String title = mode == -2 ? tr("ankinbt.simple.name_color")
                     : (mode == -3 ? tr("ankinbt.simple.potion_custom_color") : tr("ankinbt.simple.dye_color_picker"));
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, dx + 10, dy + 8, C1, false);
-            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, BORDER);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, title, dx + 10, dy + 8, UiTheme.textMain(), false);
+            g.fill(dx + 1, dy + 22, dx + dw - 1, dy + 23, UiTheme.themedBorder(1f, 1f));
 
             // MC color grid
             int gridX = dx + 10, gridY = dy + 28;
@@ -4880,13 +6056,13 @@ public class SimpleEditorScreen extends Screen {
             // Preview
             int prevY = gridY + 2 * (cellH + 2) + 8;
             g.fill(dx + 10, prevY, dx + 10 + 30, prevY + 20, (selectedColor & 0xFFFFFF) | 0xFF000000);
-            drawBorder(g, dx + 10, prevY, 30, 20, BORDER);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, String.format("#%06X", selectedColor & 0xFFFFFF), dx + 46, prevY + 6, C1, false);
+            drawBorder(g, dx + 10, prevY, 30, 20, UiTheme.themedBorder(1f, 1f));
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, String.format("#%06X", selectedColor & 0xFFFFFF), dx + 46, prevY + 6, UiTheme.textMain(), false);
             if (mode == -2) {
                 String name = editStack.getHoverName().getString();
                 if (font.width(name) > dw - 86) name = font.plainSubstrByWidth(name, dw - 96) + "..";
                 Component previewName = Component.literal(name).withStyle(Style.EMPTY.withItalic(false).withColor(TextColor.fromRgb(selectedColor)));
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, previewName, dx + 46, prevY + 20, C1, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, previewName, dx + 46, prevY + 20, UiTheme.textMain(), false);
             }
 
             // Apply / Cancel
@@ -4894,12 +6070,12 @@ public class SimpleEditorScreen extends Screen {
             int cancelX = dx + dw / 2 - bw - 6;
             boolean ch = mx >= cancelX && mx < cancelX + bw && my >= by && my < by + bh2;
             g.fill(cancelX, by, cancelX + bw, by + bh2, ch ? BTN_HOVER : BTN_BG);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.cancel"), cancelX + (bw - font.width(tr("ankinbt.edit.cancel"))) / 2, by + 6, UiTheme.textDim(), false);
 
             int okX = dx + dw / 2 + 6;
             boolean oh = mx >= okX && mx < okX + bw && my >= by && my < by + bh2;
-            g.fill(okX, by, okX + bw, by + bh2, oh ? ACCENT : 0xFF4F46E5);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, C1, false);
+            g.fill(okX, by, okX + bw, by + bh2, oh ? accentColor() : 0xFF4F46E5);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.edit.apply"), okX + (bw - font.width(tr("ankinbt.edit.apply"))) / 2, by + 6, UiTheme.textMain(), false);
         }
 
         @Override
@@ -4939,7 +6115,7 @@ public class SimpleEditorScreen extends Screen {
             } else if (mode == -3) {
                 setPotionCustomColor(selectedColor);
             }
-            setStatus(tr("ankinbt.status.edited"), C2);
+            setStatus(tr("ankinbt.status.edited"), UiTheme.textDim());
             activeSubEditor = null;
         }
 
@@ -4952,38 +6128,41 @@ public class SimpleEditorScreen extends Screen {
     class EnchantPickerSubEditor implements SubEditor {
         private final List<String> allEnchants = new ArrayList<>();
         private List<String> filtered = new ArrayList<>();
-        private String searchQ = "";
-        private final FlatEditBox searchBox;
+        private final List<EnchantPickerRow> displayRows = new ArrayList<>();
+        private final TextEditBuffer searchQ = new TextEditBuffer("");
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
-        private String levelInput = "1";
-        private int levelCursor = 1;
+        private int visibleItems = 1;
+        private final TextEditBuffer levelInput = new TextEditBuffer("1");
         private boolean focusLevel = false;
+        private boolean focusSpecificFilter = false;
+        private boolean specificOnly = false;
+        private boolean specificFilterVisible = true;
+        private float specificFilterHover = 0f;
+        private boolean draggingText = false;
 
         EnchantPickerSubEditor() {
-            searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
-            searchBox.setMaxLength(128);
-            searchBox.setHint(Component.translatable("ankinbt.search.hint"));
-            searchBox.setResponder(v -> {
-                searchQ = v == null ? "" : v;
-                filter();
-            });
-            searchBox.setFocused(true);
-            try {                allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
+            try {
+                allEnchants.addAll(VersionCompat.get().getAllEnchantIds());
             } catch (Throwable ignored) {
             }
             if (allEnchants.isEmpty()) {
                 allEnchants.addAll(ENCHANT_ZH.keySet());
             }
-            Collections.sort(allEnchants);
-            filtered = new ArrayList<>(allEnchants);
+            allEnchants.sort(Comparator.comparingInt((String id) -> SimpleEditorScreen.this.enchantGroup(id))
+                    .thenComparing(SimpleEditorScreen.this::getEnchantDisplayName, String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(String::toString));
+            filter();
         }
 
         private void filter() {
-            if (searchQ.isEmpty()) { filtered = new ArrayList<>(allEnchants); }
+            String selectedId = selectedIdx >= 0 && selectedIdx < filtered.size()
+                    ? filtered.get(selectedIdx) : null;
+            String query = searchQ.value();
+            if (query.isEmpty()) { filtered = new ArrayList<>(allEnchants); }
             else {
-                String q = searchQ.toLowerCase();
+                String q = query.toLowerCase(Locale.ROOT);
                 filtered = allEnchants.stream().filter(s -> {
                     if (s.toLowerCase().contains(q)) return true;
                     // Also search Chinese name
@@ -4991,83 +6170,223 @@ public class SimpleEditorScreen extends Screen {
                     return zh != null && zh.contains(q);
                 }).collect(Collectors.toList());
             }
+            if (specificOnly) {
+                filtered.removeIf(id -> enchantGroup(id) != 0);
+            }
+            Set<String> applied = appliedEnchantIds();
+            if (!applied.isEmpty()) {
+                filtered.removeIf(id -> applied.contains(normalizeRegistryDisplayId(id)));
+            }
+            filtered.sort(Comparator.comparingInt((String id) -> SimpleEditorScreen.this.enchantGroup(id))
+                    .thenComparing(SimpleEditorScreen.this::getEnchantDisplayName, String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(String::toString));
+            selectedIdx = selectedId == null ? -1 : filtered.indexOf(selectedId);
+            rebuildDisplayRows();
             scrollOff = 0;
+        }
+
+        private void rebuildDisplayRows() {
+            displayRows.clear();
+            int lastGroup = specificOnly ? 0 : 2;
+            for (int group = 0; group <= lastGroup; group++) {
+                displayRows.add(EnchantPickerRow.header(group));
+                for (int i = 0; i < filtered.size(); i++) {
+                    if (enchantGroup(filtered.get(i)) == group) {
+                        displayRows.add(EnchantPickerRow.enchant(i, group));
+                    }
+                }
+            }
         }
 
         @Override
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
-            g.drawString(font, tr("ankinbt.simple.pick_enchant"), x + 8, y + 4, C1, false);
+            boolean tiny = h < 76;
+            boolean compact = h < 100;
+            specificFilterVisible = !tiny;
+            if (!tiny) {
+                int filterH = compact ? 13 : 15;
+                String filterLabel = tr("ankinbt.simple.enchant_filter_specific");
+                int filterW = Math.min(Math.max(76, font.width(filterLabel) + 26), Math.max(76, w - 32));
+                int filterX = x + w - 8 - filterW;
+                int filterY = y + (compact ? 1 : 2);
+                boolean filterHovered = mx >= filterX && mx < filterX + filterW
+                        && my >= filterY && my < filterY + filterH;
+                float speed = AnkiConfig.isUiAnimationEnabled()
+                        ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1f;
+                specificFilterHover = UiTheme.approach(specificFilterHover, filterHovered ? 1f : 0f, speed);
+                int filterFill = specificOnly
+                        ? UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 126)
+                        : UiTheme.withAlpha(UiTheme.baseRgb(), 220);
+                filterFill = UiTheme.mix(filterFill,
+                        UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 72), specificFilterHover);
+                g.fill(filterX, filterY, filterX + filterW, filterY + filterH, filterFill);
+                drawBorder(g, filterX, filterY, filterW, filterH,
+                        specificOnly || focusSpecificFilter ? accentColor() : UiTheme.themedBorder(0.9f, 1f));
+                Component shield = UiIcons.component(UiIcons.SHIELD);
+                g.drawString(font, shield, filterX + 4, filterY + (filterH - 8) / 2,
+                        specificOnly || filterHovered ? UiTheme.textMain() : UiTheme.textDim(), false);
+                g.drawString(font, filterLabel, filterX + 17, filterY + (filterH - 8) / 2,
+                        specificOnly || filterHovered ? UiTheme.textMain() : UiTheme.textDim(), false);
 
-            int sx = x + 8, sy = y + 18, sw = w - 16, sh = 18;
-            searchBox.setX(sx);
-            searchBox.setY(sy);
-            searchBox.setWidth(sw);
-            searchBox.setFocused(!focusLevel);
-            searchBox.renderWidget(g, mx, my, 0.0f);
+                String title = tr("ankinbt.simple.pick_enchant");
+                int titleBudget = Math.max(12, filterX - (x + 8) - 8);
+                if (font.width(title) > titleBudget) {
+                    title = font.plainSubstrByWidth(title, Math.max(8, titleBudget - 8)) + "..";
+                }
+                g.drawString(font, title, x + 8, y + (compact ? 2 : 4), UiTheme.textMain(), false);
+            }
 
-            int ly = sy + sh + 4;
-            int listH = h - 80;
-            int maxItems = listH / 16;
+            int sx = x + 8, sy = tiny ? y : y + (compact ? 12 : 18), sw = w - 16, sh = tiny ? 14 : compact ? 16 : 18;
+            g.fill(sx, sy, sx + sw, sy + sh, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, sx, sy, sw, sh, focusLevel ? UiTheme.themedBorder(1f, 1f) : accentColor());
+            renderTextBuffer(g, font, searchQ, sx, sy, sw, sh, !focusLevel, tr("ankinbt.search.hint"));
+
+            int ly = sy + sh + (tiny ? 1 : 4);
+            int by = y + h - (tiny ? 21 : compact ? 22 : 30);
+            int listH = Math.max(16, by - ly - 2);
+            visibleItems = Math.max(1, listH / 16);
+            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, displayRows.size() - visibleItems)));
             hoverIdx = -1;
-            int end = Math.min(scrollOff + maxItems, filtered.size());
+            int end = Math.min(scrollOff + visibleItems, displayRows.size());
             for (int i = scrollOff; i < end; i++) {
                 int ry = ly + (i - scrollOff) * 16;
                 boolean hovered = mx >= x + 8 && mx < x + w - 8 && my >= ry && my < ry + 16;
-                if (hovered) hoverIdx = i;
-                boolean sel = i == selectedIdx;
+                EnchantPickerRow pickerRow = displayRows.get(i);
+                if (pickerRow.header) {
+                    if (hovered) g.fill(x + 8, ry, x + w - 8, ry + 16, UiTheme.withAlpha(accentColor() & 0x00FFFFFF, 32));
+                    g.fill(x + 8, ry + 14, x + 28, ry + 16, accentColor());
+                    g.drawString(font, tr(enchantGroupKey(pickerRow.group)), x + 32, ry + 4,
+                            hovered ? UiTheme.textMain() : accentColor(), false);
+                    continue;
+                }
+                if (hovered) hoverIdx = pickerRow.enchantIndex;
+                boolean sel = pickerRow.enchantIndex == selectedIdx;
                 if (sel) g.fill(x + 8, ry, x + w - 8, ry + 16, SELECT_BG);
                 else if (hovered) g.fill(x + 8, ry, x + w - 8, ry + 16, HOVER);
-                String enchId = filtered.get(i);
+                String enchId = filtered.get(pickerRow.enchantIndex);
                 g.renderItem(ItemEditorVisuals.enchantIconStack(enchId), x + 10, ry);
                 String displayName = getEnchantDisplayName(enchId);
                 if (font.width(displayName) > w - 48) displayName = font.plainSubstrByWidth(displayName, w - 52) + "..";
-                g.drawString(font, displayName, x + 32, ry + 4, sel ? C1 : C2, false);
+                g.drawString(font, displayName, x + 32, ry + 4, sel ? UiTheme.textMain() : UiTheme.textDim(), false);
             }
 
-            int by = y + h - 30;
-            g.drawString(font, tr("ankinbt.simple.level"), x + 8, by + 6, C2, false);
+            g.drawString(font, tr("ankinbt.simple.level"), x + 8, by + 6, UiTheme.textDim(), false);
             int lx = x + 8 + font.width(tr("ankinbt.simple.level")) + 4;
-            g.fill(lx, by + 2, lx + 40, by + 20, 0xFF12121E);
-            drawBorder(g, lx, by + 2, 40, 18, focusLevel ? accentColor() : BORDER);
-            g.drawString(font, levelInput + (focusLevel && System.currentTimeMillis() % 1000 < 500 ? "_" : ""), lx + 4, by + 7, C1, false);
+            g.fill(lx, by + 2, lx + 40, by + 20, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, lx, by + 2, 40, 18, focusLevel ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            renderTextBuffer(g, font, levelInput, lx, by + 2, 40, 18, focusLevel, "");
 
             int confirmX = x + w - 78;
             boolean ch = mx >= confirmX && mx < confirmX + 70 && my >= by + 1 && my < by + 21;
             g.fill(confirmX, by + 1, confirmX + 70, by + 21, ch ? accentColor() : accentColor());
-            g.drawString(font, tr("ankinbt.add.confirm"), confirmX + (70 - font.width(tr("ankinbt.add.confirm"))) / 2, by + 7, C1, false);
+            g.drawString(font, tr("ankinbt.add.confirm"), confirmX + (70 - font.width(tr("ankinbt.add.confirm"))) / 2, by + 7, UiTheme.textMain(), false);
         }
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
-            int sx = x + 8, sy = y + 18, sw = w - 16, sh = 18;
-            searchBox.setX(sx); searchBox.setY(sy); searchBox.setWidth(sw); if (searchBox.mouseClicked(new MouseButtonEvent(mx, my, new net.minecraft.client.input.MouseButtonInfo(btn, 0)), false)) { focusLevel = false; searchBox.setFocused(true); return true; }
+            boolean tiny = h < 76;
+            boolean compact = h < 100;
+            if (!tiny) {
+                int filterH = compact ? 13 : 15;
+                String filterLabel = tr("ankinbt.simple.enchant_filter_specific");
+                int filterW = Math.min(Math.max(76, font.width(filterLabel) + 26), Math.max(76, w - 32));
+                int filterX = x + w - 8 - filterW;
+                int filterY = y + (compact ? 1 : 2);
+                if (mx >= filterX && mx < filterX + filterW && my >= filterY && my < filterY + filterH) {
+                    focusLevel = false;
+                    focusSpecificFilter = true;
+                    if (btn == 0) {
+                        specificOnly = !specificOnly;
+                        filter();
+                        UiSound.playClick();
+                    }
+                    return true;
+                }
+            }
+            int sx = x + 8, sy = tiny ? y : y + (compact ? 12 : 18), sw = w - 16, sh = tiny ? 14 : compact ? 16 : 18;
+            if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) {
+                focusLevel = false;
+                focusSpecificFilter = false;
+                searchQ.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, searchQ,
+                        (int) Math.round(mx) - sx - 4, sw - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
 
-            int by = y + h - 30;
+            int by = y + h - (tiny ? 21 : compact ? 22 : 30);
             int lx = x + 8 + font.width(tr("ankinbt.simple.level")) + 4;
-            if (mx >= lx && mx < lx + 40 && my >= by + 2 && my < by + 20) { focusLevel = true; return true; }
+            if (mx >= lx && mx < lx + 40 && my >= by + 2 && my < by + 20) {
+                focusLevel = true;
+                focusSpecificFilter = false;
+                levelInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, levelInput,
+                        (int) Math.round(mx) - lx - 4, 32), false);
+                draggingText = btn == 0;
+                return true;
+            }
 
             int confirmX = x + w - 78;
             if (mx >= confirmX && mx < confirmX + 70 && my >= by + 1 && my < by + 21) { confirm(); return true; }
 
-            if (hoverIdx >= 0 && hoverIdx < filtered.size()) { selectedIdx = hoverIdx; return true; }
+            if (hoverIdx >= 0 && hoverIdx < filtered.size()) {
+                focusSpecificFilter = false;
+                selectedIdx = hoverIdx;
+                return true;
+            }
             return true;
         }
 
         @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            boolean tiny = h < 76;
+            boolean compact = h < 100;
+            int sx = x + 8, sy = tiny ? y : y + (compact ? 12 : 18), sw = w - 16, sh = tiny ? 14 : compact ? 16 : 18;
+            int by = y + h - (tiny ? 21 : compact ? 22 : 30);
+            if (!focusLevel && my >= sy - 6 && my <= sy + sh + 6) {
+                searchQ.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, searchQ,
+                        (int) Math.round(mx) - sx - 4, sw - 8), true);
+            } else if (focusLevel && my >= by - 4 && my <= by + 24) {
+                levelInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, levelInput,
+                        (int) Math.round(mx) - (x + 8 + SimpleEditorScreen.this.font.width(tr("ankinbt.simple.level")) + 4) - 4, 32), true);
+            }
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
+        }
+
+        @Override
         public boolean keyPressed(int key, int scan, int mod) {
+            if (key == 258) {
+                if (focusLevel) {
+                    focusLevel = false;
+                    focusSpecificFilter = false;
+                } else if (specificFilterVisible && !focusSpecificFilter) {
+                    focusSpecificFilter = true;
+                } else {
+                    focusSpecificFilter = false;
+                    focusLevel = true;
+                }
+                return true;
+            }
+            if (focusSpecificFilter) {
+                if (key == 32 || key == 257 || key == 335) {
+                    specificOnly = !specificOnly;
+                    filter();
+                    UiSound.playClick();
+                }
+                return true;
+            }
             if (key == 257 || key == 335) { confirm(); return true; }
-            if (key == 258) { focusLevel = !focusLevel; return true; }
             if (focusLevel) {
-                if (key == 259 && levelCursor > 0 && !levelInput.isEmpty()) {
-                    levelInput = levelInput.substring(0, levelCursor - 1) + levelInput.substring(levelCursor); levelCursor--; return true;
-                }
-                if (key == 263 && levelCursor > 0) { levelCursor--; return true; }
-                if (key == 262 && levelCursor < levelInput.length()) { levelCursor++; return true; }
+                if (levelInput.keyPressed(key, mod)) return true;
             } else {
-                if (searchBox.keyPressed(new KeyEvent(key, scan, mod))) {
-                    searchQ = searchBox.getValue();
-                    return true;
-                }
+                if (searchQ.keyPressed(key, mod)) { filter(); return true; }
             }
             return true;
         }
@@ -5076,9 +6395,9 @@ public class SimpleEditorScreen extends Screen {
         public boolean charTyped(char c, int mod) {
             if (c >= 32) {
                 if (focusLevel) {
-                    if (c >= '0' && c <= '9') { levelInput = levelInput.substring(0, levelCursor) + c + levelInput.substring(levelCursor); levelCursor++; }
+                    if (c >= '0' && c <= '9') levelInput.charTyped(c);
                 } else {
-                    searchBox.charTyped(new CharacterEvent(c)); searchQ = searchBox.getValue();
+                    searchQ.charTyped(c); filter();
                 }
                 return true;
             }
@@ -5086,14 +6405,9 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return !focusLevel && searchBox.preeditUpdated(event);
-        }
-
-        @Override
         public boolean mouseScrolled(double sx, double sy) {
             scrollOff -= (int) sy * 3;
-            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, filtered.size() - 10)));
+            scrollOff = Math.max(0, Math.min(scrollOff, Math.max(0, displayRows.size() - visibleItems)));
             return true;
         }
 
@@ -5102,7 +6416,7 @@ public class SimpleEditorScreen extends Screen {
                 setStatus(tr("ankinbt.simple.select_enchant_first"), ERROR_C); return;
             }
             try {
-                int level = Integer.parseInt(levelInput);
+                int level = Integer.parseInt(levelInput.value());
                 if (level < 1) level = 1;
                 addEnchantment(filtered.get(selectedIdx), level);
             } catch (NumberFormatException e) {
@@ -5116,29 +6430,21 @@ public class SimpleEditorScreen extends Screen {
     class AttributePickerSubEditor implements SubEditor {
         private final List<String> allAttrs = new ArrayList<>();
         private List<String> filtered = new ArrayList<>();
-        private String searchQ = "";
-        private final FlatEditBox searchBox;
+        private final TextEditBuffer searchQ = new TextEditBuffer("");
         private int scrollOff = 0;
         private int hoverIdx = -1;
         private int selectedIdx = -1;
-        private String amountInput = "1.0";
-        private int amountCursor = 3;
+        private final TextEditBuffer amountInput = new TextEditBuffer("1.0");
         private int focusField = 0; // 0=search, 1=amount
+        private boolean draggingText = false;
         private int selectedOp = 0; // 0=ADD_VALUE, 1=ADD_MULTIPLIED_BASE, 2=ADD_MULTIPLIED_TOTAL
         private int selectedSlot = 0; // index into SLOT_KEYS
 
         private static final String[] SLOT_KEYS = { "any", "mainhand", "offhand", "head", "chest", "legs", "feet", "hand", "armor" };
 
         AttributePickerSubEditor() {
-            searchBox = new FlatEditBox(SimpleEditorScreen.this.font, 0, 0, 1, 18, Component.empty());
-            searchBox.setMaxLength(128);
-            searchBox.setHint(Component.translatable("ankinbt.search.hint"));
-            searchBox.setResponder(v -> {
-                searchQ = v == null ? "" : v;
-                filter();
-            });
-            searchBox.setFocused(true);
-            try {                allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
+            try {
+                allAttrs.addAll(VersionCompat.get().getAllAttributeIds());
             } catch (Throwable ignored) {
             }
             if (allAttrs.isEmpty()) {
@@ -5149,9 +6455,10 @@ public class SimpleEditorScreen extends Screen {
         }
 
         private void filter() {
-            if (searchQ.isEmpty()) { filtered = new ArrayList<>(allAttrs); }
+            String query = searchQ.value();
+            if (query.isEmpty()) { filtered = new ArrayList<>(allAttrs); }
             else {
-                String q = searchQ.toLowerCase();
+                String q = query.toLowerCase();
                 filtered = allAttrs.stream().filter(s -> {
                     if (s.toLowerCase().contains(q)) return true;
                     String zh = findAttrText(ATTR_ZH, s);
@@ -5164,15 +6471,13 @@ public class SimpleEditorScreen extends Screen {
         @Override
         public void render(GuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int x, int y, int w, int h) {
             // Title
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_attr"), x + 8, y + 4, C1, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.pick_attr"), x + 8, y + 4, UiTheme.textMain(), false);
 
             // Search box
             int sx = x + 8, sy = y + 18, sw = w - 16, sh = 18;
-            searchBox.setX(sx);
-            searchBox.setY(sy);
-            searchBox.setWidth(sw);
-            searchBox.setFocused(focusField == 0);
-            searchBox.renderWidget(g, mx, my, 0.0f);
+            g.fill(sx, sy, sx + sw, sy + sh, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, sx, sy, sw, sh, focusField == 0 ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            renderTextBuffer(g, font, searchQ, sx, sy, sw, sh, focusField == 0, tr("ankinbt.search.hint"));
 
             // Attribute list
             int ly = sy + sh + 4;
@@ -5193,11 +6498,11 @@ public class SimpleEditorScreen extends Screen {
                 String displayName = getAttrDisplayName(attrId);
                 int labelBudget = showNotes ? w - 70 : w - 48;
                 if (font.width(displayName) > labelBudget) displayName = font.plainSubstrByWidth(displayName, labelBudget - 4) + "..";
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, displayName, x + 32, ry + 4, sel ? C1 : C2, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, displayName, x + 32, ry + 4, sel ? UiTheme.textMain() : UiTheme.textDim(), false);
                 if (showNotes && getAttrNote(attrId) != null) {
                     int infoX = x + w - 24;
                     g.fill(infoX, ry + 3, infoX + 10, ry + 13, hovered ? accentColor() : BTN_BG);
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, "i", infoX + 4, ry + 5, hovered ? C1 : C3, false);
+                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, "i", infoX + 4, ry + 5, hovered ? UiTheme.textMain() : UiTheme.textDim(), false);
                 }
             }
 
@@ -5210,9 +6515,9 @@ public class SimpleEditorScreen extends Screen {
                     g.fill(x + 8, noteY, x + w - 8, noteY + 18, 0x2014B8A6);
                     drawBorder(g, x + 8, noteY, w - 16, 18, 0x5514B8A6);
                     com.ankinbt.compat.VersionCompat.get().drawString(g, font, "i", x + 14, noteY + 5, accentColor(), false);
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, shown, x + 26, noteY + 5, C2, false);
+                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, shown, x + 26, noteY + 5, UiTheme.textDim(), false);
                 } else {
-                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_note_hint"), x + 10, noteY + 5, C3, false);
+                    com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_note_hint"), x + 10, noteY + 5, UiTheme.textDim(), false);
                 }
             }
 
@@ -5220,17 +6525,16 @@ public class SimpleEditorScreen extends Screen {
             int bottomY = y + h - 90;
 
             // Amount input
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_amount"), x + 8, bottomY + 4, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_amount"), x + 8, bottomY + 4, UiTheme.textDim(), false);
             int ax = x + 8 + font.width(tr("ankinbt.simple.attr_amount")) + 4;
             int aw = 80;
-            g.fill(ax, bottomY, ax + aw, bottomY + 18, 0xFF12121E);
-            drawBorder(g, ax, bottomY, aw, 18, focusField == 1 ? accentColor() : BORDER);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, amountInput + (focusField == 1 && System.currentTimeMillis() % 1000 < 500 ? "_" : ""),
-                    ax + 4, bottomY + 5, C1, false);
+            g.fill(ax, bottomY, ax + aw, bottomY + 18, UiTheme.withAlpha(UiTheme.baseRgb(), 245));
+            drawBorder(g, ax, bottomY, aw, 18, focusField == 1 ? accentColor() : UiTheme.themedBorder(1f, 1f));
+            renderTextBuffer(g, font, amountInput, ax, bottomY, aw, 18, focusField == 1, "");
 
             // Operation selector
             int opY = bottomY + 22;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_operation"), x + 8, opY + 4, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_operation"), x + 8, opY + 4, UiTheme.textDim(), false);
             int opX = x + 8 + font.width(tr("ankinbt.simple.attr_operation")) + 4;
             String[] opLabels = isZh() ? OP_NAMES_ZH : OP_NAMES_EN;
             for (int i = 0; i < 3; i++) {
@@ -5238,21 +6542,21 @@ public class SimpleEditorScreen extends Screen {
                 boolean hover = mx >= opX && mx < opX + bw && my >= opY && my < opY + 18;
                 boolean active = i == selectedOp;
                 g.fill(opX, opY, opX + bw, opY + 18, active ? accentColor() : (hover ? BTN_HOVER : BTN_BG));
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, opLabels[i], opX + 5, opY + 5, active ? C1 : C2, false);
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, opLabels[i], opX + 5, opY + 5, active ? UiTheme.textMain() : UiTheme.textDim(), false);
                 opX += bw + 4;
             }
 
             // Slot selector
             int slotY = opY + 22;
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_slot"), x + 8, slotY + 4, C2, false);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.simple.attr_slot"), x + 8, slotY + 4, UiTheme.textDim(), false);
             int slotX = x + 8 + font.width(tr("ankinbt.simple.attr_slot")) + 4;
             for (int i = 0; i < SLOT_KEYS.length; i++) {
                 String slotLabel = isZh() ? SLOT_ZH.getOrDefault(SLOT_KEYS[i], SLOT_KEYS[i]) : SLOT_KEYS[i];
                 int bw = font.width(slotLabel) + 8;
                 boolean hover = mx >= slotX && mx < slotX + bw && my >= slotY && my < slotY + 18;
                 boolean active = i == selectedSlot;
-                g.fill(slotX, slotY, slotX + bw, slotY + 18, active ? ACCENT : (hover ? BTN_HOVER : BTN_BG));
-                com.ankinbt.compat.VersionCompat.get().drawString(g, font, slotLabel, slotX + 4, slotY + 5, active ? C1 : C2, false);
+                g.fill(slotX, slotY, slotX + bw, slotY + 18, active ? accentColor() : (hover ? BTN_HOVER : BTN_BG));
+                com.ankinbt.compat.VersionCompat.get().drawString(g, font, slotLabel, slotX + 4, slotY + 5, active ? UiTheme.textMain() : UiTheme.textDim(), false);
                 slotX += bw + 3;
                 // Wrap to next line if too wide
                 if (slotX > x + w - 40 && i < SLOT_KEYS.length - 1) {
@@ -5265,8 +6569,8 @@ public class SimpleEditorScreen extends Screen {
             int confirmY = y + h - 24;
             int confirmX = x + w - 78;
             boolean ch = mx >= confirmX && mx < confirmX + 70 && my >= confirmY && my < confirmY + 20;
-            g.fill(confirmX, confirmY, confirmX + 70, confirmY + 20, ch ? ACCENT : 0xFF4F46E5);
-            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.add.confirm"), confirmX + (70 - font.width(tr("ankinbt.add.confirm"))) / 2, confirmY + 6, C1, false);
+            g.fill(confirmX, confirmY, confirmX + 70, confirmY + 20, ch ? accentColor() : 0xFF4F46E5);
+            com.ankinbt.compat.VersionCompat.get().drawString(g, font, tr("ankinbt.add.confirm"), confirmX + (70 - font.width(tr("ankinbt.add.confirm"))) / 2, confirmY + 6, UiTheme.textMain(), false);
         }
 
         private boolean isZh() {
@@ -5276,14 +6580,27 @@ public class SimpleEditorScreen extends Screen {
 
         @Override
         public boolean mouseClicked(double mx, double my, int btn, int x, int y, int w, int h) {
+            draggingText = false;
             // Search box focus
             int sx = x + 8, sy = y + 18, sw = w - 16, sh = 18;
-            if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) { focusField = 0; return true; }
+            if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) {
+                focusField = 0;
+                searchQ.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, searchQ,
+                        (int) Math.round(mx) - sx - 4, sw - 8), false);
+                draggingText = btn == 0;
+                return true;
+            }
 
             // Amount box focus
             int bottomY = y + h - 90;
             int ax = x + 8 + font.width(tr("ankinbt.simple.attr_amount")) + 4;
-            if (mx >= ax && mx < ax + 80 && my >= bottomY && my < bottomY + 18) { focusField = 1; return true; }
+            if (mx >= ax && mx < ax + 80 && my >= bottomY && my < bottomY + 18) {
+                focusField = 1;
+                amountInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, amountInput,
+                        (int) Math.round(mx) - ax - 4, 72), false);
+                draggingText = btn == 0;
+                return true;
+            }
 
             // Operation buttons
             int opY = bottomY + 22;
@@ -5320,20 +6637,41 @@ public class SimpleEditorScreen extends Screen {
         }
 
         @Override
+        public boolean mouseDragged(double mx, double my, int button, double dragX, double dragY,
+                                    int x, int y, int w, int h) {
+            if (!draggingText || button != 0) return false;
+            int bottomY = y + h - 90;
+            int sx = x + 8, sy = y + 18, sw = w - 16, sh = 18;
+            int ax = x + 8 + font.width(tr("ankinbt.simple.attr_amount")) + 4;
+            if (focusField == 0 && my >= sy - 8 && my <= sy + sh + 8) {
+                searchQ.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, searchQ,
+                        (int) Math.round(mx) - sx - 4, sw - 8), true);
+                filter();
+                return true;
+            }
+            if (focusField == 1 && my >= bottomY - 8 && my <= bottomY + 18 + 8) {
+                amountInput.moveTo(bufferCursorFromMouse(SimpleEditorScreen.this.font, amountInput,
+                        (int) Math.round(mx) - ax - 4, 72), true);
+                return true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button, int x, int y, int w, int h) {
+            boolean handled = draggingText;
+            draggingText = false;
+            return handled;
+        }
+
+        @Override
         public boolean keyPressed(int key, int scan, int mod) {
             if (key == 257 || key == 335) { confirm(); return true; }
             if (key == 258) { focusField = (focusField + 1) % 2; return true; } // Tab
             if (focusField == 1) {
-                if (key == 259 && amountCursor > 0 && !amountInput.isEmpty()) {
-                    amountInput = amountInput.substring(0, amountCursor - 1) + amountInput.substring(amountCursor); amountCursor--; return true;
-                }
-                if (key == 263 && amountCursor > 0) { amountCursor--; return true; }
-                if (key == 262 && amountCursor < amountInput.length()) { amountCursor++; return true; }
+                amountInput.keyPressed(key, mod);
             } else {
-                if (searchBox.keyPressed(new KeyEvent(key, scan, mod))) {
-                    searchQ = searchBox.getValue();
-                    return true;
-                }
+                if (searchQ.keyPressed(key, mod)) filter();
             }
             return true;
         }
@@ -5343,19 +6681,14 @@ public class SimpleEditorScreen extends Screen {
             if (c >= 32) {
                 if (focusField == 1) {
                     if ((c >= '0' && c <= '9') || c == '.' || c == '-') {
-                        amountInput = amountInput.substring(0, amountCursor) + c + amountInput.substring(amountCursor); amountCursor++;
+                        amountInput.charTyped(c);
                     }
                 } else {
-                    searchBox.charTyped(new CharacterEvent(c)); searchQ = searchBox.getValue();
+                    searchQ.charTyped(c); filter();
                 }
                 return true;
             }
             return false;
-        }
-
-        @Override
-        public boolean preeditUpdated(PreeditEvent event) {
-            return focusField == 0 && searchBox.preeditUpdated(event);
         }
 
         @Override
@@ -5392,7 +6725,7 @@ public class SimpleEditorScreen extends Screen {
                 setStatus(tr("ankinbt.simple.select_attr_first"), ERROR_C); return;
             }
             try {
-                double amount = Double.parseDouble(amountInput);
+                double amount = Double.parseDouble(amountInput.value());
                 addAttribute(filtered.get(selectedIdx), amount, opFromIndex(selectedOp), slotFromKey(SLOT_KEYS[selectedSlot]));
             } catch (NumberFormatException e) {
                 setStatus(tr("ankinbt.simple.invalid_number"), ERROR_C);

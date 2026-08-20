@@ -32,6 +32,7 @@ public class ItemPickerScreen extends Screen {
 
     private final Screen parent;
     private final Consumer<String> onPick;
+    private final Runnable closeAction;
 
     private final List<String> allItemIds = new ArrayList<>();
     private final Map<String, Item> itemById = new LinkedHashMap<>();
@@ -59,9 +60,14 @@ public class ItemPickerScreen extends Screen {
     }
 
     public ItemPickerScreen(Screen parent, Consumer<String> onPick) {
+        this(parent, onPick, () -> Minecraft.getInstance().setScreen(parent));
+    }
+
+    public ItemPickerScreen(Screen parent, Consumer<String> onPick, Runnable closeAction) {
         super(Component.translatable("ankinbt.item_picker.title"));
         this.parent = parent;
         this.onPick = onPick;
+        this.closeAction = closeAction;
     }
 
     @Override
@@ -470,27 +476,12 @@ public class ItemPickerScreen extends Screen {
             return true;
         }
         if (handleMouseClick(mx, my, event.button())) return true;
-        if (minecraft != null) {
-            double sw = minecraft.getWindow().getScreenWidth();
-            double sh = minecraft.getWindow().getScreenHeight();
-            if (sw > 0.0 && sh > 0.0) {
-                double sx = mx * width / sw;
-                double sy = my * height / sh;
-                if (isInSearchBox(sx, sy)) {
-                    focusSearchBox();
-                    return true;
-                }
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && handleMouseClick(sx, sy, event.button())) {
-                    return true;
-                }
-            }
-        }
         return super.mouseClicked(event, isDoubleClick);
     }
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreen(parent);
+        closeAction.run();
     }
 
     @Override
