@@ -93,7 +93,7 @@ AnkiNBT 是一个客户端编辑模组，用可视化界面编辑 Minecraft 物�
 
 ## 验证状态
 
-2.0.0 更新版已在真实 Minecraft 客户端中完成以下矩阵测试：
+2.0.0 正式版已在真实 Minecraft 客户端中完成以下矩阵测试：
 
 - Fabric 与 NeoForge 各 16 个版本。
 - `zh_cn` 与 `en_us`。
