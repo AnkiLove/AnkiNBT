@@ -1,49 +1,38 @@
-/*
- * Decompiled with CFR 0.152.
- *
- * Could not load the following classes:
- *  net.minecraft.client.Minecraft
- *  net.minecraft.client.gui.Font
- *  net.minecraft.client.gui.GuiGraphics
- *  net.minecraft.client.gui.screens.Screen
- *  net.minecraft.core.Holder$Reference
- *  net.minecraft.nbt.CompoundTag
- *  net.minecraft.nbt.Tag
- *  net.minecraft.network.chat.Component
- *  net.minecraft.network.chat.FormattedText
- *  net.minecraft.world.item.ItemStack
- */
 package com.ankinbt.gui;
 
 import com.ankinbt.compat.VersionCompat;
 import com.ankinbt.config.AnkiConfig;
-import com.ankinbt.gui.AddTagScreen;
-import com.ankinbt.gui.SimpleEditorScreen;
-import com.ankinbt.gui.UiTheme;
-import com.ankinbt.gui.ValueEditScreen;
-import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtHelper;
+import com.ankinbt.nbt.NbtFileIO;
 import com.ankinbt.nbt.NbtTreeNode;
+import com.ankinbt.util.FlatEditBox;
+import com.ankinbt.util.UiSound;
+import net.minecraft.client.Minecraft;
+import com.ankinbt.gui.LegacyGuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
+
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.Holder;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.FormattedText;
-import net.minecraft.world.item.ItemStack;
 
-public class NbtEditorScreen
-extends Screen {
+/**
+ * Main NBT editor screen. Uses ItemStack.CODEC (like NBTEdit) to serialize
+ * the full item to a CompoundTag for editing, then deserializes back on save.
+ * Layout: left sidebar (item info) + right tree view.
+ */
+public class NbtEditorScreen extends Screen {
+    private static final ResourceLocation LOGO_TEXTURE = ResourceLocation.fromNamespaceAndPath("ankinbt", "textures/gui/editor-logo.png");
+
+    // Layout
     private static final int HEADER_H = 32;
     private static final int ROW_H = 18;
     private static final int INDENT = 14;
@@ -51,443 +40,723 @@ extends Screen {
     private static final int SCROLLBAR_W = 6;
     private static final int FOOTER_H = 20;
     private static final int MARGIN = 16;
-    private static final int BG = -670562288;
-    private static final int SIDEBAR_BG = -670299112;
-    private static final int HEADER_BG = -670035936;
-    private static final int BORDER = -14540234;
+
+    // Colors
+    private static final int BG = 0xD8080810;
+    private static final int SIDEBAR_BG = 0xD80C0C18;
+    private static final int HEADER_BG = 0xD8101020;
     private static final int HOVER = 0x30FFFFFF;
-    private static final int C1 = -1906448;
-    private static final int C2 = -7035976;
-    private static final int C3 = -10193781;
     private static final int SB_TRACK = 0x30FFFFFF;
     private static final int SB_THUMB = 0x70FFFFFF;
     private static final int BTN_BG = 0x30FFFFFF;
     private static final int BTN_HOVER = 0x50FFFFFF;
-    private static final int SUCCESS = -14498466;
-    private static final int ERROR_C = -1096636;
-    private final ItemStack originalStack;
-    private final int inventorySlot;
-    private CompoundTag fullItemTag;
+    private static final int SUCCESS = 0xFF22C55E;
+    private static final int ERROR_C = 0xFFEF4444;
+
+    private ItemStack originalStack;
+    private int inventorySlot;
+    private final AbstractContainerScreen<?> inventoryParent;
+    private EditorDock.Bounds dockBounds;
+    private EditorDock.Bounds barBounds;
+    private EditorDock.Bounds drawerBounds;
+    private boolean drawerAbove;
+    private boolean drawerOpen = true;
+    private float drawerAnim = 0f;
+    private float activeIndicatorX = -1f;
+    private final float[] navHoverAnim = new float[9];
+    private final float[] toolHoverAnim = new float[2];
+    private boolean draggingMenuBar;
+    private int dragOffsetX;
+    private int dragOffsetY;
+    private boolean resizingEditor;
+    private boolean editorSizeFocused;
+    private float editorScale = EditorDock.DEFAULT_EDITOR_SCALE;
+    private float editorWidthAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float editorHeightAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float sizeControlHoverAnim;
+    private CompoundTag fullItemTag; // Full item serialized via ItemStack.CODEC
     private NbtTreeNode rootNode;
-    private List<NbtTreeNode> visibleNodes = new ArrayList<NbtTreeNode>();
-    private int scrollOff = 0;
-    private int maxRows;
-    private int selIdx = -1;
-    private int hoverIdx = -1;
+    private List<NbtTreeNode> visibleNodes = new ArrayList<>();
+    private ItemStack previewStack = ItemStack.EMPTY;
+    private boolean previewDirty = true;
+
+    private int scrollOff = 0, maxRows;
+    private int selIdx = -1, hoverIdx = -1;
     private int lastClickIdx = -1;
-    private long lastClickTime = 0L;
-    private int px;
-    private int py;
-    private int pw;
-    private int ph;
-    private int sideX;
-    private int sideY;
-    private int sideW;
-    private int sideH;
-    private int treeX;
-    private int treeY;
-    private int treeW;
-    private int treeH;
-    private EditBox searchBox;
+    private long lastClickTime = 0;
+
+    private int px, py, pw, ph;
+    private int sideX, sideY, sideW, sideH;
+    private int treeX, treeY, treeW, treeH;
+
+    private FlatEditBox searchBox;
     private boolean searching = false;
-    private final List<Btn> buttons = new ArrayList<Btn>();
+    private final List<Btn> buttons = new ArrayList<>();
+
     private String statusMsg = null;
-    private long statusTime = 0L;
-    private int statusColor = -10193781;
+    private long statusTime = 0;
+    private int statusColor = UiTheme.textDim();
     private boolean dirty = false;
-    private boolean confirmClose = false;
     private boolean nativeDialogOpen = false;
     private long lastNativeDialogAt = 0L;
-    private float openAnim = 0.0f;
+    private boolean confirmClose = false;
+    private float confirmAnim = 0f;
+    private final float[] confirmHover = new float[3];
+    private float openAnim = 0f;
+    private float brandAnim = 0f;
+    private float settingsHoverAnim = 0f;
 
     public NbtEditorScreen(ItemStack stack) {
-        this(stack, -1);
+        this(stack, -1, null);
     }
 
     public NbtEditorScreen(ItemStack stack, int inventorySlot) {
-        super((Component)Component.translatable((String)"ankinbt.title"));
-        this.originalStack = stack;
+        this(stack, inventorySlot, null);
+    }
+
+    public NbtEditorScreen(ItemStack stack, int inventorySlot, AbstractContainerScreen<?> inventoryParent) {
+        super(Component.translatable("ankinbt.title"));
         this.inventorySlot = inventorySlot;
-        Optional<CompoundTag> opt = NbtHelper.serializeItemStack(stack);
+        this.inventoryParent = inventoryParent;
+        loadItem(stack);
+    }
+
+    private void loadItem(ItemStack stack) {
+        this.originalStack = stack.copy();
+        this.previewStack = stack.copy();
+        this.previewDirty = true;
+        var opt = NbtHelper.serializeItemStack(stack);
         this.fullItemTag = opt.orElseGet(() -> {
             CompoundTag fallback = new CompoundTag();
-            fallback.putString("id", this.resolveItemId(stack));
+            fallback.putString("id", resolveItemId(stack));
             fallback.putInt("count", stack.getCount());
             return fallback;
         });
-        this.rebuildTree();
+        rebuildTree();
     }
 
     private void rebuildTree() {
-        this.rootNode = new NbtTreeNode("", (Tag)this.fullItemTag, null, AnkiConfig.isTreeExpandedByDefault());
-        this.rootNode.setExpanded(true);
-        this.refreshVisible();
+        rootNode = new NbtTreeNode("", fullItemTag, null, AnkiConfig.isTreeExpandedByDefault());
+        rootNode.setExpanded(true);
+        previewDirty = true;
+        refreshVisible();
     }
 
     private void refreshVisible() {
-        this.visibleNodes.clear();
-        if (this.rootNode != null) {
-            this.rootNode.collectVisible(this.visibleNodes);
-        }
-        String search = this.searchValue();
-        if (this.searching && !search.isEmpty()) {
+        visibleNodes.clear();
+        if (rootNode != null) rootNode.collectVisible(visibleNodes);
+        String search = searchValue();
+        if (searching && !search.isEmpty()) {
             String q = search.toLowerCase();
-            this.visibleNodes = this.visibleNodes.stream().filter(n -> n.getKey().toLowerCase().contains(q) || n.getDisplayValue().toLowerCase().contains(q) || n.getTypeName().toLowerCase().contains(q)).collect(Collectors.toList());
+            visibleNodes = visibleNodes.stream()
+                    .filter(n -> n.getKey().toLowerCase().contains(q)
+                            || n.getDisplayValue().toLowerCase().contains(q)
+                            || n.getTypeName().toLowerCase().contains(q))
+                    .collect(Collectors.toList());
         }
-        this.clampScroll();
+        clampScroll();
     }
 
+    @Override
     protected void init() {
         super.init();
-        this.pw = Math.min(this.width - 32, 620);
-        this.ph = Math.min(this.height - 32, 420);
-        this.px = (this.width - this.pw) / 2;
-        this.py = (this.height - this.ph) / 2;
-        this.sideX = this.px + 1;
-        this.sideY = this.py + 32 + 1;
-        this.sideW = 140;
-        this.sideH = this.ph - 32 - 20 - 2;
-        this.treeX = this.px + 140 + 2;
-        this.treeY = this.py + 32 + 1;
-        this.treeW = this.pw - 140 - 6 - 6;
-        this.treeH = this.ph - 32 - 20 - 2;
-        this.maxRows = this.treeH / 18;
-        this.initSearchBox();
-        this.buildButtons();
+        editorScale = AnkiConfig.getItemEditorScale();
+        editorWidthAdjustment = AnkiConfig.getItemEditorWidthAdjustment();
+        editorHeightAdjustment = AnkiConfig.getItemEditorHeightAdjustment();
+        applyMenuLayout(EditorDock.menuLayout(width, height, 310, inventoryParent != null,
+                editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        initSearchBox();
+        buttons.clear();
+    }
+
+    private void applyMenuLayout(EditorDock.MenuLayout layout) {
+        barBounds = layout.bar();
+        drawerBounds = layout.drawer();
+        drawerAbove = layout.drawerAbove();
+        dockBounds = drawerBounds;
+        pw = drawerBounds.width();
+        ph = drawerBounds.height();
+        px = drawerBounds.x();
+        py = drawerBounds.y();
+
+        treeX = px + 8;
+        treeY = py + 34;
+        treeW = Math.max(1, pw - 16 - SCROLLBAR_W);
+        treeH = Math.max(1, ph - 34 - FOOTER_H);
+        maxRows = Math.max(1, treeH / ROW_H);
+        clampScroll();
     }
 
     private void initSearchBox() {
-        String value = this.searchValue();
-        this.searchBox = new EditBox(this.font, this.treeX + 2, this.treeY + 1, Math.max(1, this.treeW - 4), 16, (Component)Component.translatable((String)"ankinbt.search.hint"));
-        this.searchBox.setMaxLength(256);
-        this.searchBox.setValue(value);
-        this.searchBox.setResponder(v -> this.refreshVisible());
-        this.searchBox.setFocused(this.searching);
+        String value = searchValue();
+        searchBox = new FlatEditBox(font, treeX, treeY, Math.max(1, treeW), ROW_H,
+                Component.translatable("ankinbt.search.hint"));
+        searchBox.setMaxLength(256);
+        searchBox.setHint(Component.translatable("ankinbt.search.hint"));
+        searchBox.setValue(value);
+        searchBox.setResponder(v -> refreshVisible());
+        searchBox.setFocused(searching);
+        if (searching) this.setFocused(searchBox);
     }
 
     private String searchValue() {
-        return this.searchBox == null ? "" : this.searchBox.getValue();
+        return searchBox == null ? "" : searchBox.getValue();
     }
 
     private void setSearching(boolean value) {
-        this.searching = value;
-        if (this.searchBox != null) {
-            if (!this.searching) {
-                this.searchBox.setValue("");
-            }
-            this.searchBox.setFocused(this.searching);
+        searching = value;
+        if (searchBox != null) {
+            if (!searching) searchBox.setValue("");
+            searchBox.setFocused(searching);
+            if (searching) this.setFocused(searchBox);
+            else this.clearFocus();
         }
-        this.refreshVisible();
+        refreshVisible();
     }
 
-    private void layoutSearchBox() {
-        if (this.searchBox == null) {
-            this.initSearchBox();
-        }
-        this.searchBox.setX(this.treeX + 2);
-        this.searchBox.setY(this.treeY + 1);
-        this.searchBox.setWidth(Math.max(1, this.treeW - 4));
+    private void layoutSearchBox(int accent) {
+        if (searchBox == null) initSearchBox();
+        searchBox.setX(treeX);
+        searchBox.setY(treeY);
+        searchBox.setWidth(Math.max(1, treeW));
+        searchBox.setThemeColors(UiTheme.withAlpha(UiTheme.baseRgb(), 245),
+                UiTheme.themedBorder(1f, 1f), accent);
     }
 
     private void buildButtons() {
-        this.buttons.clear();
-        int bw = 22;
-        int gap = 3;
-        int by = this.py + 6;
-        int bx = this.px + this.pw - 16 - 2;
-        this.buttons.add(new Btn(bx -= bw, by, bw, bw, "X", (Component)Component.translatable((String)"ankinbt.btn.close"), this::tryClose));
-        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "-", (Component)Component.translatable((String)"ankinbt.btn.collapse"), () -> {
-            this.collapseAll(this.rootNode);
-            this.rootNode.setExpanded(true);
-            this.refreshVisible();
+        buttons.clear();
+        int bw = 22, gap = 3, by = py + 6;
+        int bx = px + pw - MARGIN - 2;
+
+        bx -= bw;
+        buttons.add(new Btn(bx, by, bw, bw, "X", Component.translatable("ankinbt.btn.close"), this::tryClose));
+        bx -= bw + gap;
+        buttons.add(new Btn(bx, by, bw, bw, "-", Component.translatable("ankinbt.btn.collapse"), () -> {
+            collapseAll(rootNode); rootNode.setExpanded(true); refreshVisible();
         }));
-        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "+", (Component)Component.translatable((String)"ankinbt.btn.expand"), () -> {
-            this.expandAll(this.rootNode);
-            this.refreshVisible();
+        bx -= bw + gap;
+        buttons.add(new Btn(bx, by, bw, bw, "+", Component.translatable("ankinbt.btn.expand"), () -> {
+            expandAll(rootNode); refreshVisible();
         }));
-        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "S", (Component)Component.translatable((String)"ankinbt.btn.search"), () -> {
-            this.setSearching(!this.searching);
+        bx -= bw + gap;
+        buttons.add(new Btn(bx, by, bw, bw, "S", Component.translatable("ankinbt.btn.search"), () -> {
+            setSearching(!searching);
         }));
-        this.buttons.add(new Btn(bx -= bw + gap, by, bw, bw, "N", (Component)Component.translatable((String)"ankinbt.btn.add"), this::addTag));
+        bx -= bw + gap;
+        buttons.add(new Btn(bx, by, bw, bw, "N", Component.translatable("ankinbt.btn.add"), this::addTag));
+
         int saveW = 40;
-        this.buttons.add(new Btn(bx -= saveW + gap + 4, by, saveW, bw, Component.translatable((String)"ankinbt.btn.save").getString(), (Component)Component.translatable((String)"ankinbt.btn.save.tip"), this::saveToItem));
+        bx -= saveW + gap + 4;
+        buttons.add(new Btn(bx, by, saveW, bw,
+                Component.translatable("ankinbt.btn.save").getString(),
+                Component.translatable("ankinbt.btn.save.tip"), this::saveToItem));
+
+        // Mode switch button
         int modeW = 50;
-        this.buttons.add(new Btn(bx -= modeW + gap + 4, by, modeW, bw, Component.translatable((String)"ankinbt.btn.simple").getString(), (Component)Component.translatable((String)"ankinbt.btn.switch_simple"), this::switchToSimple));
+        bx -= modeW + gap + 4;
+        buttons.add(new Btn(bx, by, modeW, bw,
+                Component.translatable("ankinbt.btn.simple").getString(),
+                Component.translatable("ankinbt.btn.switch_simple"), this::switchToSimple));
+
+        // Export button
         int expW = 30;
-        this.buttons.add(new Btn(bx -= expW + gap, by, expW, bw, "Ex", (Component)Component.translatable((String)"ankinbt.simple.export_nbt"), this::exportNbt));
+        bx -= expW + gap;
+        buttons.add(new Btn(bx, by, expW, bw, "Ex",
+                Component.translatable("ankinbt.simple.export_nbt"), this::exportNbt));
+
+        // Import button
         int impW = 30;
-        this.buttons.add(new Btn(bx -= impW + gap, by, impW, bw, "Im", (Component)Component.translatable((String)"ankinbt.simple.import_nbt"), this::importNbt));
+        bx -= impW + gap;
+        buttons.add(new Btn(bx, by, impW, bw, "Im",
+                Component.translatable("ankinbt.simple.import_nbt"), this::importNbt));
     }
 
-    public void render(GuiGraphics g, int mx, int my, float pt) {
+    // ==================== RENDER ====================
+
+    @Override
+    public void render(net.minecraft.client.gui.GuiGraphics g, int mx, int my, float pt) {
+        render(new LegacyGuiGraphics(g), mx, my, pt);
+    }
+
+    public void render(LegacyGuiGraphics g, int mx, int my, float pt) {
         float cfgSpeed = AnkiConfig.getUiAnimationSpeed();
-        float speed = Math.max(0.06f, Math.min(0.14f, cfgSpeed));
-        this.openAnim = UiTheme.approach(this.openAnim, 1.0f, speed);
-        int scrim = UiTheme.scrim(AnkiConfig.getUiOpacity(), this.openAnim);
-        int panel = this.fadeColor(-670562288, this.openAnim);
-        int header = this.fadeColor(-670035936, this.openAnim);
-        int border = this.fadeColor(-14540234, this.openAnim);
-        int sidebar = this.fadeColor(-670299112, this.openAnim);
-        int hover = this.fadeColor(0x30FFFFFF, this.openAnim);
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.06f, Math.min(0.14f, cfgSpeed)) : 1.0f;
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
+        float motionSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.10f, cfgSpeed * 1.7f) : 1f;
+        drawerAnim = UiTheme.approach(drawerAnim, drawerOpen ? 1f : 0f, motionSpeed);
+        if (inventoryParent == null) {
+            brandAnim = EditorBrandLayer.approachOpen(brandAnim);
+            boolean settingsHovered = EditorBrandLayer.isSettingsButton(mx, my, width);
+            settingsHoverAnim = EditorBrandLayer.approachSettingsHover(settingsHoverAnim, settingsHovered);
+            EditorBrandLayer.renderBackgroundLogo(g, width, height);
+            g.fill(0, 0, width, height, UiTheme.scrim(AnkiConfig.getUiOpacity(), openAnim));
+        }
+        renderDrawer(g, mx, my);
+        renderMenuBar(g, mx, my);
+        if (!confirmClose && confirmAnim <= 0.01f) {
+            sizeControlHoverAnim = EditorDock.renderSizeControl(g, font, width, height, mx, my,
+                    editorScale, sizeControlHoverAnim, resizingEditor || editorSizeFocused,
+                    UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+        }
+        if (confirmClose || confirmAnim > 0.01f) renderConfirmClose(g, mx, my);
+        if (inventoryParent == null) {
+            EditorBrandLayer.renderItemStatus(g, font, width, height, brandAnim,
+                    InventoryEditorOverlay.itemEditorStatusMode(
+                            Component.translatable("ankinbt.config.mode.advanced").getString()), editorScale);
+            EditorBrandLayer.renderSettingsButton(g, font, width, mx, my, settingsHoverAnim);
+        }
+    }
+
+    private void renderMenuBar(LegacyGuiGraphics g, int mx, int my) {
+        int bx = barBounds.x(), by = barBounds.y(), bw = barBounds.width(), bh = barBounds.height();
         int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
-        int selected = this.fadeColor(UiTheme.withAlpha(accent & 0xFFFFFF, 40), this.openAnim);
-        int accentFade = this.fadeColor(accent, this.openAnim);
-        int sbTrack = this.fadeColor(0x30FFFFFF, this.openAnim);
-        int sbThumb = this.fadeColor(0x70FFFFFF, this.openAnim);
-        g.fill(0, 0, this.width, this.height, scrim);
-        g.fill(this.px, this.py, this.px + this.pw, this.py + this.ph, panel);
-        this.drawBorder(g, this.px, this.py, this.pw, this.ph, border);
-        g.fill(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 32, header);
-        g.fill(this.px + 1, this.py + 32, this.px + this.pw - 1, this.py + 32 + 1, border);
-        g.drawString(this.font, "AnkiNBT", this.px + 16, this.py + 11, 0xFFE2E8F0, false);
-        g.drawString(this.font, "高级模式", this.px + 64, this.py + 11, 0xFFFF2D7A, false);
-        if (this.dirty) {
-            g.drawString(this.font, "*", this.px + 116, this.py + 12, -1096636, false);
+        g.fill(bx, by, bx + bw, by + bh, UiTheme.toolbar(AnkiConfig.getUiOpacity(), openAnim));
+        drawBorder(g, bx, by, bw, bh, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+        g.fill(bx, by + bh - 1, bx + bw, by + bh, fadeColor(accent, openAnim));
+
+        int brandW = Math.min(72, Math.max(58, bw / 7));
+        Component moveIcon = UiIcons.component(UiIcons.MOVE);
+        boolean moveHover = mx >= bx && mx < bx + brandW && my >= by && my < by + bh;
+        g.drawString(font, moveIcon, bx + (brandW - font.width(moveIcon)) / 2, by + 10,
+                moveHover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (moveHover && !draggingMenuBar) {
+            g.renderTooltip(font, Component.translatable("ankinbt.ui.drag_editor"), mx, my);
         }
-        for (Btn b : this.buttons) {
-            b.render(g, this.font, mx, my);
+        if (dirty) g.fill(bx + brandW - 6, by + 7, bx + brandW - 3, by + 10, ERROR_C);
+
+        int toolW = 26;
+        int toolsStart = bx + bw - toolW * 2;
+        int navStart = bx + brandW;
+        int navW = Math.max(18, (toolsStart - navStart) / navHoverAnim.length);
+        String[] icons = {
+                UiIcons.BOX, UiIcons.CODE, UiIcons.SEARCH, UiIcons.TAG,
+                UiIcons.CHEVRON_DOWN, UiIcons.CHEVRON_UP, UiIcons.SAVE, UiIcons.COPY, UiIcons.BOOK
+        };
+        Component[] tips = {
+                Component.translatable("ankinbt.btn.switch_simple"), Component.translatable("ankinbt.config.mode.advanced"),
+                Component.translatable("ankinbt.btn.search"), Component.translatable("ankinbt.btn.add"),
+                Component.translatable("ankinbt.btn.expand"), Component.translatable("ankinbt.btn.collapse"),
+                Component.translatable("ankinbt.export.save_tip"), Component.translatable("ankinbt.export.save_as_tip"),
+                Component.translatable("ankinbt.simple.import_nbt")
+        };
+        float hoverSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1f;
+        for (int i = 0; i < navHoverAnim.length; i++) {
+            int nx = navStart + i * navW;
+            boolean hover = mx >= nx && mx < nx + navW && my >= by && my < by + bh;
+            boolean active = i == 1;
+            navHoverAnim[i] = UiTheme.approach(navHoverAnim[i], hover ? 1f : 0f, hoverSpeed);
+            if ("segmented".equals(AnkiConfig.getUiNavigationStyle()) && active) {
+                g.fill(nx + 2, by + 3, nx + navW - 2, by + bh - 3,
+                        UiTheme.withAlpha(accent & 0x00FFFFFF, 86));
+            } else {
+                g.fill(nx + 1, by + 2, nx + navW - 1, by + bh - 2,
+                        UiTheme.mix(0x00000000, HOVER, navHoverAnim[i]));
+            }
+            if ("compact".equals(AnkiConfig.getUiNavigationStyle()) && active) {
+                g.fill(nx + 3, by + 7, nx + 5, by + bh - 7, accent);
+            }
+            Component icon = UiIcons.component(icons[i]);
+            g.drawString(font, icon, nx + (navW - font.width(icon)) / 2, by + 10,
+                    i == 1 ? UiTheme.textMain() : (hover ? UiTheme.textMain() : UiTheme.textDim()), false);
+            if (hover) g.renderTooltip(font, tips[i], mx, my);
         }
-        this.renderSidebar(g, sidebar, border);
-        g.fill(this.px + 140 + 1, this.py + 32 + 1, this.px + 140 + 2, this.py + this.ph - 20, border);
-        int atY = this.treeY;
-        int atH = this.treeH;
-        if (this.searching) {
-            g.fill(this.treeX, this.treeY, this.treeX + this.treeW, this.treeY + 18, 0x40000000);
-            this.drawBorder(g, this.treeX, this.treeY, this.treeW, 18, accentFade);
-            this.layoutSearchBox();
-            this.searchBox.setFocused(true);
-            this.searchBox.render(g, mx, my, pt);
-            atY += 20;
-            this.maxRows = (atH -= 20) / 18;
+        int treeX = navStart + navW;
+        if (activeIndicatorX < 0f) activeIndicatorX = treeX;
+        activeIndicatorX = UiTheme.approach(activeIndicatorX, treeX, hoverSpeed);
+        if ("underline".equals(AnkiConfig.getUiNavigationStyle())) {
+            g.fill(Math.round(activeIndicatorX) + 5, by + bh - 3,
+                    Math.round(activeIndicatorX) + navW - 5, by + bh - 1, accent);
+        }
+
+        renderTool(g, mx, my, toolsStart, by, toolW, 0, UiIcons.SAVE,
+                Component.translatable(InventoryEditorOverlay.isItemEditorPreviewMode()
+                        ? "ankinbt.btn.save.preview_tip" : "ankinbt.btn.save.tip"));
+        renderTool(g, mx, my, toolsStart + toolW, by, toolW, 1, UiIcons.CLOSE,
+                Component.translatable("ankinbt.btn.close"));
+    }
+
+    private void renderTool(LegacyGuiGraphics g, int mx, int my, int x, int y, int width, int index,
+                            String iconGlyph, Component tooltip) {
+        boolean hover = mx >= x && mx < x + width && my >= y && my < y + EditorDock.MENU_BAR_HEIGHT;
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1f;
+        toolHoverAnim[index] = UiTheme.approach(toolHoverAnim[index], hover ? 1f : 0f, speed);
+        g.fill(x, y + 2, x + width, y + EditorDock.MENU_BAR_HEIGHT - 2,
+                UiTheme.mix(0x00000000, HOVER, toolHoverAnim[index]));
+        Component icon = UiIcons.component(iconGlyph);
+        g.drawString(font, icon, x + (width - font.width(icon)) / 2, y + 10, hover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (hover) g.renderTooltip(font, tooltip, mx, my);
+    }
+
+    private void renderDrawer(LegacyGuiGraphics g, int mx, int my) {
+        if (drawerAnim <= 0.01f) return;
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        int reveal = Math.max(1, Math.round(ph * drawerAnim));
+        int clipTop = drawerAbove ? py + ph - reveal : py;
+        int clipBottom = drawerAbove ? py + ph : py + reveal;
+        g.enableScissor(px, clipTop, px + pw, clipBottom);
+        g.fill(px, py, px + pw, py + ph, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+        drawBorder(g, px, py, pw, ph, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+        ItemStack previewStack = currentPreviewStack();
+        g.renderItem(previewStack, px + 9, py + 8);
+        String name = previewStack.getHoverName().getString();
+        int nameBudget = Math.max(60, pw - 160);
+        if (font.width(name) > nameBudget) name = font.plainSubstrByWidth(name, nameBudget - 10) + "..";
+        g.drawString(font, name, px + 31, py + 9, UiTheme.textMain(), false);
+        String mode = Component.translatable("ankinbt.config.mode.advanced").getString();
+        g.drawString(font, mode, px + pw - font.width(mode) - 10, py + 9, accent, false);
+        g.fill(px + 8, py + 29, px + pw - 8, py + 30, UiTheme.themedBorder(1f, 1f));
+
+        int atY = treeY, atH = treeH;
+        if (searching) {
+            layoutSearchBox(accent);
+            searchBox.setFocused(true);
+            searchBox.renderWidget(g.unwrap(), mx, my, 0f);
+            atY += ROW_H + 2; atH -= ROW_H + 2;
+            maxRows = atH / ROW_H;
         } else {
-            this.maxRows = this.treeH / 18;
+            maxRows = treeH / ROW_H;
         }
-        this.hoverIdx = -1;
-        int end = Math.min(this.scrollOff + this.maxRows, this.visibleNodes.size());
-        for (int i = this.scrollOff; i < end; ++i) {
-            Object val;
-            boolean hovered;
-            int ry = atY + (i - this.scrollOff) * 18;
-            NbtTreeNode node = this.visibleNodes.get(i);
-            boolean bl = hovered = mx >= this.treeX && mx < this.treeX + this.treeW && my >= ry && my < ry + 18;
-            if (hovered) {
-                this.hoverIdx = i;
-                g.fill(this.treeX, ry, this.treeX + this.treeW, ry + 18, hover);
+
+        // Tree
+        hoverIdx = -1;
+        int hover = fadeColor(HOVER, openAnim);
+        int selected = fadeColor(UiTheme.withAlpha(accent & 0x00FFFFFF, 0x28), openAnim);
+        int end = Math.min(scrollOff + maxRows, visibleNodes.size());
+        for (int i = scrollOff; i < end; i++) {
+            int ry = atY + (i - scrollOff) * ROW_H;
+            NbtTreeNode node = visibleNodes.get(i);
+            boolean hovered = mx >= treeX && mx < treeX + treeW && my >= ry && my < ry + ROW_H;
+            if (hovered) { hoverIdx = i; g.fill(treeX, ry, treeX + treeW, ry + ROW_H, hover); }
+            if (i == selIdx) {
+                g.fill(treeX, ry, treeX + treeW, ry + ROW_H, selected);
+                g.fill(treeX, ry, treeX + 2, ry + ROW_H, accent);
             }
-            if (i == this.selIdx) {
-                g.fill(this.treeX, ry, this.treeX + this.treeW, ry + 18, selected);
-                g.fill(this.treeX, ry, this.treeX + 2, ry + 18, accentFade);
-            }
-            int indent = node.getDepth() * 14;
-            int tx = this.treeX + 6 + indent;
+
+            int indent = node.getDepth() * INDENT;
+            int tx = treeX + 6 + indent;
+
             if (!node.isLeaf()) {
-                g.drawString(this.font, node.isExpanded() ? "v" : ">", tx, ry + 5, -10193781, false);
+                g.drawString(font, node.isExpanded() ? "v" : ">", tx, ry + 5, UiTheme.textDim(), false);
                 tx += 10;
             }
+
             int tc = NbtHelper.getTagColor(node.getTag());
             String badge = node.getTypeName();
-            if (badge.length() > 3) {
-                badge = badge.substring(0, 3);
-            }
-            g.drawString(this.font, badge, tx, ry + 5, tc, false);
-            tx += this.font.width(badge) + 4;
+            if (badge.length() > 3) badge = badge.substring(0, 3);
+            g.drawString(font, badge, tx, ry + 5, tc, false);
+            tx += font.width(badge) + 4;
+
             String key = node.getKey();
             if (!key.isEmpty()) {
-                g.drawString(this.font, key, tx, ry + 5, -1906448, false);
-                tx += this.font.width(key) + 6;
+                g.drawString(font, key, tx, ry + 5, UiTheme.textMain(), false);
+                tx += font.width(key) + 6;
             }
-            if (((String)(val = node.getDisplayValue())).length() > 36) {
-                val = ((String)val).substring(0, 33) + "...";
-            }
-            g.drawString(this.font, (String)val, tx, ry + 5, -7035976, false);
+
+            String val = node.getDisplayValue();
+            if (val.length() > 36) val = val.substring(0, 33) + "...";
+            g.drawString(font, val, tx, ry + 5, UiTheme.textDim(), false);
         }
-        if (this.visibleNodes.size() > this.maxRows) {
-            int sbx = this.px + this.pw - 6 - 3;
-            g.fill(sbx, atY, sbx + 6, atY + atH, sbTrack);
-            float ratio = (float)this.maxRows / (float)this.visibleNodes.size();
-            int thumbH = Math.max(16, (int)((float)atH * ratio));
-            float sr = (float)this.scrollOff / (float)Math.max(1, this.visibleNodes.size() - this.maxRows);
-            int thumbY = atY + (int)((float)(atH - thumbH) * sr);
-            g.fill(sbx, thumbY, sbx + 6, thumbY + thumbH, sbThumb);
+
+        // Scrollbar
+        if (visibleNodes.size() > maxRows) {
+            int sbx = px + pw - SCROLLBAR_W - 3;
+            g.fill(sbx, atY, sbx + SCROLLBAR_W, atY + atH, SB_TRACK);
+            float ratio = (float) maxRows / visibleNodes.size();
+            int thumbH = Math.max(16, (int) (atH * ratio));
+            float sr = (float) scrollOff / Math.max(1, visibleNodes.size() - maxRows);
+            int thumbY = atY + (int) ((atH - thumbH) * sr);
+            g.fill(sbx, thumbY, sbx + SCROLLBAR_W, thumbY + thumbH, SB_THUMB);
         }
-        g.fill(this.px + 1, this.py + this.ph - 20, this.px + this.pw - 1, this.py + this.ph - 20 + 1, border);
-        this.renderFooter(g);
-        if (this.confirmClose) {
-            this.renderConfirmClose(g, mx, my);
+
+        // Footer
+        g.fill(px + 1, py + ph - FOOTER_H, px + pw - 1, py + ph - FOOTER_H + 1, UiTheme.themedBorder(1f, 1f));
+        renderFooter(g);
+        g.disableScissor();
+        if (mx >= px + 9 && mx < px + 25 && my >= py + 8 && my < py + 24) {
+            g.renderTooltip(font, previewStack, mx, my);
         }
     }
 
-    private void renderConfirmClose(GuiGraphics g, int mx, int my) {
-        g.fill(0, 0, this.width, this.height, 0x60000000);
-        int dw = 260;
-        int dh = 110;
-        int dx = (this.width - dw) / 2;
-        int dy = (this.height - dh) / 2;
-        g.fill(dx, dy, dx + dw, dy + dh, -267909104);
-        this.drawBorder(g, dx, dy, dw, dh, -1096636);
-        String title = Component.translatable((String)"ankinbt.confirm.title").getString();
-        g.drawString(this.font, title, dx + 10, dy + 10, -1906448, false);
-        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, -14540234);
-        g.drawString(this.font, Component.translatable((String)"ankinbt.confirm.unsaved").getString(), dx + 10, dy + 32, -7035976, false);
-        g.drawString(this.font, Component.translatable((String)"ankinbt.confirm.discard_hint").getString(), dx + 10, dy + 46, -10193781, false);
-        int by = dy + dh - 32;
-        int bw2 = 70;
-        int bh2 = 22;
-        int saveX = dx + 10;
-        boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
+    private ItemStack currentPreviewStack() {
+        if (rootNode == null) return originalStack;
+        if (previewDirty) {
+            previewStack = NbtHelper.deserializeItemStack(rootNode.toCompoundTag()).orElse(originalStack).copy();
+            previewDirty = false;
+        }
+        return previewStack;
+    }
+
+    private void renderConfirmClose(LegacyGuiGraphics g, int mx, int my) {
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.12f, AnkiConfig.getUiAnimationSpeed() * 1.8f) : 1f;
+        confirmAnim = UiTheme.approach(confirmAnim, confirmClose ? 1f : 0f, speed);
+        int scrimAlpha = Math.round(112 * confirmAnim);
+        g.fill(0, 0, width, height, UiTheme.withAlpha(0x000000, scrimAlpha));
+        int dw = Math.min(320, width - 32), dh = 126;
+        int dx = (width - dw) / 2, dy = confirmDialogY(dh);
         int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
-        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? accent : UiTheme.withAlpha(accent & 0xFFFFFF, 196));
-        String saveLabel = Component.translatable((String)"ankinbt.confirm.save_close").getString();
-        g.drawString(this.font, saveLabel, saveX + (bw2 - this.font.width(saveLabel)) / 2, by + 7, -1906448, false);
-        int discardX = dx + dw / 2 - bw2 / 2;
+        g.fill(dx, dy, dx + dw, dy + dh, UiTheme.surface(Math.max(0.72f, AnkiConfig.getUiOpacity()), confirmAnim));
+        drawBorder(g, dx, dy, dw, dh, UiTheme.withAlpha(accent & 0x00FFFFFF, Math.round(230 * confirmAnim)));
+
+        String title = Component.translatable("ankinbt.confirm.title").getString();
+        g.drawString(font, title, dx + 10, dy + 10, UiTheme.textMain(), false);
+        g.fill(dx + 1, dy + 25, dx + dw - 1, dy + 27, accent);
+        g.drawString(font, Component.translatable("ankinbt.confirm.unsaved").getString(), dx + 12, dy + 38, UiTheme.textMain(), false);
+        g.drawString(font, Component.translatable("ankinbt.confirm.discard_hint").getString(), dx + 12, dy + 53, UiTheme.textDim(), false);
+
+        int by = dy + dh - 34;
+        int gap = 7;
+        int bw2 = Math.max(72, (dw - 24 - gap * 2) / 3), bh2 = 24;
+
+        int saveX = dx + 12;
+        boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
+        confirmHover[0] = UiTheme.approach(confirmHover[0], sh ? 1f : 0f, speed);
+        g.fill(saveX, by, saveX + bw2, by + bh2,
+                UiTheme.mix(UiTheme.withAlpha(accent & 0x00FFFFFF, 164), accent, confirmHover[0]));
+        String saveLabel = Component.translatable("ankinbt.confirm.save_close").getString();
+        g.drawString(font, saveLabel, saveX + (bw2 - font.width(saveLabel)) / 2, by + 7, UiTheme.textMain(), false);
+
+        int discardX = saveX + bw2 + gap;
         boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
-        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? -2131803068 : 1089422404);
-        String discardLabel = Component.translatable((String)"ankinbt.confirm.discard").getString();
-        g.drawString(this.font, discardLabel, discardX + (bw2 - this.font.width(discardLabel)) / 2, by + 7, -1906448, false);
-        int cancelX = dx + dw - bw2 - 10;
+        confirmHover[1] = UiTheme.approach(confirmHover[1], dh2 ? 1f : 0f, speed);
+        g.fill(discardX, by, discardX + bw2, by + bh2,
+                UiTheme.mix(0x35EF4444, 0x88EF4444, confirmHover[1]));
+        String discardLabel = Component.translatable("ankinbt.confirm.discard").getString();
+        g.drawString(font, discardLabel, discardX + (bw2 - font.width(discardLabel)) / 2, by + 7, UiTheme.textMain(), false);
+
+        int cancelX = discardX + bw2 + gap;
         boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
-        g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        String cancelLabel = Component.translatable((String)"ankinbt.edit.cancel").getString();
-        g.drawString(this.font, cancelLabel, cancelX + (bw2 - this.font.width(cancelLabel)) / 2, by + 7, -7035976, false);
+        confirmHover[2] = UiTheme.approach(confirmHover[2], ch ? 1f : 0f, speed);
+        g.fill(cancelX, by, cancelX + bw2, by + bh2, UiTheme.mix(0x24FFFFFF, 0x58FFFFFF, confirmHover[2]));
+        String cancelLabel = Component.translatable("ankinbt.edit.cancel").getString();
+        g.drawString(font, cancelLabel, cancelX + (bw2 - font.width(cancelLabel)) / 2, by + 7, UiTheme.textDim(), false);
     }
 
-    private void renderSidebar(GuiGraphics g, int sidebarBg, int border) {
-        Tag comp;
-        g.fill(this.sideX, this.sideY, this.sideX + this.sideW, this.sideY + this.sideH, sidebarBg);
-        int y = this.sideY + 8;
-        int lx = this.sideX + 8;
-        g.renderItem(this.originalStack, lx + (this.sideW - 32) / 2, y);
+    private int confirmDialogY(int dialogHeight) {
+        return (height - dialogHeight) / 2 + Math.round((1f - confirmAnim) * 14f);
+    }
+
+    private void renderSidebar(LegacyGuiGraphics g, int sidebarBg, int border) {
+        g.fill(sideX, sideY, sideX + sideW, sideY + sideH, sidebarBg);
+        int y = sideY + 8, lx = sideX + 8;
+
+        g.renderItem(originalStack, lx + (sideW - 32) / 2, y);
         y += 24;
-        Object name = this.originalStack.getHoverName().getString();
-        if (this.font.width((String)name) > this.sideW - 16) {
-            name = this.font.plainSubstrByWidth((String)name, this.sideW - 22) + "...";
-        }
-        g.drawString(this.font, (String)name, lx, y, -1906448, false);
-        g.fill(lx, y += 14, this.sideX + this.sideW - 8, y + 1, border);
+
+        String name = originalStack.getHoverName().getString();
+        if (font.width(name) > sideW - 16) name = font.plainSubstrByWidth(name, sideW - 22) + "...";
+        g.drawString(font, name, lx, y, UiTheme.textMain(), false);
+        y += 14;
+
+        g.fill(lx, y, sideX + sideW - 8, y + 1, border);
         y += 6;
-        if (this.fullItemTag.contains("id")) {
-            this.sideInfo(g, lx, y, Component.translatable((String)"ankinbt.side.id").getString(), VersionCompat.get().compoundGetString(this.fullItemTag, "id"));
+
+        // Item info from the serialized tag
+        if (fullItemTag.contains("id")) {
+            sideInfo(g, lx, y, Component.translatable("ankinbt.side.id").getString(), VersionCompat.get().compoundGetString(fullItemTag, "id"));
             y += 12;
         }
-        if (this.fullItemTag.contains("count")) {
-            this.sideInfo(g, lx, y, Component.translatable((String)"ankinbt.side.count").getString(), String.valueOf(VersionCompat.get().compoundGetInt(this.fullItemTag, "count")));
+        if (fullItemTag.contains("count")) {
+            sideInfo(g, lx, y, Component.translatable("ankinbt.side.count").getString(), String.valueOf(VersionCompat.get().compoundGetInt(fullItemTag, "count")));
             y += 12;
         }
-        if (this.fullItemTag.contains("components") && (comp = this.fullItemTag.get("components")) instanceof CompoundTag) {
-            CompoundTag ct = (CompoundTag)comp;
-            g.fill(lx, y + 2, this.sideX + this.sideW - 8, y + 3, border);
-            g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.side.components"), lx, y += 8, -7035976, false);
-            this.sideInfo(g, lx, y += 12, Component.translatable((String)"ankinbt.side.tags").getString(), String.valueOf(ct.size()));
-            y += 12;
+
+        // Components info
+        if (fullItemTag.contains("components")) {
+            Tag comp = fullItemTag.get("components");
+            if (comp instanceof CompoundTag ct) {
+                g.fill(lx, y + 2, sideX + sideW - 8, y + 3, border);
+                y += 8;
+                g.drawString(font, Component.translatable("ankinbt.side.components"), lx, y, UiTheme.textDim(), false);
+                y += 12;
+                sideInfo(g, lx, y, Component.translatable("ankinbt.side.tags").getString(), String.valueOf(ct.size()));
+                y += 12;
+            }
         }
-        g.fill(lx, y + 2, this.sideX + this.sideW - 8, y + 3, border);
-        this.sideInfo(g, lx, y += 8, Component.translatable((String)"ankinbt.side.visible").getString(), String.valueOf(this.visibleNodes.size()));
+
+        g.fill(lx, y + 2, sideX + sideW - 8, y + 3, border);
+        y += 8;
+        sideInfo(g, lx, y, Component.translatable("ankinbt.side.visible").getString(), String.valueOf(visibleNodes.size()));
     }
 
     private int fadeColor(int color, float factor) {
-        int alpha = color >>> 24 & 0xFF;
-        return UiTheme.withAlpha(color & 0xFFFFFF, Math.round((float)alpha * factor));
+        int alpha = (color >>> 24) & 0xFF;
+        return UiTheme.withAlpha(color & 0x00FFFFFF, Math.round(alpha * factor));
     }
 
-    private void sideInfo(GuiGraphics g, int x, int y, String label, String value) {
-        g.drawString(this.font, label, x, y, -10193781, false);
-        int maxW = this.sideW - 16 - this.font.width(label) - 4;
-        if (this.font.width((String)value) > maxW) {
-            value = this.font.plainSubstrByWidth((String)value, maxW - 8) + "..";
-        }
-        g.drawString(this.font, (String)value, x + this.font.width(label) + 4, y, -7035976, false);
+    private void sideInfo(LegacyGuiGraphics g, int x, int y, String label, String value) {
+        g.drawString(font, label, x, y, UiTheme.textDim(), false);
+        int maxW = sideW - 16 - font.width(label) - 4;
+        if (font.width(value) > maxW) value = font.plainSubstrByWidth(value, maxW - 8) + "..";
+        g.drawString(font, value, x + font.width(label) + 4, y, UiTheme.textDim(), false);
     }
 
-    private void renderFooter(GuiGraphics g) {
-        int fy = this.py + this.ph - 20 + 5;
-        if (this.statusMsg != null && System.currentTimeMillis() - this.statusTime < 3000L) {
-            g.drawString(this.font, this.statusMsg, this.px + 140 + 8, fy, this.statusColor, false);
+    private void renderFooter(LegacyGuiGraphics g) {
+        int fy = py + ph - FOOTER_H + 5;
+        if (statusMsg != null && System.currentTimeMillis() - statusTime < 3000) {
+            g.drawString(font, statusMsg, px + 9, fy, statusColor, false);
         } else {
-            this.statusMsg = null;
-            g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.hint"), this.px + 140 + 8, fy, -10193781, false);
+            statusMsg = null;
+            g.drawString(font, Component.translatable("ankinbt.hint"), px + 9, fy, UiTheme.textDim(), false);
         }
-        if (this.selIdx >= 0 && this.selIdx < this.visibleNodes.size()) {
-            NbtTreeNode sel = this.visibleNodes.get(this.selIdx);
+        if (selIdx >= 0 && selIdx < visibleNodes.size()) {
+            NbtTreeNode sel = visibleNodes.get(selIdx);
             String info = sel.getKey() + " : " + sel.getTypeName();
-            g.drawString(this.font, info, this.px + this.pw - this.font.width(info) - 10, fy, -10193781, false);
+            g.drawString(font, info, px + pw - font.width(info) - 10, fy, UiTheme.textDim(), false);
         }
     }
 
-    private int textViewStart(String value, int cursor, int maxWidth) {
-        int start;
-        if (value == null || value.isEmpty()) {
-            return 0;
-        }
-        int clampedCursor = Math.max(0, Math.min(cursor, value.length()));
-        for (start = 0; start < clampedCursor && this.font.width(value.substring(start, clampedCursor)) > maxWidth; ++start) {
-        }
-        return start;
-    }
+    // ==================== INPUT ====================
 
-    private String visibleText(String value, int start, int maxWidth) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        int safeStart = Math.max(0, Math.min(start, value.length()));
-        String text = value.substring(safeStart);
-        return this.font.width(text) <= maxWidth ? text : this.font.plainSubstrByWidth(text, maxWidth);
-    }
-
-    public boolean mouseClicked(double mx, double my, int btn) {
-        if (this.confirmClose) {
-            int dw = 260;
-            int dh = 110;
-            int dx = (this.width - dw) / 2;
-            int dy = (this.height - dh) / 2;
-            int by = dy + dh - 32;
-            int bw2 = 70;
-            int bh2 = 22;
-            int saveX = dx + 10;
-            if (mx >= (double)saveX && mx < (double)(saveX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
-                this.saveToItem();
-                this.onClose();
-                return true;
-            }
-            int discardX = dx + dw / 2 - bw2 / 2;
-            if (mx >= (double)discardX && mx < (double)(discardX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
-                this.dirty = false;
-                this.onClose();
-                return true;
-            }
-            int cancelX = dx + dw - bw2 - 10;
-            if (mx >= (double)cancelX && mx < (double)(cancelX + bw2) && my >= (double)by && my < (double)(by + bh2)) {
-                this.confirmClose = false;
-                return true;
-            }
-            return true;
-        }
-        for (Btn b : this.buttons) {
-            if (!b.isHover((int)mx, (int)my)) continue;
-            b.action.run();
-            return true;
-        }
-        if (this.searching) {
-            this.layoutSearchBox();
-            if (this.searchBox.mouseClicked(mx, my, btn)) {
-                this.searchBox.setFocused(true);
-                return true;
-            }
-        }
-        if (this.hoverIdx >= 0 && this.hoverIdx < this.visibleNodes.size()) {
-            long now = System.currentTimeMillis();
-            if (this.hoverIdx == this.lastClickIdx && now - this.lastClickTime < 400L) {
-                NbtTreeNode node = this.visibleNodes.get(this.hoverIdx);
-                if (!node.isLeaf()) {
-                    node.toggleExpanded();
-                    this.refreshVisible();
-                } else {
-                    this.openEditor(node);
+    private boolean handleMenuBarClick(double mx, double my) {
+        if (barBounds == null || !barBounds.contains(mx, my)) return false;
+        int brandW = Math.min(72, Math.max(58, barBounds.width() / 7));
+        int toolW = 26;
+        int toolsStart = barBounds.x() + barBounds.width() - toolW * 2;
+        int navStart = barBounds.x() + brandW;
+        int navW = Math.max(18, (toolsStart - navStart) / navHoverAnim.length);
+        int index = (int) ((mx - navStart) / navW);
+        if (mx >= navStart && mx < navStart + navW * navHoverAnim.length && index >= 0 && index < navHoverAnim.length) {
+            UiSound.playClick();
+            switch (index) {
+                case 0 -> switchToSimple();
+                case 1 -> drawerOpen = !drawerOpen;
+                case 2 -> {
+                    setSearching(!searching);
+                    drawerOpen = true;
                 }
-                this.lastClickIdx = -1;
+                case 3 -> {
+                    drawerOpen = true;
+                    addTag();
+                }
+                case 4 -> {
+                    expandAll(rootNode);
+                    drawerOpen = true;
+                    refreshVisible();
+                }
+                case 5 -> {
+                    collapseAll(rootNode);
+                    rootNode.setExpanded(true);
+                    drawerOpen = true;
+                    refreshVisible();
+                }
+                case 6 -> exportNbt();
+                case 7 -> exportNbtAs();
+                case 8 -> importNbt();
+                default -> { }
+            }
+            return true;
+        }
+        if (mx >= toolsStart && mx < toolsStart + toolW) {
+            UiSound.playClick();
+            saveToItem();
+            return true;
+        }
+        if (mx >= toolsStart + toolW) {
+            UiSound.playClick();
+            tryClose();
+            return true;
+        }
+        return true;
+    }
+
+    private boolean handleMouseClicked(double mx, double my, int btn) {
+        // Handle confirm close dialog
+        if (confirmClose || confirmAnim > 0.01f) {
+            if (!confirmClose || btn != 0) return true;
+            int dw = Math.min(320, width - 32), dh = 126;
+            int dx = (width - dw) / 2, dy = confirmDialogY(dh);
+            int by = dy + dh - 34;
+            int gap = 7;
+            int bw2 = Math.max(72, (dw - 24 - gap * 2) / 3), bh2 = 24;
+
+            int saveX = dx + 12;
+            if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
+                saveToItem();
+                if (!dirty) onClose();
+                return true;
+            }
+            int discardX = saveX + bw2 + gap;
+            if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
+                dirty = false; onClose(); return true;
+            }
+            int cancelX = discardX + bw2 + gap;
+            if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
+                UiSound.playClick();
+                confirmClose = false; return true;
+            }
+            return true;
+        }
+
+        if (inventoryParent == null && btn == 0 && EditorBrandLayer.isSettingsButton(mx, my, width)) {
+            UiSound.playClick();
+            openChildScreen(new AnkiConfigScreen(this));
+            return true;
+        }
+        if (btn == 0) editorSizeFocused = false;
+        if (btn == 0 || btn == 1) {
+            EditorDock.SizeControl sizeControl = EditorDock.sizeControl(width, height, editorScale);
+            if (btn == 0 && sizeControl.reset().contains(mx, my)) {
+                resetEditorSize();
+                UiSound.playClick();
+                return true;
+            }
+            if (sizeControl.horizontal().contains(mx, my)) {
+                adjustEditorAxes(btn == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP, 0.0f);
+                UiSound.playClick();
+                return true;
+            }
+            if (sizeControl.vertical().contains(mx, my)) {
+                adjustEditorAxes(0.0f, btn == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP);
+                UiSound.playClick();
+                return true;
+            }
+            if (btn == 0 && sizeControl.hit().contains(mx, my)) {
+                resizingEditor = true;
+                editorSizeFocused = true;
+                draggingMenuBar = false;
+                updateEditorScale(mx);
+                return true;
+            }
+        }
+
+        if (searching && drawerBounds != null && drawerBounds.contains(mx, my)
+                && mx >= treeX && mx < treeX + treeW && my >= treeY && my < treeY + ROW_H) {
+            layoutSearchBox(UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+            searchBox.mouseClicked(mx, my, btn);
+            searchBox.setFocused(true);
+            this.setFocused(searchBox);
+            return true;
+        }
+
+        if (barBounds != null && barBounds.contains(mx, my)) {
+            int brandW = Math.min(72, Math.max(58, barBounds.width() / 7));
+            if (btn == 0 && mx < barBounds.x() + brandW) {
+                draggingMenuBar = true;
+                dragOffsetX = (int) Math.round(mx) - barBounds.x();
+                dragOffsetY = (int) Math.round(my) - barBounds.y();
+                return true;
+            }
+        }
+        if (handleMenuBarClick(mx, my)) return true;
+        if (!drawerOpen || drawerAnim < 0.2f || drawerBounds == null || !drawerBounds.contains(mx, my)) return false;
+
+        if (hoverIdx >= 0 && hoverIdx < visibleNodes.size()) {
+            long now = System.currentTimeMillis();
+            if (hoverIdx == lastClickIdx && now - lastClickTime < 400) {
+                NbtTreeNode node = visibleNodes.get(hoverIdx);
+                UiSound.playClick();
+                if (!node.isLeaf()) { node.toggleExpanded(); refreshVisible(); }
+                else openEditor(node);
+                lastClickIdx = -1;
             } else {
-                this.selIdx = this.hoverIdx;
-                this.lastClickIdx = this.hoverIdx;
-                this.lastClickTime = now;
+                UiSound.playClick();
+                selIdx = hoverIdx;
+                lastClickIdx = hoverIdx;
+                lastClickTime = now;
             }
             return true;
         }
@@ -495,171 +764,131 @@ extends Screen {
     }
 
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        this.scrollOff -= (int)sy * 3;
-        this.clampScroll();
-        return true;
+        if (confirmClose || confirmAnim > 0.01f) return true;
+        if (!drawerOpen || drawerAnim < 0.2f) return false;
+        scrollOff -= (int) sy * 3; clampScroll(); return true;
     }
 
+    @Override
     public boolean keyPressed(int key, int scan, int mod) {
-        if (this.confirmClose) {
-            if (key == 256) {
-                this.confirmClose = false;
-                return true;
-            }
+        if (confirmClose || confirmAnim > 0.01f) {
+            if (key == 256) { confirmClose = false; return true; }
             return true;
         }
-        if (this.searching) {
-            if (key == 256) {
-                this.setSearching(false);
-                return true;
-            }
-            this.layoutSearchBox();
-            if (this.searchBox.keyPressed(key, scan, mod)) {
-                return true;
-            }
+        if (editorSizeFocused) {
+            if (key == 263) { adjustEditorScale(-0.05f); return true; }
+            if (key == 262) { adjustEditorScale(0.05f); return true; }
+            if (key == 268) { setEditorScale(0.0f, true); return true; }
+            if (key == 269) { setEditorScale(1.0f, true); return true; }
+            if (key == 256) { editorSizeFocused = false; return true; }
+        }
+        if (searching) {
+            if (key == 256) { setSearching(false); return true; }
+            layoutSearchBox(UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+            if (searchBox.keyPressed(key, scan, mod)) return true;
             return true;
         }
-        if (key == 256) {
-            this.tryClose();
-            return true;
+        if (key == 256) { tryClose(); return true; }
+        if (key == 264 && selIdx < visibleNodes.size() - 1) { selIdx++; ensureVis(selIdx); return true; }
+        if (key == 265 && selIdx > 0) { selIdx--; ensureVis(selIdx); return true; }
+
+        if (!searching && selIdx >= 0 && selIdx < visibleNodes.size()) {
+            NbtTreeNode node = visibleNodes.get(selIdx);
+            if (key == 69) { if (!node.isLeaf()) { node.toggleExpanded(); refreshVisible(); } return true; }
+            if (key == 257) { if (node.isLeaf()) openEditor(node); else { node.toggleExpanded(); refreshVisible(); } return true; }
+            if (key == 261) { deleteNode(); return true; }
         }
-        if (key == 264 && this.selIdx < this.visibleNodes.size() - 1) {
-            ++this.selIdx;
-            this.ensureVis(this.selIdx);
-            return true;
-        }
-        if (key == 265 && this.selIdx > 0) {
-            --this.selIdx;
-            this.ensureVis(this.selIdx);
-            return true;
-        }
-        if (!this.searching && this.selIdx >= 0 && this.selIdx < this.visibleNodes.size()) {
-            NbtTreeNode node = this.visibleNodes.get(this.selIdx);
-            if (key == 69) {
-                if (!node.isLeaf()) {
-                    node.toggleExpanded();
-                    this.refreshVisible();
-                }
-                return true;
-            }
-            if (key == 257) {
-                if (node.isLeaf()) {
-                    this.openEditor(node);
-                } else {
-                    node.toggleExpanded();
-                    this.refreshVisible();
-                }
-                return true;
-            }
-            if (key == 261) {
-                this.deleteNode();
-                return true;
-            }
-        }
-        if (key == 83 && (mod & 2) != 0) {
-            this.saveToItem();
+        if (key == 83 && (mod & 2) != 0) { saveToItem(); return true; }
+        return super.keyPressed(key, scan, mod);
+    }
+
+    @Override
+    public boolean charTyped(char c, int mod) {
+        return charTyped((int) c, mod);
+    }
+
+    public boolean charTyped(int codePoint, int mod) {
+        if (confirmClose || confirmAnim > 0.01f) return true;
+        if (searching) {
+            layoutSearchBox(UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+            if (searchBox.charTyped((char) codePoint, mod)) return true;
             return true;
         }
         return false;
     }
 
-    public boolean charTyped(char c, int mod) {
-        if (this.searching) {
-            this.layoutSearchBox();
-            this.searchBox.charTyped(c, mod);
-            return true;
-        }
-        return false;
-    }
+    // ==================== ACTIONS ====================
 
     private void openEditor(NbtTreeNode node) {
-        Minecraft.getInstance().setScreen((Screen)new ValueEditScreen(this, node));
+        openChildScreen(new ValueEditScreen(this, node));
     }
 
     private void deleteNode() {
-        if (this.selIdx < 0 || this.selIdx >= this.visibleNodes.size()) {
-            return;
-        }
-        NbtTreeNode node = this.visibleNodes.get(this.selIdx);
+        if (selIdx < 0 || selIdx >= visibleNodes.size()) return;
+        NbtTreeNode node = visibleNodes.get(selIdx);
         NbtTreeNode parent = node.getParent();
-        if (parent == null) {
-            return;
-        }
+        if (parent == null) return;
         parent.removeChild(node);
-        this.dirty = true;
-        this.refreshVisible();
-        if (this.selIdx >= this.visibleNodes.size()) {
-            this.selIdx = this.visibleNodes.size() - 1;
-        }
-        this.setStatus(Component.translatable((String)"ankinbt.status.deleted").getString(), -7035976);
+        dirty = true;
+        previewDirty = true;
+        refreshVisible();
+        if (selIdx >= visibleNodes.size()) selIdx = visibleNodes.size() - 1;
+        setStatus(Component.translatable("ankinbt.status.deleted").getString(), UiTheme.textDim());
     }
 
     private void addTag() {
-        NbtTreeNode target;
-        NbtTreeNode nbtTreeNode = target = this.selIdx >= 0 && this.selIdx < this.visibleNodes.size() ? this.visibleNodes.get(this.selIdx) : this.rootNode;
-        if (!target.isCompound() && !target.isList()) {
-            target = target.getParent();
-        }
-        if (target == null) {
-            target = this.rootNode;
-        }
-        Minecraft.getInstance().setScreen((Screen)new AddTagScreen(this, target));
+        NbtTreeNode target = (selIdx >= 0 && selIdx < visibleNodes.size()) ? visibleNodes.get(selIdx) : rootNode;
+        // Only add to compound or list nodes
+        if (!target.isCompound() && !target.isList()) target = target.getParent();
+        if (target == null) target = rootNode;
+        openChildScreen(new AddTagScreen(this, target));
     }
 
     public void addTagToNode(NbtTreeNode parent, String key, Tag tag) {
         parent.addChild(key, tag, false);
         parent.setExpanded(true);
-        this.dirty = true;
-        this.refreshVisible();
-        this.setStatus(Component.translatable((String)"ankinbt.status.added", (Object[])new Object[]{key}).getString(), -14498466);
+        dirty = true;
+        previewDirty = true;
+        refreshVisible();
+        setStatus(Component.translatable("ankinbt.status.added", key).getString(), SUCCESS);
     }
 
-    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
-        if (creativeSlot >= 36 && creativeSlot < 45) {
-            return creativeSlot - 36;
-        }
-        if (creativeSlot >= 9 && creativeSlot < 36) {
-            return creativeSlot;
-        }
-        return -1;
-    }
-    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
-        if (editedSlot >= 36 && editedSlot < 45) {
-            return editedSlot;
-        }
-        if (editedSlot >= 0 && editedSlot < 9) {
-            return 36 + editedSlot;
-        }
-        if (editedSlot >= 9 && editedSlot < 36) {
-            return editedSlot;
-        }
-        return -1;
-    }
-
+    /**
+     * Save: rebuild the CompoundTag from the tree, deserialize back to ItemStack,
+     * and set it in the player's hand via creative mode packet.
+     */
     private void saveToItem() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
+        if (mc.player == null) return;
+
+        if (InventoryEditorOverlay.isItemEditorPreviewMode()) {
+            setStatus(Component.translatable("ankinbt.status.preview_only").getString(), ERROR_C);
             return;
         }
         if (!mc.player.hasInfiniteMaterials()) {
-            this.setStatus(Component.translatable((String)"ankinbt.status.creative_only").getString(), -1096636);
+            setStatus(Component.translatable("ankinbt.status.creative_only").getString(), ERROR_C);
             return;
         }
-        CompoundTag rebuilt = this.rootNode.toCompoundTag();
-        Optional<ItemStack> opt = NbtHelper.deserializeItemStack(rebuilt);
+
+        // Rebuild the full CompoundTag from the tree (like NBTEdit's tree.toCompound())
+        CompoundTag rebuilt = rootNode.toCompoundTag();
+
+        // Deserialize back to ItemStack via CODEC
+        var opt = NbtHelper.deserializeItemStack(rebuilt);
         if (opt.isEmpty()) {
-            this.setStatus(Component.translatable((String)"ankinbt.status.save_error").getString(), -1096636);
+            setStatus(Component.translatable("ankinbt.status.save_error").getString(), ERROR_C);
             return;
         }
+
         ItemStack newStack = opt.get();
         VersionCompat.get().sanitizeForCreativeSave(newStack);
-        if (this.inventorySlot >= 0) {
-            int creativeSlot = NbtEditorScreen.creativePacketSlotFromEditedSlot(this.inventorySlot);
+        if (inventorySlot >= 0) {
+            int creativeSlot = creativePacketSlotFromEditedSlot(inventorySlot);
             if (creativeSlot < 0) {
-                this.setStatus(Component.translatable((String)"ankinbt.status.save_error").getString(), -1096636);
+                setStatus(Component.translatable("ankinbt.status.save_error").getString(), ERROR_C);
                 return;
             }
-            int playerSlot = NbtEditorScreen.playerInventoryIndexFromCreativeSlot(creativeSlot);
+            int playerSlot = playerInventoryIndexFromCreativeSlot(creativeSlot);
             if (playerSlot >= 0) {
                 mc.player.getInventory().setItem(playerSlot, newStack.copy());
             }
@@ -669,259 +898,441 @@ extends Screen {
             mc.player.getInventory().setItem(slot, newStack.copy());
             mc.gameMode.handleCreativeModeItemAdd(newStack.copy(), 36 + slot);
         }
-        this.dirty = false;
-        this.setStatus(Component.translatable((String)"ankinbt.status.saved").getString(), -14498466);
+
+        originalStack = newStack.copy();
+        dirty = false;
+        setStatus(Component.translatable("ankinbt.status.saved").getString(), SUCCESS);
     }
 
     private void switchToSimple() {
-        AnkiConfig.setPreferredItemEditor("simple");
-        Minecraft.getInstance().setScreen((Screen)new SimpleEditorScreen(this.originalStack, this.inventorySlot));
+        ItemStack current = NbtHelper.deserializeItemStack(rootNode.toCompoundTag()).orElse(originalStack);
+        if (inventoryParent != null) {
+            InventoryEditorOverlay.switchToSimple(inventoryParent, current, originalStack, inventorySlot, dirty);
+        } else {
+            SimpleEditorScreen next = new SimpleEditorScreen(current, inventorySlot);
+            next.restoreEditorState(originalStack, dirty);
+            AnkiConfig.setPreferredItemEditor("simple");
+            Minecraft.getInstance().setScreen(next);
+        }
     }
 
     private void exportNbt() {
-        Path path;
-        String itemId = this.resolveItemPath(this.originalStack);
-        long ts = System.currentTimeMillis() / 1000L;
+        String itemId = resolveItemPath(originalStack);
+        long ts = System.currentTimeMillis() / 1000;
         String fileName = itemId + "_" + ts;
-        CompoundTag rebuilt = this.rootNode.toCompoundTag();
-        if (this.hasTinyFd()) {
-            String picked = this.tinyFdSavePath(AnkiConfig.getExportPath().resolve(fileName + ".nbt").toString());
-            if (picked == null || picked.isBlank()) {
-                return;
-            }
-            path = NbtFileIO.exportNbtToPath(rebuilt, Path.of(picked, new String[0]));
-        } else {
-            path = NbtFileIO.exportNbt(rebuilt, fileName);
-        }
+        CompoundTag rebuilt = rootNode.toCompoundTag();
+        Path path = NbtFileIO.exportNbt(rebuilt, fileName);
         if (path != null) {
-            this.setStatus(Component.translatable((String)"ankinbt.export.success").getString(), -14498466);
+            setStatus(Component.translatable("ankinbt.export.success").getString(), SUCCESS);
         } else {
-            this.setStatus(Component.translatable((String)"ankinbt.export.failed").getString(), -1096636);
+            setStatus(Component.translatable("ankinbt.export.failed").getString(), ERROR_C);
+        }
+    }
+
+    private void exportNbtAs() {
+        if (!hasTinyFd()) {
+            setStatus(Component.translatable("ankinbt.export.dialog_unavailable").getString(), ERROR_C);
+            return;
+        }
+        String itemId = resolveItemPath(originalStack);
+        long ts = System.currentTimeMillis() / 1000;
+        String fileName = itemId + "_" + ts;
+        String picked = tinyFdSavePath(AnkiConfig.getExportPath().resolve(fileName + ".nbt").toString());
+        if (picked == null || picked.isBlank()) return;
+        Path path = NbtFileIO.exportNbtToPath(rootNode.toCompoundTag(), Path.of(picked));
+        if (path != null) {
+            setStatus(Component.translatable("ankinbt.export.success").getString(), SUCCESS);
+        } else {
+            setStatus(Component.translatable("ankinbt.export.failed").getString(), ERROR_C);
         }
     }
 
     private String resolveItemId(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return "minecraft:air";
-        }
+        if (stack == null || stack.isEmpty()) return "minecraft:air";
         try {
-            Holder.Reference holder = stack.getItem().builtInRegistryHolder();
-            Object key = holder.getClass().getMethod("key", new Class[0]).invoke(holder, new Object[0]);
+            Object holder = stack.getItem().builtInRegistryHolder();
+            Object key = holder.getClass().getMethod("key").invoke(holder);
             try {
-                Object loc = key.getClass().getMethod("location", new Class[0]).invoke(key, new Object[0]);
-                if (loc != null) {
-                    return loc.toString();
-                }
-            }
-            catch (Throwable loc) {
-                // empty catch block
-            }
+                Object loc = key.getClass().getMethod("location").invoke(key);
+                if (loc != null) return loc.toString();
+            } catch (Throwable ignored) {}
             try {
-                Object id = key.getClass().getMethod("identifier", new Class[0]).invoke(key, new Object[0]);
-                if (id != null) {
-                    return id.toString();
-                }
-            }
-            catch (Throwable throwable) {}
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+                Object id = key.getClass().getMethod("identifier").invoke(key);
+                if (id != null) return id.toString();
+            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {}
         return stack.getItem().toString();
     }
 
     private String resolveItemPath(ItemStack stack) {
-        String id = this.resolveItemId(stack);
-        int idx = id.indexOf(58);
+        String id = resolveItemId(stack);
+        int idx = id.indexOf(':');
         return idx >= 0 && idx + 1 < id.length() ? id.substring(idx + 1) : id;
     }
 
     private void importNbt() {
-        String loadedName;
         CompoundTag tag;
-        if (this.hasTinyFd()) {
-            String picked = this.tinyFdOpenPath(AnkiConfig.getExportPath().toString());
-            if (picked == null || picked.isBlank()) {
-                return;
-            }
-            tag = NbtFileIO.importNbt(Path.of(picked, new String[0]));
-            loadedName = Path.of(picked, new String[0]).getFileName().toString();
+        String loadedName;
+        if (hasTinyFd()) {
+            String picked = tinyFdOpenPath(AnkiConfig.getExportPath().toString());
+            if (picked == null || picked.isBlank()) return;
+            tag = NbtFileIO.importNbt(Path.of(picked));
+            loadedName = Path.of(picked).getFileName().toString();
         } else {
-            List<NbtFileIO.NbtFileEntry> files = NbtFileIO.listNbtFiles();
+            var files = NbtFileIO.listNbtFiles();
             if (files.isEmpty()) {
-                this.setStatus(Component.translatable((String)"ankinbt.import.no_files").getString(), -1096636);
+                setStatus(Component.translatable("ankinbt.import.no_files").getString(), ERROR_C);
                 return;
             }
-            NbtFileIO.NbtFileEntry latest = files.get(0);
+            var latest = files.get(0);
             tag = NbtFileIO.importNbt(latest.path());
             loadedName = latest.name();
         }
         if (tag != null) {
             this.fullItemTag = tag;
-            this.rebuildTree();
-            this.dirty = true;
-            this.setStatus(Component.translatable((String)"ankinbt.import.success").getString() + " (" + loadedName + ")", -14498466);
+            rebuildTree();
+            dirty = true;
+            setStatus(Component.translatable("ankinbt.import.success").getString() + " (" + loadedName + ")", SUCCESS);
         } else {
-            this.setStatus(Component.translatable((String)"ankinbt.import.load_failed").getString(), -1096636);
+            setStatus(Component.translatable("ankinbt.import.load_failed").getString(), ERROR_C);
         }
     }
 
     private boolean hasTinyFd() {
-        if (!AnkiConfig.isNativeFileDialogEnabled()) {
-            return false;
-        }
         try {
-            Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
-            return true;
-        }
-        catch (Throwable ignored) {
+            Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            return pickTinyFdMethod(clazz, "tinyfd_saveFileDialog") != null
+                    && pickTinyFdMethod(clazz, "tinyfd_openFileDialog") != null;
+        } catch (Throwable ignored) {
             return false;
         }
     }
 
     private String tinyFdSavePath(String defaultPath) {
-        return this.tinyFdDialog("tinyfd_saveFileDialog", defaultPath, false);
+        return tinyFdDialog("tinyfd_saveFileDialog", defaultPath, false);
     }
 
     private String tinyFdOpenPath(String defaultPath) {
-        return this.tinyFdDialog("tinyfd_openFileDialog", defaultPath, true);
+        return tinyFdDialog("tinyfd_openFileDialog", defaultPath, true);
     }
 
     private String tinyFdDialog(String methodName, String defaultPath, boolean isOpen) {
         long now = System.currentTimeMillis();
-        if (this.nativeDialogOpen || now - this.lastNativeDialogAt < 600L) {
-            return null;
-        }
-        this.nativeDialogOpen = true;
+        if (nativeDialogOpen || now - lastNativeDialogAt < 600L) return null;
+        nativeDialogOpen = true;
         try {
             Class<?> clazz = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
-            for (Method m : clazz.getMethods()) {
-                Object out;
-                if (!m.getName().equals(methodName) || !((out = m.invoke(null, this.tinyFdArgs(m.getParameterTypes(), defaultPath, isOpen))) instanceof CharSequence)) continue;
-                CharSequence cs = (CharSequence)out;
-                return cs.toString();
+            Method method = pickTinyFdMethod(clazz, methodName);
+            if (method != null) {
+                Object out = method.invoke(null, tinyFdArgs(method.getParameterTypes(), defaultPath, isOpen));
+                if (out instanceof CharSequence cs) return cs.toString();
             }
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+        } catch (Throwable ignored) {}
         finally {
-            this.lastNativeDialogAt = System.currentTimeMillis();
-            this.nativeDialogOpen = false;
+            lastNativeDialogAt = System.currentTimeMillis();
+            nativeDialogOpen = false;
         }
         return null;
+    }
+
+    private Method pickTinyFdMethod(Class<?> clazz, String methodName) {
+        Method charSequenceMethod = null;
+        Method stringArrayMethod = null;
+        Method fallback = null;
+        for (Method method : clazz.getMethods()) {
+            if (!method.getName().equals(methodName)) continue;
+            Class<?>[] types = method.getParameterTypes();
+            boolean hasStringArray = false;
+            boolean hasPointerBuffer = false;
+            boolean hasByteBuffer = false;
+            boolean hasUnsupported = false;
+            for (Class<?> type : types) {
+                if (type == String[].class) hasStringArray = true;
+                if (type.getName().equals("org.lwjgl.PointerBuffer")) hasPointerBuffer = true;
+                if (type.getName().equals("java.nio.ByteBuffer")) hasByteBuffer = true;
+                if (type != String.class && type != CharSequence.class
+                        && type != String[].class && type != boolean.class && type != Boolean.class
+                        && !type.getName().equals("org.lwjgl.PointerBuffer")
+                        && !type.getName().equals("java.nio.ByteBuffer")) {
+                    hasUnsupported = true;
+                }
+            }
+            if (hasUnsupported) continue;
+            if (hasStringArray && stringArrayMethod == null) stringArrayMethod = method;
+            if (!hasByteBuffer && hasPointerBuffer) {
+                if (charSequenceMethod == null) charSequenceMethod = method;
+            }
+            if (!hasByteBuffer && fallback == null) fallback = method;
+        }
+        return charSequenceMethod != null ? charSequenceMethod
+                : (stringArrayMethod != null ? stringArrayMethod : fallback);
     }
 
     private Object[] tinyFdArgs(Class<?>[] parameterTypes, String defaultPath, boolean isOpen) {
         Object[] args = new Object[parameterTypes.length];
         int stringIndex = 0;
-        for (int i = 0; i < parameterTypes.length; ++i) {
+        for (int i = 0; i < parameterTypes.length; i++) {
             Class<?> pt = parameterTypes[i];
             if (CharSequence.class.isAssignableFrom(pt) || pt == String.class) {
-                args[i] = stringIndex == 0 ? (isOpen ? Component.translatable((String)"ankinbt.simple.import_nbt").getString() : Component.translatable((String)"ankinbt.simple.export_nbt").getString()) : (stringIndex == 1 ? defaultPath : "NBT files (*.nbt)");
-                ++stringIndex;
-                continue;
+                if (stringIndex == 0) {
+                    args[i] = isOpen
+                            ? Component.translatable("ankinbt.simple.import_nbt").getString()
+                            : Component.translatable("ankinbt.simple.export_nbt").getString();
+                } else if (stringIndex == 1) {
+                    args[i] = defaultPath;
+                } else {
+                    args[i] = "NBT files (*.nbt)";
+                }
+                stringIndex++;
+            } else if (pt == String[].class) {
+                args[i] = new String[] { "*.nbt" };
+            } else if (pt == boolean.class || pt == Boolean.class) {
+                args[i] = false;
+            } else if (pt == int.class || pt == Integer.class) {
+                args[i] = 1;
+            } else if (pt.getName().equals("org.lwjgl.PointerBuffer")) {
+                args[i] = null;
+            } else {
+                args[i] = null;
             }
-            args[i] = pt == String[].class ? new String[]{"*.nbt"} : (pt == Boolean.TYPE || pt == Boolean.class ? Boolean.FALSE : (pt == Integer.TYPE || pt == Integer.class ? Integer.valueOf(1) : (pt.getName().equals("org.lwjgl.PointerBuffer") ? null : null)));
         }
         return args;
     }
 
     private void tryClose() {
-        if (this.dirty && AnkiConfig.isConfirmOnClose()) {
-            this.confirmClose = true;
+        if (dirty && com.ankinbt.config.AnkiConfig.isConfirmOnClose()) {
+            confirmAnim = 0f;
+            confirmClose = true;
         } else {
-            this.onClose();
+            onClose();
         }
     }
 
     public void onNodeEdited() {
-        this.dirty = true;
-        this.refreshVisible();
-        this.setStatus(Component.translatable((String)"ankinbt.status.edited").getString(), -7035976);
+        dirty = true;
+        previewDirty = true;
+        refreshVisible();
+        setStatus(Component.translatable("ankinbt.status.edited").getString(), UiTheme.textDim());
     }
 
     private void setStatus(String msg, int color) {
-        this.statusMsg = msg;
-        this.statusColor = color;
-        this.statusTime = System.currentTimeMillis();
+        statusMsg = msg; statusColor = color; statusTime = System.currentTimeMillis();
     }
 
+    // ==================== UTIL ====================
+
     private void ensureVis(int idx) {
-        if (idx < this.scrollOff) {
-            this.scrollOff = idx;
-        }
-        if (idx >= this.scrollOff + this.maxRows) {
-            this.scrollOff = idx - this.maxRows + 1;
-        }
-        this.clampScroll();
+        if (idx < scrollOff) scrollOff = idx;
+        if (idx >= scrollOff + maxRows) scrollOff = idx - maxRows + 1;
+        clampScroll();
     }
 
     private void clampScroll() {
-        int max = Math.max(0, this.visibleNodes.size() - this.maxRows);
-        this.scrollOff = Math.max(0, Math.min(this.scrollOff, max));
+        int max = Math.max(0, visibleNodes.size() - maxRows);
+        scrollOff = Math.max(0, Math.min(scrollOff, max));
     }
 
-    private void expandAll(NbtTreeNode n) {
-        n.setExpanded(true);
-        for (NbtTreeNode c : n.getChildren()) {
-            this.expandAll(c);
-        }
+    private void expandAll(NbtTreeNode n) { n.setExpanded(true); for (var c : n.getChildren()) expandAll(c); }
+    private void collapseAll(NbtTreeNode n) { n.setExpanded(false); for (var c : n.getChildren()) collapseAll(c); }
+
+    private void drawBorder(LegacyGuiGraphics g, int x, int y, int w, int h, int c) {
+        g.fill(x, y, x + w, y + 1, c); g.fill(x, y + h - 1, x + w, y + h, c);
+        g.fill(x, y, x + 1, y + h, c); g.fill(x + w - 1, y, x + w, y + h, c);
     }
 
-    private void collapseAll(NbtTreeNode n) {
-        n.setExpanded(false);
-        for (NbtTreeNode c : n.getChildren()) {
-            this.collapseAll(c);
-        }
-    }
+    @Override public boolean isPauseScreen() { return false; }
 
-    private void drawBorder(GuiGraphics g, int x, int y, int w, int h, int c) {
-        g.fill(x, y, x + w, y + 1, c);
-        g.fill(x, y + h - 1, x + w, y + h, c);
-        g.fill(x, y, x + 1, y + h, c);
-        g.fill(x + w - 1, y, x + w, y + h, c);
-    }
+    public CompoundTag getFullItemTag() { return fullItemTag; }
 
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    public CompoundTag getFullItemTag() {
-        return this.fullItemTag;
-    }
+    // ==================== BTN ====================
 
     static class Btn {
-        final int x;
-        final int y;
-        final int w;
-        final int h;
-        final String label;
-        final Component tooltip;
-        final Runnable action;
-
+        final int x, y, w, h; final String label; final Component tooltip; final Runnable action;
+        float hoverAnim;
         Btn(int x, int y, int w, int h, String label, Component tooltip, Runnable action) {
-            this.x = x;
-            this.y = y;
-            this.w = w;
-            this.h = h;
-            this.label = label;
-            this.tooltip = tooltip;
-            this.action = action;
+            this.x = x; this.y = y; this.w = w; this.h = h; this.label = label; this.tooltip = tooltip; this.action = action;
         }
-
-        boolean isHover(int mx, int my) {
-            return mx >= this.x && mx < this.x + this.w && my >= this.y && my < this.y + this.h;
-        }
-
-        void render(GuiGraphics g, Font f, int mx, int my) {
-            boolean h = this.isHover(mx, my);
-            g.fill(this.x, this.y, this.x + this.w, this.y + this.h, h ? 0x50FFFFFF : 0x30FFFFFF);
-            g.drawString(f, this.label, this.x + (this.w - f.width(this.label)) / 2, this.y + (this.h - 8) / 2, -1906448, false);
-            if (h && this.tooltip != null) {
-                VersionCompat.get().renderTooltip(g, f, this.tooltip, mx, my);
-            }
+        boolean isHover(int mx, int my) { return mx >= x && mx < x + w && my >= y && my < y + h; }
+        void render(LegacyGuiGraphics g, net.minecraft.client.gui.Font f, int mx, int my) {
+            boolean h = isHover(mx, my);
+            float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.16f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1.0f;
+            hoverAnim = UiTheme.approach(hoverAnim, h ? 1.0f : 0.0f, speed);
+            g.fill(x, y, x + w, this.y + this.h, UiTheme.mix(BTN_BG, BTN_HOVER, hoverAnim));
+            g.drawString(f, label, x + (w - f.width(label)) / 2, y + (this.h - 8) / 2, UiTheme.textMain(), false);
+            if (h && tooltip != null) g.renderTooltip(f, tooltip, mx, my);
         }
     }
-}
+    @Override
+    public boolean mouseClicked(double mx, double my, int button) {
+        if (searching) {
+            layoutSearchBox(UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+            if (searchBox.mouseClicked(mx, my, button)) {
+                searchBox.setFocused(true);
+                this.setFocused(searchBox);
+                return true;
+            }
+        }
+        if (handleMouseClicked(mx, my, button)) return true;
+        if (isInsideEditor(mx, my)) return true;
+        if (inventoryParent != null) {
+            Slot hovered = EditorDock.hoveredSlot(inventoryParent);
+            if (button == 0 && EditorDock.isPlayerInventorySlot(hovered) && hovered.hasItem()) {
+                return selectInventoryItem(hovered.getItem(), hovered.getContainerSlot());
+            }
+            return inventoryParent.mouseClicked(mx, my, button);
+        }
+        return super.mouseClicked(mx, my, button);
+    }
 
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (resizingEditor && button == 0) {
+            updateEditorScale(mouseX);
+            return true;
+        }
+        if (draggingMenuBar && button == 0) {
+            applyMenuLayout(EditorDock.menuLayoutAt(width, height, 310, inventoryParent != null,
+                    (int) Math.round(mouseX) - dragOffsetX, (int) Math.round(mouseY) - dragOffsetY,
+                    editorScale, editorWidthAdjustment, editorHeightAdjustment));
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (resizingEditor) {
+            resizingEditor = false;
+            AnkiConfig.setItemEditorScale(editorScale);
+            return true;
+        }
+        if (draggingMenuBar) {
+            draggingMenuBar = false;
+            if (inventoryParent != null && barBounds != null) {
+                AnkiConfig.setItemEditorCustomPosition(barBounds.x(), barBounds.y());
+            }
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private void updateEditorScale(double mouseX) {
+        setEditorScale(EditorDock.sizeScaleFromMouse(width, mouseX), false);
+    }
+
+    private void adjustEditorScale(float delta) {
+        setEditorScale(editorScale + delta, true);
+    }
+
+    private void setEditorScale(float scale, boolean save) {
+        editorScale = Math.max(0.0f, Math.min(1.0f, scale));
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 310, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        buildButtons();
+        clampScroll();
+        if (save) AnkiConfig.setItemEditorScale(editorScale);
+    }
+
+    private void adjustEditorAxes(float widthDelta, float heightDelta) {
+        editorWidthAdjustment = EditorDock.adjustAxis(editorWidthAdjustment, widthDelta);
+        editorHeightAdjustment = EditorDock.adjustAxis(editorHeightAdjustment, heightDelta);
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 310, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        buildButtons();
+        clampScroll();
+        AnkiConfig.setItemEditorAxisAdjustments(editorWidthAdjustment, editorHeightAdjustment);
+    }
+
+    private void resetEditorSize() {
+        editorScale = EditorDock.DEFAULT_EDITOR_SCALE;
+        editorWidthAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+        editorHeightAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, inventoryParent != null,
+                current, 310, editorScale, editorWidthAdjustment, editorHeightAdjustment));
+        buildButtons();
+        clampScroll();
+        AnkiConfig.setItemEditorScale(editorScale);
+        AnkiConfig.setItemEditorAxisAdjustments(editorWidthAdjustment, editorHeightAdjustment);
+    }
+
+    boolean selectInventoryItem(ItemStack stack, int slot) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (slot == inventorySlot && ItemStack.isSameItemSameComponents(stack, originalStack)) return true;
+        if (dirty) {
+            setStatus(Component.translatable("ankinbt.status.save_before_switch").getString(), ERROR_C);
+            return true;
+        }
+        inventorySlot = slot;
+        loadItem(stack);
+        scrollOff = 0;
+        selIdx = -1;
+        hoverIdx = -1;
+        setSearching(false);
+        openAnim = AnkiConfig.isUiAnimationEnabled() ? 0.62f : 1.0f;
+        setStatus(Component.translatable("ankinbt.status.item_switched", stack.getHoverName().getString()).getString(), SUCCESS);
+        return true;
+    }
+
+    @Override
+    public void onClose() {
+        if (inventoryParent != null) InventoryEditorOverlay.close(inventoryParent);
+        else super.onClose();
+    }
+
+    void requestOverlayClose() {
+        tryClose();
+    }
+
+    boolean isInsideEditor(double mouseX, double mouseY) {
+        if (confirmClose || confirmAnim > 0.01f) return true;
+        EditorDock.SizeControl sizeControl = EditorDock.sizeControl(width, height, editorScale);
+        if (sizeControl.hit().contains(mouseX, mouseY)
+                || sizeControl.reset().contains(mouseX, mouseY)
+                || sizeControl.horizontal().contains(mouseX, mouseY)
+                || sizeControl.vertical().contains(mouseX, mouseY)) return true;
+        if (barBounds != null && barBounds.contains(mouseX, mouseY)) return true;
+        return drawerOpen && drawerAnim > 0.08f && drawerBounds != null && drawerBounds.contains(mouseX, mouseY);
+    }
+
+    boolean isDraggingMenuBar() {
+        return draggingMenuBar || resizingEditor;
+    }
+
+    void restoreEditorState(ItemStack original, boolean wasDirty) {
+        originalStack = original.copy();
+        dirty = wasDirty;
+        drawerOpen = true;
+    }
+
+    void returnFromChildScreen() {
+        if (inventoryParent != null) InventoryEditorOverlay.returnFromModal(inventoryParent);
+        else Minecraft.getInstance().setScreen(this);
+    }
+
+    private void openChildScreen(Screen child) {
+        if (inventoryParent != null) InventoryEditorOverlay.openModal(inventoryParent, child);
+        else Minecraft.getInstance().setScreen(child);
+    }
+
+    private static int playerInventoryIndexFromCreativeSlot(int creativeSlot) {
+        if (creativeSlot == 45) return 40;
+        if (creativeSlot >= 36 && creativeSlot < 45) return creativeSlot - 36;
+        if (creativeSlot >= 9 && creativeSlot < 36) return creativeSlot;
+        return -1;
+    }
+
+    private static int creativePacketSlotFromEditedSlot(int editedSlot) {
+        if (editedSlot == 40 || editedSlot == 45) return 45;
+        if (editedSlot >= 36 && editedSlot < 45) return editedSlot;
+        if (editedSlot >= 0 && editedSlot < 9) return 36 + editedSlot;
+        if (editedSlot >= 9 && editedSlot < 36) return editedSlot;
+        return -1;
+    }
+
+}

@@ -42,6 +42,7 @@ task copySharedSources(type: Copy) {
         exclude 'com/ankinbt/AnkiNBT.java'
         exclude 'com/ankinbt/keybind/**'
         exclude 'com/ankinbt/compat/**'
+        exclude 'com/ankinbt/gui/InventoryEditorOverlay.java'
     }
     into 'build/shared-src/java'
 }
@@ -52,6 +53,7 @@ task copySharedResources(type: Copy) {
         exclude 'pack.mcmeta'
     }
     into 'build/shared-resources'
+    from('../LICENSE')
 }
 
 sourceSets {
@@ -71,6 +73,7 @@ compileJava.dependsOn copySharedSources
 processResources.dependsOn copySharedResources
 
 processResources {
+    inputs.property 'version', project.mod_version
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     filesMatching('fabric.mod.json') {
         expand 'version': project.mod_version

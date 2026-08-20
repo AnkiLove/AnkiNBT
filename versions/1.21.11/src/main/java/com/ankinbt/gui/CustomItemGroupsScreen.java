@@ -2,7 +2,6 @@ package com.ankinbt.gui;
 
 import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.util.ItemRegistryHelper;
-import com.ankinbt.util.UiSound;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -639,7 +638,6 @@ public class CustomItemGroupsScreen extends Screen {
         boolean click(int mx, int my) {
             if (!enabled || !hover(mx, my)) return false;
             action.run();
-            UiSound.playClick();
             return true;
         }
 
@@ -666,17 +664,6 @@ public class CustomItemGroupsScreen extends Screen {
         double mx = event.x();
         double my = event.y();
         if (mouseClicked(mx, my, event.button())) return true;
-        if (minecraft != null) {
-            double sw = minecraft.getWindow().getScreenWidth();
-            double sh = minecraft.getWindow().getScreenHeight();
-            if (sw > 0.0 && sh > 0.0) {
-                double sx = mx * width / sw;
-                double sy = my * height / sh;
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && mouseClicked(sx, sy, event.button())) {
-                    return true;
-                }
-            }
-        }
         return super.mouseClicked(event, isDoubleClick);
     }
 }

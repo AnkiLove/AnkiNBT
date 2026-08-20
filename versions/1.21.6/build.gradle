@@ -53,6 +53,8 @@ sourceSets {
 tasks.named('compileJava').configure {
     source fileTree('../../src/main/java') {
         exclude 'com/ankinbt/compat/**'
+        exclude 'com/ankinbt/gui/LegacyGuiGraphics.java'
+        exclude 'com/ankinbt/gui/EditorBrandLayer.java'
     }
 }
 
@@ -86,4 +88,5 @@ tasks.withType(ProcessResources).configureEach {
 
 tasks.named('jar').configure {
     exclude 'net/minecraft/**'
+    from('../../LICENSE') { rename { 'LICENSE_AnkiNBT' } }
 }

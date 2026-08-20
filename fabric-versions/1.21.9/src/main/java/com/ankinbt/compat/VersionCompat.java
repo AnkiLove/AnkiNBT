@@ -171,6 +171,15 @@ public class VersionCompat {
         }
         g.renderTooltip(f, components, mx, my, net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, null);
     }
+    public void renderItemTooltip(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font f,
+                                  ItemStack stack, int mx, int my) {
+        var components = new java.util.ArrayList<net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent>();
+        for (Component line : net.minecraft.client.gui.screens.Screen.getTooltipFromItem(Minecraft.getInstance(), stack)) {
+            components.add(new net.minecraft.client.gui.screens.inventory.tooltip.ClientTextTooltip(line.getVisualOrderText()));
+        }
+        g.renderTooltip(f, components, mx, my,
+                net.minecraft.client.gui.screens.inventory.tooltip.DefaultTooltipPositioner.INSTANCE, null);
+    }
     public int drawString(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.gui.Font font, net.minecraft.network.chat.Component text, int x, int y, int color, boolean shadow) {
         if (text == null) return drawString(g, font, "", x, y, color, shadow);
         try {

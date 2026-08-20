@@ -408,5 +408,8 @@
   "ankinbt.container.pick_item": "Pick Item",
   "ankinbt.container.clear_slot": "Clear Slot",
   "ankinbt.container.empty_hand": "Main hand is empty",
-  "ankinbt.container.applied": "Container content applied"
+  "ankinbt.container.applied": "Container content applied",
+  "ankinbt.simple.palette_bright": "Bright",
+  "ankinbt.simple.palette_dark": "Dark",
+  "ankinbt.entity.edit.name": "Edit Name"
 }

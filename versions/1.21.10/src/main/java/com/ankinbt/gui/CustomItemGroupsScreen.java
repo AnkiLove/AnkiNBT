@@ -664,17 +664,6 @@ public class CustomItemGroupsScreen extends Screen {
         double mx = event.x();
         double my = event.y();
         if (mouseClicked(mx, my, event.button())) return true;
-        if (minecraft != null) {
-            double sw = minecraft.getWindow().getScreenWidth();
-            double sh = minecraft.getWindow().getScreenHeight();
-            if (sw > 0.0 && sh > 0.0) {
-                double sx = mx * width / sw;
-                double sy = my * height / sh;
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && mouseClicked(sx, sy, event.button())) {
-                    return true;
-                }
-            }
-        }
         return super.mouseClicked(event, isDoubleClick);
     }
 }

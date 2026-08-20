@@ -4,6 +4,8 @@ import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.SpawnEggEditorHelper;
 import com.ankinbt.gui.AnkiConfigScreen;
 import com.ankinbt.gui.EntityEditorScreen;
+import com.ankinbt.gui.ImeSupport;
+import com.ankinbt.gui.InventoryEditorOverlay;
 import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.SimpleEditorScreen;
 import com.ankinbt.gui.VillagerTradeEditorScreen;
@@ -33,7 +35,15 @@ public class KeyBindings {
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener(KeyBindings::onRegisterKeyMappings);
         NeoForge.EVENT_BUS.addListener(KeyBindings::onClientTick);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenInit);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenRender);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenKeyPress);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenCharTyped);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenMousePress);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenMouseRelease);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenMouseDrag);
+        NeoForge.EVENT_BUS.addListener(KeyBindings::onScreenMouseScroll);
     }
 
     private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
@@ -75,12 +85,16 @@ public class KeyBindings {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        if (openConfigMenuKey != null && openConfigMenuKey.consumeClick()) {
-            mc.setScreen(new AnkiConfigScreen(mc.screen));
+        if (mc.screen != null) {
+            InventoryEditorOverlay.tick(mc.screen);
+            drainScreenEditorClicks();
             return;
         }
 
-        if (mc.screen != null) return;
+        if (openConfigMenuKey != null && openConfigMenuKey.consumeClick()) {
+            mc.setScreen(new AnkiConfigScreen(null));
+            return;
+        }
 
         if (openItemEditorKey != null && openItemEditorKey.consumeClick()) {
             ItemStack held = getHeldOrOffhand(mc);
@@ -109,12 +123,68 @@ public class KeyBindings {
         }
     }
 
+    private static void onScreenInit(ScreenEvent.Init.Post event) {
+        if (ImeSupport.isAnkiScreen(event.getScreen())) {
+            ImeSupport.screenOpened(event.getScreen());
+        }
+        if (event.getScreen() instanceof AbstractContainerScreen<?> containerScreen) {
+            InventoryEditorOverlay.attach(containerScreen, openItemEditorKey);
+        }
+    }
+
+    private static void onScreenRender(ScreenEvent.Render.Post event) {
+        InventoryEditorOverlay.render(event.getScreen(), event.getGuiGraphics(), event.getMouseX(),
+                event.getMouseY(), event.getPartialTick());
+    }
+
+    private static void onScreenClosing(ScreenEvent.Closing event) {
+        ImeSupport.screenRemoved(event.getScreen());
+        InventoryEditorOverlay.screenClosing(event.getScreen());
+    }
+
+    private static void onScreenCharTyped(ScreenEvent.CharacterTyped.Pre event) {
+        if (InventoryEditorOverlay.handleCharTyped(event.getScreen(), event.getCharacterEvent())) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static void onScreenMousePress(ScreenEvent.MouseButtonPressed.Pre event) {
+        if (InventoryEditorOverlay.handleMouseClick(event.getScreen(), event.getMouseButtonEvent())) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static void onScreenMouseRelease(ScreenEvent.MouseButtonReleased.Pre event) {
+        if (InventoryEditorOverlay.handleMouseRelease(event.getScreen(), event.getMouseButtonEvent())) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static void onScreenMouseDrag(ScreenEvent.MouseDragged.Pre event) {
+        if (InventoryEditorOverlay.handleMouseDrag(event.getScreen(), event.getMouseButtonEvent(),
+                event.getDragX(), event.getDragY())) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static void onScreenMouseScroll(ScreenEvent.MouseScrolled.Pre event) {
+        if (InventoryEditorOverlay.handleMouseScroll(event.getScreen(), event.getMouseX(), event.getMouseY(),
+                event.getScrollDeltaX(), event.getScrollDeltaY())) {
+            event.setCanceled(true);
+        }
+    }
+
     private static void onScreenKeyPress(ScreenEvent.KeyPressed.Pre event) {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> containerScreen)) return;
 
         if (openConfigMenuKey != null && openConfigMenuKey.matches(event.getKeyEvent())) {
             event.setCanceled(true);
-            Minecraft.getInstance().setScreen(new AnkiConfigScreen(event.getScreen()));
+            InventoryEditorOverlay.openModal(containerScreen, new AnkiConfigScreen(event.getScreen()));
+            return;
+        }
+
+        if (InventoryEditorOverlay.handleKeyPressed(event.getScreen(), event.getKeyEvent(), openItemEditorKey)) {
+            event.setCanceled(true);
             return;
         }
 
@@ -124,16 +194,23 @@ public class KeyBindings {
         ItemStack stack = hoveredSlot.getItem();
         int slotIndex = KeyBindings.getMenuSlotIndex(containerScreen, hoveredSlot);
 
-        if (openItemEditorKey != null && openItemEditorKey.matches(event.getKeyEvent())) {
-            event.setCanceled(true);
-            openItemEditor(stack, slotIndex);
-            return;
-        }
-
         if (openEntityEditorKey != null && openEntityEditorKey.matches(event.getKeyEvent())) {
             if (!SpawnEggEditorHelper.isSpawnEgg(stack)) return;
             event.setCanceled(true);
             openSmartEntityEditor(Minecraft.getInstance(), null, stack, slotIndex, event.getScreen());
+        }
+    }
+
+    private static void drainScreenEditorClicks() {
+        drainClicks(openItemEditorKey);
+        drainClicks(openEntityEditorKey);
+        drainClicks(openConfigMenuKey);
+    }
+
+    private static void drainClicks(KeyMapping mapping) {
+        if (mapping == null) return;
+        while (mapping.consumeClick()) {
+            // The active screen has already received the physical key event.
         }
     }
 
@@ -353,6 +430,25 @@ public class KeyBindings {
         return changed;
     }
 
+    public static void resetToDefaults() {
+        setKey(openItemEditorKey, InputConstants.KEY_N);
+        setKey(openEntityEditorKey, InputConstants.KEY_COMMA);
+        setKey(openConfigMenuKey, InputConstants.KEY_O);
+        KeyMapping.resetMapping();
+
+        AnkiConfig.setOpenItemEditorKeyCode(InputConstants.KEY_N);
+        AnkiConfig.setOpenEntityEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenVillagerEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenConfigMenuKeyCode(InputConstants.KEY_O);
+
+        Minecraft client = Minecraft.getInstance();
+        if (client != null && client.options != null) client.options.save();
+    }
+
+    private static void setKey(KeyMapping mapping, int keyCode) {
+        if (mapping != null) mapping.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+    }
+
     private static int keyCode(KeyMapping mapping, int fallback) {
         if (mapping == null) return fallback;
         try {
@@ -375,4 +471,3 @@ public class KeyBindings {
         return fallback;
     }
 }
-

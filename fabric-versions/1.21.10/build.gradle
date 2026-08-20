@@ -55,6 +55,7 @@ task copyVersionSources(type: Copy) {
         include 'com/ankinbt/gui/**'
         include 'com/ankinbt/compat/**'
         include 'com/ankinbt/keybind/**'
+        include 'com/ankinbt/mixin/**'
     }
     into 'build/version-src/java'
 }
@@ -65,6 +66,7 @@ task copySharedResources(type: Copy) {
         exclude 'pack.mcmeta'
     }
     into 'build/shared-resources'
+    from('../../LICENSE')
 }
 
 sourceSets {

@@ -105,6 +105,9 @@ clean.doFirst {
 }
 
 tasks.named('jar').configure {
+    from('../../LICENSE') {
+        rename { 'LICENSE_AnkiNBT' }
+    }
     exclude 'net/minecraft/**'
 }
 

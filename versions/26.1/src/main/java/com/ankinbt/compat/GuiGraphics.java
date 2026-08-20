@@ -2,16 +2,18 @@ package com.ankinbt.compat;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
 /**
- * Source-compatibility bridge for the 26.1 render-state API.
+ * Small source-compatibility bridge for AnkiNBT's pre-26.1 screen code.
  */
 public final class GuiGraphics {
     private final GuiGraphicsExtractor delegate;
@@ -63,8 +65,16 @@ public final class GuiGraphics {
         delegate.itemDecorations(font, stack, x, y);
     }
 
+    public void blit(Identifier texture, int x, int y, int width, int height) {
+        delegate.blit(texture, x, y, x + width, y + height, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
     public void renderTooltip(Font font, Component tooltip, int x, int y) {
         delegate.setTooltipForNextFrame(font, tooltip, x, y);
+    }
+
+    public void renderTooltip(Font font, ItemStack stack, int x, int y) {
+        delegate.setTooltipForNextFrame(font, stack, x, y);
     }
 
     public void renderTooltip(Font font, List<ClientTooltipComponent> components, int x, int y,

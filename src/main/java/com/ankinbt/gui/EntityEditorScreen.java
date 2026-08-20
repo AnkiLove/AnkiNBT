@@ -1,101 +1,59 @@
-/*
- * Decompiled with CFR 0.152.
- *
- * Could not load the following classes:
- *  com.google.gson.JsonElement
- *  com.google.gson.JsonObject
- *  com.google.gson.JsonParser
- *  net.minecraft.client.Minecraft
- *  net.minecraft.client.gui.Font
- *  net.minecraft.client.gui.GuiGraphics
- *  net.minecraft.client.gui.components.EditBox
- *  net.minecraft.client.gui.components.events.GuiEventListener
- *  net.minecraft.client.gui.screens.Screen
- *  net.minecraft.client.input.CharacterEvent
- *  net.minecraft.client.input.KeyEvent
- *  net.minecraft.client.input.MouseButtonEvent
- *  net.minecraft.client.server.IntegratedServer
- *  net.minecraft.nbt.CompoundTag
- *  net.minecraft.nbt.ListTag
- *  net.minecraft.nbt.Tag
- *  net.minecraft.network.chat.Component
- *  net.minecraft.network.chat.FormattedText
- *  net.minecraft.network.chat.MutableComponent
- *  net.minecraft.world.entity.AgeableMob
- *  net.minecraft.world.entity.Entity
- *  net.minecraft.world.entity.LivingEntity
- *  net.minecraft.world.entity.Mob
- *  net.minecraft.world.entity.ai.attributes.AttributeInstance
- *  net.minecraft.world.entity.ai.attributes.Attributes
- *  net.minecraft.world.item.ItemStack
- */
 package com.ankinbt.gui;
 
-import com.ankinbt.compat.VersionCompat;
 import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.EditorCommandHelper;
 import com.ankinbt.editor.SpawnEggEditorHelper;
-import com.ankinbt.gui.NbtEditorScreen;
-import com.ankinbt.gui.UiTheme;
-import com.ankinbt.gui.VillagerTradeEditorScreen;
+import com.ankinbt.util.UiSound;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.IntConsumer;
-import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import com.ankinbt.gui.LegacyGuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.FormattedText;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 
-public class EntityEditorScreen
-extends Screen {
-    private static final int TXT_TITLE = -788737;
-    private static final int TXT_MAIN = -2497806;
-    private static final int TXT_DIM = -7429177;
-    private static final int TXT_OK = -13315175;
-    private static final int TXT_ERR = -1096636;
-    private static final int SIMPLE_C1 = -1906448;
-    private static final int SIMPLE_C2 = -7035976;
-    private static final int SIMPLE_C3 = -10193781;
-    private static final int SIMPLE_BORDER = -14540234;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+public class EntityEditorScreen extends Screen {
+
+    private static final int TXT_TITLE = 0xFFF3F6FF;
+    private static final int TXT_MAIN = 0xFFD9E2F2;
+    private static final int TXT_DIM = 0xFF8EA3C7;
+    private static final int TXT_OK = 0xFF34D399;
+    private static final int TXT_ERR = 0xFFEF4444;
+    private static final int SIMPLE_C1 = 0xFFE2E8F0;
+    private static final int SIMPLE_C2 = 0xFF94A3B8;
+    private static final int SIMPLE_C3 = 0xFF64748B;
+    private static final int SIMPLE_BORDER = 0xFF222236;
     private static final int SIMPLE_BTN_BG = 0x30FFFFFF;
     private static final int SIMPLE_BTN_HOVER = 0x50FFFFFF;
-    private static final int SIMPLE_SUCCESS = -14498466;
-    private static final int SIMPLE_ERROR = -1096636;
-    private static final Component HEAL_FULL_LABEL = Component.translatable((String)"ankinbt.entity.heal_full");
+    private static final int SIMPLE_SUCCESS = 0xFF22C55E;
+    private static final int SIMPLE_ERROR = 0xFFEF4444;
+    private static final Component HEAL_FULL_LABEL = Component.translatable("ankinbt.entity.heal_full");
+
     private final Entity targetEntity;
-    private final ItemStack sourceStack;
+    private ItemStack sourceStack;
     private final int inventorySlot;
     private final Screen parent;
-    private final List<UiBtn> buttons = new ArrayList<UiBtn>();
+
+    private final List<UiBtn> buttons = new ArrayList<>();
+
     private int stNoAi = -1;
     private int stInvulnerable = -1;
     private int stNoGravity = -1;
@@ -104,22 +62,76 @@ extends Screen {
     private boolean healToFullOnApply = false;
     private EditBox nameBox;
     private EditBox healthBox;
+
     private Component status = Component.empty();
-    private int statusColor = -7429177;
-    private long statusTime = 0L;
+    private int statusColor = TXT_DIM;
+    private long statusTime = 0;
     private boolean dirty = false;
+    private static final long AUTO_SAVE_DEBOUNCE_MS = 350L;
+    private long lastEditAt = 0L;
+    private boolean suppressDirtyTracking = false;
+    private StateSnapshot autoSaveFailureState;
     private boolean confirmClose = false;
     private boolean confirmReset = false;
-    private final List<StateSnapshot> undoStack = new ArrayList<StateSnapshot>();
-    private int px;
-    private int py;
-    private int pw;
-    private int ph;
-    private float openAnim = 0.0f;
+    private boolean applyPending = false;
+    private final List<StateSnapshot> undoStack = new ArrayList<>();
+
+    private int px, py, pw, ph;
+    private EditorDock.Bounds barBounds;
+    private EditorDock.Bounds drawerBounds;
+    private boolean drawerAbove;
+    private boolean drawerOpen = true;
+    private float drawerAnim = 0f;
+    private float contentAnim = 1f;
+    private float activeIndicatorX = -1f;
+    private final float[] tabHoverAnim = new float[4];
+    private final float[] toolHoverAnim = new float[3];
+    private EntityTab activeTab = EntityTab.GENERAL;
+    private float openAnim = 0f;
+    private float brandAnim = 0f;
+    private float settingsHoverAnim = 0f;
+    private float modalAnim = 0f;
+    private final float[] modalButtonHover = new float[3];
+    private boolean draggingPanel = false;
+    private int dragOffsetX;
+    private int dragOffsetY;
+    private boolean resizingEditor;
+    private boolean editorSizeFocused;
+    private float editorScale = EditorDock.DEFAULT_EDITOR_SCALE;
+    private float editorWidthAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float editorHeightAdjustment = EditorDock.DEFAULT_AXIS_ADJUSTMENT;
+    private float sizeControlHoverAnim;
+    private boolean panelPositioned = false;
+    private int layoutWidth = -1;
+    private int layoutHeight = -1;
+    private int tabScroll = 0;
+    private int tabMaxScroll = 0;
+    /**
+     * Tooltip requests are collected while the clipped drawer/menu is rendered
+     * and submitted once, after every editor surface has been drawn.
+     */
+    private Component pendingTooltip;
+    private int pendingTooltipX;
+    private int pendingTooltipY;
     private static final int MAX_UNDO = 40;
 
+    private enum EntityTab {
+        GENERAL("ankinbt.entity.tab.general", UiIcons.USER),
+        STATES("ankinbt.entity.tab.states", UiIcons.ACTIVITY),
+        INFO("ankinbt.entity.tab.info", UiIcons.INFO),
+        TOOLS("ankinbt.entity.tab.tools", UiIcons.LAYERS);
+
+        final String translationKey;
+        final String icon;
+
+        EntityTab(String translationKey, String icon) {
+            this.translationKey = translationKey;
+            this.icon = icon;
+        }
+    }
+
     private EntityEditorScreen(Entity targetEntity, ItemStack sourceStack, int inventorySlot, Screen parent) {
-        super((Component)Component.translatable((String)"ankinbt.entity.title"));
+        super(Component.translatable("ankinbt.entity.title"));
         this.targetEntity = targetEntity;
         this.sourceStack = sourceStack == null ? ItemStack.EMPTY : sourceStack.copy();
         this.inventorySlot = inventorySlot;
@@ -142,830 +154,1485 @@ extends Screen {
         return new EntityEditorScreen(null, stack, inventorySlot, parent);
     }
 
+    @Override
     protected void init() {
-        this.recalcBounds();
-        this.nameBox = new EditBox(this.font, this.nameFieldX(), this.nameFieldY(), 192, 16, (Component)Component.empty());
-        this.styleBox(this.nameBox);
-        this.nameBox.setValue(this.currentCustomNameInput());
-        this.nameBox.setResponder(v -> {
-            this.dirty = true;
-        });
-        this.addRenderableWidget(this.nameBox);
-        this.healthBox = new EditBox(this.font, this.healthFieldX(), this.healthFieldY(), 88, 16, (Component)Component.empty());
-        this.styleBox(this.healthBox);
-        this.healthBox.setValue(this.currentHealthNumeric());
-        this.healthBox.setResponder(v -> {
-            this.dirty = true;
-        });
-        this.addRenderableWidget(this.healthBox);
-        this.rebuildButtons();
-        this.undoStack.clear();
-        this.undoStack.add(this.captureState());
+        editorScale = AnkiConfig.getEntityEditorScale();
+        editorWidthAdjustment = AnkiConfig.getEntityEditorWidthAdjustment();
+        editorHeightAdjustment = AnkiConfig.getEntityEditorHeightAdjustment();
+        String pendingName = nameBox == null ? currentCustomNameInput() : nameBox.getValue();
+        String pendingHealth = healthBox == null ? currentHealthNumeric() : healthBox.getValue();
+        boolean resuming = nameBox != null || healthBox != null;
+        recalcBounds();
+        nameBox = new EditBox(font, nameFieldX(), nameFieldY(), nameFieldWidth(), 16, Component.empty());
+        styleBox(nameBox);
+        nameBox.setValue(pendingName);
+        nameBox.setResponder(v -> markDirty());
+        addRenderableWidget(nameBox);
+        healthBox = new EditBox(font, healthFieldX(), healthFieldY(), healthFieldWidth(), 16, Component.empty());
+        styleBox(healthBox);
+        healthBox.setValue(pendingHealth);
+        healthBox.setResponder(v -> markDirty());
+        addRenderableWidget(healthBox);
+        rebuildButtons();
+        if (!resuming) {
+            undoStack.clear();
+            undoStack.add(captureState());
+        }
     }
 
     private void styleBox(EditBox box) {
-        if (box == null) {
-            return;
-        }
+        if (box == null) return;
         try {
             box.setBordered(false);
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+        } catch (Throwable ignored) {}
         try {
-            box.setTextColor(-2497806);
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+            box.setTextColor(UiTheme.textMain());
+        } catch (Throwable ignored) {}
         try {
-            box.setTextColorUneditable(-7429177);
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+            box.setTextColorUneditable(UiTheme.textDim());
+        } catch (Throwable ignored) {}
     }
 
     private void recalcBounds() {
-        this.pw = Math.min(740, this.width - 20);
-        this.ph = Math.min(420, this.height - 20);
-        this.px = (this.width - this.pw) / 2;
-        this.py = (this.height - this.ph) / 2;
+        boolean viewportChanged = layoutWidth != width || layoutHeight != height;
+        if (barBounds == null || drawerBounds == null || viewportChanged) {
+            applyMenuLayout(EditorDock.menuLayout(width, height, 300, false, editorScale,
+                    editorWidthAdjustment, editorHeightAdjustment));
+        }
+        layoutWidth = width;
+        layoutHeight = height;
+        layoutWidgets();
+        if (viewportChanged && nameBox != null) {
+            rebuildButtons();
+        }
+    }
+
+    private void applyMenuLayout(EditorDock.MenuLayout layout) {
+        barBounds = layout.bar();
+        drawerBounds = layout.drawer();
+        drawerAbove = layout.drawerAbove();
+        px = drawerBounds.x();
+        py = drawerBounds.y();
+        pw = drawerBounds.width();
+        ph = drawerBounds.height();
+        panelPositioned = true;
+        layoutWidgets();
     }
 
     private int nameFieldX() {
-        return this.px + 102;
+        return valueColumnX();
     }
 
     private int nameFieldY() {
-        return this.py + 70;
+        return nameRowY() - 4;
+    }
+
+    private int nameFieldWidth() {
+        return Math.max(28, valueColumnRight() - nameFieldX());
     }
 
     private int healthFieldX() {
-        return this.px + 102;
+        return valueColumnX();
     }
 
     private int healthFieldY() {
-        return this.py + 118;
+        return healthRowY() - 4;
+    }
+
+    private int healthFieldWidth() {
+        return Math.max(28, Math.min(86, valueColumnRight() - healthFieldX()));
+    }
+
+    private int bodyTop() {
+        return py + 34;
+    }
+
+    private int bodyBottom() {
+        return py + ph - 30;
+    }
+
+    private int bodyHeight() {
+        return Math.max(0, bodyBottom() - bodyTop());
+    }
+
+    private int infoCardX() {
+        return px + 12;
+    }
+
+    private int infoCardWidth() {
+        return Math.max(120, pw - 24);
+    }
+
+    private int actionCardX() {
+        return infoCardX();
+    }
+
+    private int actionCardWidth() {
+        return infoCardWidth();
+    }
+
+    private int labelColumnWidth() {
+        int widest = 0;
+        String[] keys = {
+                "ankinbt.entity.info.name",
+                "ankinbt.entity.info.type",
+                "ankinbt.entity.info.pos",
+                "ankinbt.entity.info.health",
+                "ankinbt.entity.info.flags"
+        };
+        for (String key : keys) {
+            widest = Math.max(widest, font.width(Component.translatable(key)));
+        }
+        int contentWidth = Math.max(1, infoCardWidth() - 20);
+        int maximum = Math.max(52, Math.min(112, contentWidth * 2 / 5));
+        return Math.max(52, Math.min(widest + 10, maximum));
+    }
+
+    private int valueColumnX() {
+        return infoCardX() + 10 + labelColumnWidth();
+    }
+
+    private int valueColumnRight() {
+        return infoCardX() + infoCardWidth() - 10;
+    }
+
+    private int valueColumnWidth() {
+        return Math.max(1, valueColumnRight() - valueColumnX());
+    }
+
+    private boolean denseGeneralLayout() {
+        return bodyHeight() < 152;
+    }
+
+    private int generalContentInset() {
+        return denseGeneralLayout() ? 4 : 8;
+    }
+
+    private int generalCardGap() {
+        return denseGeneralLayout() ? 3 : 6;
+    }
+
+    private int nameCardY() {
+        return bodyTop() + generalContentInset();
+    }
+
+    private int nameCardHeight() {
+        return denseGeneralLayout() ? 24 : 34;
+    }
+
+    private int nameRowY() {
+        return nameCardY() + (denseGeneralLayout() ? 7 : 10);
+    }
+
+    private int healthCardY() {
+        return nameCardY() + nameCardHeight() + generalCardGap();
+    }
+
+    private int healthCardHeight() {
+        int available = Math.max(0, bodyBottom() - healthCardY());
+        int preferred = denseGeneralLayout() ? 62 : 68;
+        return Math.min(preferred, available);
+    }
+
+    private int healthRowY() {
+        return healthCardY() + (denseGeneralLayout() ? 7 : 10);
+    }
+
+    private int previewCardY() {
+        return healthCardY() + healthCardHeight() + generalCardGap();
+    }
+
+    private int previewCardHeight() {
+        return Math.max(0, Math.min(30, bodyBottom() - previewCardY()));
+    }
+
+    private void layoutWidgets() {
+        if (nameBox != null) {
+            nameBox.setX(nameFieldX());
+            nameBox.setY(nameFieldY());
+            nameBox.setWidth(nameFieldWidth());
+        }
+        if (healthBox != null) {
+            healthBox.setX(healthFieldX());
+            healthBox.setY(healthFieldY());
+            healthBox.setWidth(healthFieldWidth());
+        }
+        syncFieldAvailability();
+    }
+
+    private void syncFieldAvailability() {
+        boolean enabled = activeTab == EntityTab.GENERAL
+                && drawerOpen
+                && drawerAnim >= 0.92f
+                && !confirmClose
+                && !confirmReset;
+        if (nameBox != null) {
+            boolean fits = nameBox.getY() >= bodyTop()
+                    && nameBox.getY() + nameBox.getHeight() <= bodyBottom();
+            nameBox.active = enabled && fits;
+            nameBox.visible = enabled && fits;
+            if (!nameBox.active) nameBox.setFocused(false);
+        }
+        if (healthBox != null) {
+            boolean fits = healthBox.getY() >= bodyTop()
+                    && healthBox.getY() + healthBox.getHeight() <= bodyBottom();
+            healthBox.active = enabled && fits && canEditHealth();
+            healthBox.visible = enabled && fits && canEditHealth();
+            if (!healthBox.active) healthBox.setFocused(false);
+        }
     }
 
     private void rebuildButtons() {
-        this.buttons.clear();
-        int left = this.px + 18;
-        int right = this.px + this.pw - 18;
-        int mid = this.px + this.pw / 2;
-        int rx = mid + 8;
-        int rw = right - rx;
-        int rowH = AnkiConfig.isUiCompactLayout() ? 20 : 22;
-        int gap = AnkiConfig.isUiCompactLayout() ? 4 : 6;
-        int y = this.py + 72;
-        this.buttons.add(this.stateBtn(rx, y, rw, rowH, "ankinbt.entity.flag.no_ai", () -> this.stNoAi, v -> {
-            this.stNoAi = v;
-        }));
-        this.buttons.add(this.stateBtn(rx, y += rowH + gap, rw, rowH, "ankinbt.entity.flag.invulnerable", () -> this.stInvulnerable, v -> {
-            this.stInvulnerable = v;
-        }));
-        this.buttons.add(this.stateBtn(rx, y += rowH + gap, rw, rowH, "ankinbt.entity.flag.no_gravity", () -> this.stNoGravity, v -> {
-            this.stNoGravity = v;
-        }));
-        this.buttons.add(this.stateBtn(rx, y += rowH + gap, rw, rowH, "ankinbt.entity.flag.silent", () -> this.stSilent, v -> {
-            this.stSilent = v;
-        }));
-        this.buttons.add(this.stateBtn(rx, y += rowH + gap, rw, rowH, "ankinbt.entity.flag.baby", () -> this.stBaby, v -> {
-            this.stBaby = v;
-        }));
-        y += rowH + gap;
-        if (this.hasVillagerTradeContext()) {
-            this.buttons.add(new UiBtn(rx, y, rw, rowH, () -> Component.translatable((String)"ankinbt.entity.open_villager").getString(), this::openVillagerTradeEditor, true, null, 0));
-            y += rowH + gap;
+        buttons.clear();
+        int x = px + 10;
+        int y = bodyTop() + 8;
+        int availableWidth = Math.max(120, pw - 20);
+        int availableHeight = Math.max(1, bodyBottom() - y);
+        int preferredRowHeight = AnkiConfig.isUiCompactLayout() ? 26 : 30;
+
+        if (activeTab == EntityTab.STATES) {
+            int preferredGap = 6;
+            boolean cardGrid = "cards".equals(AnkiConfig.getUiOptionStyle()) && availableWidth >= 360;
+            int singleColumnHeight = 5 * preferredRowHeight + 4 * preferredGap;
+            int columns = cardGrid || singleColumnHeight > availableHeight ? 2 : 1;
+            int rowCount = (5 + columns - 1) / columns;
+            int gap = availableHeight < 84 ? 2 : preferredGap;
+            int fittedHeight = Math.max(12,
+                    (availableHeight - gap * (rowCount - 1)) / Math.max(1, rowCount));
+            int rowH = Math.max(18, Math.min(preferredRowHeight, fittedHeight));
+            int cellW = Math.max(56, (availableWidth - gap * (columns - 1)) / columns);
+            int index = 0;
+            buttons.add(stateBtn(x + (index % columns) * (cellW + gap), y + (index / columns) * (rowH + gap), cellW, rowH,
+                    "ankinbt.entity.flag.no_ai", () -> stNoAi, v -> stNoAi = v));
+            index++;
+            buttons.add(stateBtn(x + (index % columns) * (cellW + gap), y + (index / columns) * (rowH + gap), cellW, rowH,
+                    "ankinbt.entity.flag.invulnerable", () -> stInvulnerable, v -> stInvulnerable = v));
+            index++;
+            buttons.add(stateBtn(x + (index % columns) * (cellW + gap), y + (index / columns) * (rowH + gap), cellW, rowH,
+                    "ankinbt.entity.flag.no_gravity", () -> stNoGravity, v -> stNoGravity = v));
+            index++;
+            buttons.add(stateBtn(x + (index % columns) * (cellW + gap), y + (index / columns) * (rowH + gap), cellW, rowH,
+                    "ankinbt.entity.flag.silent", () -> stSilent, v -> stSilent = v));
+            index++;
+            buttons.add(stateBtn(x + (index % columns) * (cellW + gap), y + (index / columns) * (rowH + gap), cellW, rowH,
+                    "ankinbt.entity.flag.baby", () -> stBaby, v -> stBaby = v));
+        } else if (activeTab == EntityTab.TOOLS) {
+            int toolCount = (hasVillagerTradeContext() ? 1 : 0) + (!sourceStack.isEmpty() ? 1 : 0);
+            int gap = availableHeight < 60 ? 2 : 6;
+            int fittedHeight = toolCount == 0 ? preferredRowHeight
+                    : Math.max(12, (availableHeight - gap * (toolCount - 1)) / toolCount);
+            int rowH = Math.max(18, Math.min(preferredRowHeight, fittedHeight));
+            int index = 0;
+            if (hasVillagerTradeContext()) {
+                buttons.add(new UiBtn(x, y + index * (rowH + gap), availableWidth, rowH,
+                        () -> Component.translatable("ankinbt.entity.open_villager").getString(),
+                        this::openVillagerTradeEditor, true, null, 0));
+                index++;
+            }
+            if (!sourceStack.isEmpty()) {
+                buttons.add(new UiBtn(x, y + index * (rowH + gap), availableWidth, rowH,
+                        () -> Component.translatable("ankinbt.entity.open_spawn_egg_nbt").getString(),
+                        () -> Minecraft.getInstance().setScreen(new NbtEditorScreen(sourceStack)), true, null, 0));
+            }
         }
-        if (!this.sourceStack.isEmpty()) {
-            this.buttons.add(new UiBtn(rx, y, rw, rowH, () -> Component.translatable((String)"ankinbt.entity.open_spawn_egg_nbt").getString(), () -> Minecraft.getInstance().setScreen((Screen)new NbtEditorScreen(this.sourceStack)), true, null, 0));
-            y += rowH + gap;
-        }
-        int bottomY = this.py + this.ph - 30;
-        int areaW = this.pw - 36;
-        int actionBarW = (areaW - 16) / 3;
-        this.buttons.add(new UiBtn(this.px + 18, bottomY, actionBarW, 20, () -> Component.translatable((String)"ankinbt.entity.apply_patch").getString(), this::applyPatch, true, null, 1));
-        this.buttons.add(new UiBtn(this.px + 18 + actionBarW + 8, bottomY, actionBarW, 20, () -> Component.translatable((String)"ankinbt.entity.reset_changes").getString(), () -> {
-            this.confirmReset = true;
-        }, true, null, -1));
-        this.buttons.add(new UiBtn(this.px + 18 + (actionBarW + 8) * 2, bottomY, actionBarW, 20, () -> Component.translatable((String)"ankinbt.edit.cancel").getString(), this::tryClose, true, null, 0));
+        updateTabScrollBounds();
     }
 
     private boolean hasVillagerTradeContext() {
-        String type;
-        if (this.targetEntity != null && ((type = this.targetEntity.getType().toString().toLowerCase(Locale.ROOT)).contains("villager") || type.contains("wandering_trader"))) {
-            return true;
+        if (targetEntity != null) {
+            String type = targetEntity.getType().toString().toLowerCase(Locale.ROOT);
+            if (type.contains("villager") || type.contains("wandering_trader")) return true;
         }
-        return !this.sourceStack.isEmpty() && SpawnEggEditorHelper.isVillagerSpawnEgg(this.sourceStack);
+        return !sourceStack.isEmpty() && SpawnEggEditorHelper.isVillagerSpawnEgg(sourceStack);
     }
 
     private void openVillagerTradeEditor() {
-        String type;
-        if (this.targetEntity != null && ((type = this.targetEntity.getType().toString().toLowerCase(Locale.ROOT)).contains("villager") || type.contains("wandering_trader"))) {
-            Minecraft.getInstance().setScreen((Screen)VillagerTradeEditorScreen.forEntity(this.targetEntity, this));
-            return;
+        if (targetEntity != null) {
+            String type = targetEntity.getType().toString().toLowerCase(Locale.ROOT);
+            if (type.contains("villager") || type.contains("wandering_trader")) {
+                Minecraft.getInstance().setScreen(VillagerTradeEditorScreen.forEntity(targetEntity, this));
+                return;
+            }
         }
-        if (SpawnEggEditorHelper.isVillagerSpawnEgg(this.sourceStack)) {
-            Minecraft.getInstance().setScreen((Screen)VillagerTradeEditorScreen.forSpawnEgg(this.sourceStack, this.inventorySlot, this));
+        if (SpawnEggEditorHelper.isVillagerSpawnEgg(sourceStack)) {
+            Minecraft.getInstance().setScreen(VillagerTradeEditorScreen.forSpawnEgg(sourceStack, inventorySlot, this));
         }
     }
 
-    private UiBtn stateBtn(int x, int y, int w, int h, String key, Supplier<Integer> getter, IntConsumer setter) {
-        return new UiBtn(x, y, w, h, () -> Component.translatable((String)key, (Object[])new Object[]{this.stateText((Integer)getter.get())}).getString(), () -> {
-            this.pushUndo();
-            setter.accept(this.nextState((Integer)getter.get()));
-            this.dirty = true;
-        }, true, null, 0);
+    private UiBtn stateBtn(int x, int y, int w, int h, String key, Supplier<Integer> getter, java.util.function.IntConsumer setter) {
+        return new UiBtn(x, y, w, h,
+                () -> Component.translatable(key, stateText(getter.get())).getString(),
+                () -> {
+                    pushUndo();
+                    setter.accept(nextState(getter.get()));
+                    markDirty();
+                }, true, () -> getter.get() > 0, 0);
+    }
+
+    private void openResetConfirm() {
+        modalAnim = 0f;
+        confirmClose = false;
+        confirmReset = true;
     }
 
     private int nextState(int s) {
-        if (s < 0) {
-            return 1;
-        }
-        if (s > 0) {
-            return 0;
-        }
+        if (s < 0) return 1;
+        if (s > 0) return 0;
         return -1;
     }
 
     private String stateText(int s) {
-        if (s < 0) {
-            return Component.translatable((String)"ankinbt.entity.state.keep").getString();
-        }
-        return s > 0 ? Component.translatable((String)"ankinbt.simple.on").getString() : Component.translatable((String)"ankinbt.simple.off").getString();
+        if (s < 0) return Component.translatable("ankinbt.entity.state.keep").getString();
+        return s > 0 ? Component.translatable("ankinbt.simple.on").getString()
+                : Component.translatable("ankinbt.simple.off").getString();
     }
 
     private void resetStates() {
-        this.pushUndo();
-        this.stNoAi = -1;
-        this.stInvulnerable = -1;
-        this.stNoGravity = -1;
-        this.stSilent = -1;
-        this.stBaby = -1;
-        this.healToFullOnApply = false;
-        if (this.nameBox != null) {
-            this.nameBox.setValue(this.currentCustomNameInput());
-        }
-        if (this.healthBox != null) {
-            this.healthBox.setValue(this.currentHealthNumeric());
-        }
-        this.dirty = false;
-        this.setStatus((Component)Component.translatable((String)"ankinbt.entity.reset_done"), -13315175);
+        pushUndo();
+        stNoAi = -1;
+        stInvulnerable = -1;
+        stNoGravity = -1;
+        stSilent = -1;
+        stBaby = -1;
+        healToFullOnApply = false;
+        setBoxValueSilently(nameBox, currentCustomNameInput());
+        setBoxValueSilently(healthBox, currentHealthNumeric());
+        dirty = false;
+        setStatus(Component.translatable("ankinbt.entity.reset_done"), TXT_OK);
     }
 
     private CompoundTag buildPatch() {
-        String id;
-        Float healthToApply;
-        String customName;
         CompoundTag patch = new CompoundTag();
-        this.putTriState(patch, "NoAI", this.stNoAi);
-        this.putTriState(patch, "Invulnerable", this.stInvulnerable);
-        this.putTriState(patch, "NoGravity", this.stNoGravity);
-        this.putTriState(patch, "Silent", this.stSilent);
-        this.putTriState(patch, "IsBaby", this.stBaby);
-        if (this.stBaby == 1) {
-            patch.putInt("Age", -24000);
-        }
-        if (this.stBaby == 0) {
-            patch.putInt("Age", 0);
-        }
-        if (!Objects.equals(customName = this.normalizeCustomNameInput(this.nameBox == null ? "" : this.nameBox.getValue()).trim(), this.normalizeCustomNameInput(this.currentCustomNameInput()).trim())) {
-            patch.putString("CustomName", this.toCustomNameJson(customName));
+        putTriState(patch, "NoAI", stNoAi);
+        putTriState(patch, "Invulnerable", stInvulnerable);
+        putTriState(patch, "NoGravity", stNoGravity);
+        putTriState(patch, "Silent", stSilent);
+        putTriState(patch, "IsBaby", stBaby);
+        if (stBaby == 1) patch.putInt("Age", -24000);
+        if (stBaby == 0) patch.putInt("Age", 0);
+        String customName = normalizeCustomNameInput(nameBox == null ? "" : nameBox.getValue()).trim();
+        if (!Objects.equals(customName, normalizeCustomNameInput(currentCustomNameInput()).trim())) {
+            patch.putString("CustomName", toCustomNameJson(customName));
             patch.putBoolean("CustomNameVisible", !customName.isBlank());
         }
-        Float healthInput = this.parsePositiveFloat(this.healthBox == null ? "" : this.healthBox.getValue());
-        Float currentMaxHealth = this.currentMaxHealth();
-        if (healthInput != null && (this.targetEntity == null || currentMaxHealth == null || healthInput.floatValue() > currentMaxHealth.floatValue() + 0.01f)) {
-            this.putMaxHealthPatch(patch, healthInput.floatValue());
+
+        Float healthInput = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
+        Float currentMaxHealth = currentMaxHealth();
+        if (healthInput != null && (targetEntity == null || currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
+            putMaxHealthPatch(patch, healthInput);
         }
-        if ((healthToApply = this.resolveHealthForApply(healthInput, currentMaxHealth)) != null) {
-            patch.putFloat("Health", healthToApply.floatValue());
+        Float healthToApply = resolveHealthForApply(healthInput, currentMaxHealth);
+        if (healthToApply != null) {
+            patch.putFloat("Health", healthToApply);
         }
-        if (this.stInvulnerable == 1) {
-            patch.putInt("NoDamageTicks", Short.MAX_VALUE);
+
+        if (stInvulnerable == 1) patch.putInt("NoDamageTicks", 32767);
+        if (stInvulnerable == 0) patch.putInt("NoDamageTicks", 0);
+        if (targetEntity == null && SpawnEggEditorHelper.isSpawnEgg(sourceStack) && !patch.contains("id")) {
+            String id = SpawnEggEditorHelper.inferEntityIdFromSpawnEgg(sourceStack);
+            if (!id.isBlank()) patch.putString("id", id);
         }
-        if (this.stInvulnerable == 0) {
-            patch.putInt("NoDamageTicks", 0);
-        }
-        if (this.targetEntity == null && SpawnEggEditorHelper.isSpawnEgg(this.sourceStack) && !patch.contains("id") && !(id = SpawnEggEditorHelper.inferEntityIdFromSpawnEgg(this.sourceStack)).isBlank()) {
-            patch.putString("id", id);
-        }
+
         return patch;
     }
 
     private void putMaxHealthPatch(CompoundTag patch, float health) {
-        ListTag attrs = new ListTag();
+        String attributeId = maxHealthAttributeId();
+        net.minecraft.nbt.ListTag attrs = new net.minecraft.nbt.ListTag();
         CompoundTag attr = new CompoundTag();
-        attr.putString("id", "minecraft:generic.max_health");
-        attr.putDouble("base", (double)health);
+        attr.putString("id", attributeId);
+        attr.putDouble("base", health);
         attrs.add(attr);
-        patch.put("attributes", (Tag)attrs);
-        ListTag legacy = new ListTag();
+        patch.put("attributes", attrs);
+
+        net.minecraft.nbt.ListTag legacy = new net.minecraft.nbt.ListTag();
         CompoundTag legacyAttr = new CompoundTag();
-        legacyAttr.putString("Name", "minecraft:generic.max_health");
-        legacyAttr.putDouble("Base", (double)health);
+        legacyAttr.putString("Name", attributeId);
+        legacyAttr.putDouble("Base", health);
         legacy.add(legacyAttr);
-        patch.put("Attributes", (Tag)legacy);
+        patch.put("Attributes", legacy);
+    }
+
+    private String maxHealthAttributeId() {
+        return Attributes.MAX_HEALTH.unwrapKey()
+                .map(key -> key.location().toString())
+                .orElse("minecraft:max_health");
     }
 
     private void putTriState(CompoundTag patch, String key, int state) {
-        if (state == -1) {
-            return;
-        }
+        if (state == -1) return;
         patch.putBoolean(key, state == 1);
     }
 
     private void applyPatch() {
+        applyPatch(captureState(), false);
+    }
+
+    private void applyPatch(StateSnapshot savedState, boolean automatic) {
         Minecraft mc = Minecraft.getInstance();
-        CompoundTag patch = this.buildPatch();
-        String customName = this.normalizeCustomNameInput(this.nameBox == null ? "" : this.nameBox.getValue()).trim();
-        Float healthInput = this.parsePositiveFloat(this.healthBox == null ? "" : this.healthBox.getValue());
-        Float currentMaxHealth = this.currentMaxHealth();
-        Float healthToApply = this.resolveHealthForApply(healthInput, currentMaxHealth);
+        if (applyPending) return;
+        if (!validateHealthInput()) return;
+        CompoundTag patch = buildPatch();
+        String customName = normalizeCustomNameInput(nameBox == null ? "" : nameBox.getValue()).trim();
+        Float healthInput = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
+        Float currentMaxHealth = currentMaxHealth();
+        Float healthToApply = resolveHealthForApply(healthInput, currentMaxHealth);
         if (patch.isEmpty()) {
-            this.setStatus((Component)Component.translatable((String)"ankinbt.entity.preview_empty"), -7429177);
-            return;
-        }
-        if (this.targetEntity != null) {
-            if (mc.player == null) {
-                return;
-            }
-            boolean ok = this.applyPatchToIntegratedServer(mc, customName, healthInput, currentMaxHealth, healthToApply);
-            if (!ok && !EditorCommandHelper.canUseEntityCommand(mc)) {
-                this.setStatus((Component)Component.translatable((String)"ankinbt.entity.admin_required"), -1096636);
-                return;
-            }
-            if (!ok) {
-                ok = EditorCommandHelper.applyMergeToEntity(mc, this.targetEntity, patch);
-            }
-            this.setStatus((Component)(ok ? Component.translatable((String)"ankinbt.entity.applied") : Component.translatable((String)"ankinbt.status.save_error")), ok ? -13315175 : -1096636);
-            if (ok) {
-                this.applyLocalPreview(patch);
-                if (healthInput != null && (currentMaxHealth == null || healthInput.floatValue() > currentMaxHealth.floatValue() + 0.01f)) {
-                    EditorCommandHelper.setEntityMaxHealth(mc, this.targetEntity, healthInput.floatValue());
-                    this.setLocalMaxHealth(this.targetEntity, healthInput.floatValue());
-                    currentMaxHealth = healthInput;
-                }
-                if (healthToApply != null) {
-                    Entity entity = this.targetEntity;
-                    if (entity instanceof LivingEntity) {
-                        LivingEntity living = (LivingEntity)entity;
-                        living.setHealth(healthToApply.floatValue());
-                    }
-                    this.healthBox.setValue(String.format(Locale.ROOT, "%.1f", healthToApply));
-                }
-                this.dirty = false;
-                this.undoStack.clear();
-                this.undoStack.add(this.captureState());
+            if (automatic) {
+                settleSavedState(savedState, false);
+            } else {
+                setStatus(Component.translatable("ankinbt.entity.preview_empty"), TXT_DIM);
             }
             return;
         }
-        if (!SpawnEggEditorHelper.isSpawnEgg(this.sourceStack)) {
-            this.setStatus((Component)Component.translatable((String)"ankinbt.entity.spawn_egg_required"), -1096636);
+
+        if (targetEntity != null) {
+            if (mc.player == null) return;
+            if (mc.getSingleplayerServer() != null) {
+                applyPending = true;
+                setStatus(Component.translatable("ankinbt.status.applying"), TXT_DIM);
+                applyPatchToIntegratedServerAsync(mc, customName, healthInput, currentMaxHealth, healthToApply,
+                        ok -> finishEntityApply(mc, ok, patch, healthInput, currentMaxHealth, healthToApply,
+                                savedState, automatic));
+            } else {
+                finishEntityApply(mc, false, patch, healthInput, currentMaxHealth, healthToApply,
+                        savedState, automatic);
+            }
             return;
         }
-        Optional<ItemStack> patched = SpawnEggEditorHelper.withMergedEntityData(this.sourceStack, patch);
+
+        if (!SpawnEggEditorHelper.isSpawnEgg(sourceStack)) {
+            setStatus(Component.translatable("ankinbt.entity.spawn_egg_required"), TXT_ERR);
+            return;
+        }
+
+        var patched = SpawnEggEditorHelper.withMergedEntityData(sourceStack, patch);
         if (patched.isEmpty()) {
-            this.setStatus((Component)Component.translatable((String)"ankinbt.status.save_error"), -1096636);
+            setStatus(Component.translatable("ankinbt.status.save_error"), TXT_ERR);
+            if (automatic) autoSaveFailureState = savedState;
             return;
         }
-        if (!SpawnEggEditorHelper.saveToCreativeSlot(mc, patched.get(), this.inventorySlot)) {
-            this.setStatus((Component)Component.translatable((String)"ankinbt.status.creative_only"), -1096636);
+        if (!SpawnEggEditorHelper.saveToCreativeSlot(mc, patched.get(), inventorySlot)) {
+            setStatus(Component.translatable("ankinbt.status.creative_only"), TXT_ERR);
+            if (automatic) autoSaveFailureState = savedState;
             return;
         }
-        this.setStatus((Component)Component.translatable((String)"ankinbt.entity.applied"), -13315175);
-        this.dirty = false;
-        this.undoStack.clear();
-        this.undoStack.add(this.captureState());
+        // Subsequent live saves must merge on top of the last successful entity-data patch.
+        sourceStack = patched.get().copy();
+        setStatus(Component.translatable(automatic ? "ankinbt.entity.autosaved" : "ankinbt.entity.applied"), TXT_OK);
+        settleSavedState(savedState, !automatic);
+    }
+
+    private void finishEntityApply(Minecraft mc, boolean integratedOk, CompoundTag patch,
+                                   Float healthInput, Float currentMaxHealth, Float healthToApply,
+                                   StateSnapshot savedState, boolean automatic) {
+        applyPending = false;
+        boolean ok = integratedOk;
+        if (!ok && !EditorCommandHelper.canUseEntityCommand(mc)) {
+            setStatus(Component.translatable("ankinbt.entity.admin_required"), TXT_ERR);
+            if (automatic) autoSaveFailureState = savedState;
+            return;
+        }
+        if (!ok) ok = EditorCommandHelper.applyMergeToEntity(mc, targetEntity, patch);
+        setStatus(ok ? Component.translatable(automatic ? "ankinbt.entity.autosaved" : "ankinbt.entity.applied")
+                        : Component.translatable("ankinbt.status.save_error"),
+                ok ? TXT_OK : TXT_ERR);
+        if (!ok) {
+            if (automatic) autoSaveFailureState = savedState;
+            return;
+        }
+
+        applyLocalPreview(patch);
+        if (healthInput != null && (currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
+            EditorCommandHelper.setEntityMaxHealth(mc, targetEntity, healthInput);
+            setLocalMaxHealth(targetEntity, healthInput);
+        }
+        if (healthToApply != null) {
+            if (targetEntity instanceof LivingEntity living) living.setHealth(healthToApply);
+            setBoxValueSilently(healthBox, String.format(Locale.ROOT, "%.1f", healthToApply));
+        }
+        settleSavedState(savedState, !automatic);
+    }
+
+    private void markDirty() {
+        if (suppressDirtyTracking) return;
+        dirty = true;
+        lastEditAt = System.currentTimeMillis();
+        autoSaveFailureState = null;
+    }
+
+    private void setBoxValueSilently(EditBox box, String value) {
+        if (box == null) return;
+        boolean previous = suppressDirtyTracking;
+        suppressDirtyTracking = true;
+        box.setValue(value == null ? "" : value);
+        suppressDirtyTracking = previous;
+    }
+
+    private void settleSavedState(StateSnapshot savedState, boolean resetUndo) {
+        if (savedState == null || matchesSavedState(captureState(), savedState)) {
+            dirty = false;
+            autoSaveFailureState = null;
+            if (resetUndo) {
+                undoStack.clear();
+                undoStack.add(captureState());
+            }
+            return;
+        }
+        dirty = true;
+        lastEditAt = System.currentTimeMillis();
+    }
+
+    private boolean matchesSavedState(StateSnapshot current, StateSnapshot saved) {
+        if (current == null || saved == null) return current == saved;
+        return current.stNoAi() == saved.stNoAi()
+                && current.stInvulnerable() == saved.stInvulnerable()
+                && current.stNoGravity() == saved.stNoGravity()
+                && current.stSilent() == saved.stSilent()
+                && current.stBaby() == saved.stBaby()
+                && current.healFull() == saved.healFull()
+                && Objects.equals(current.name(), saved.name())
+                && Objects.equals(normalizeHealthState(current.health()), normalizeHealthState(saved.health()));
+    }
+
+    private String normalizeHealthState(String value) {
+        Float parsed = parsePositiveFloat(value);
+        return parsed == null ? (value == null ? "" : value.trim())
+                : String.format(Locale.ROOT, "%.3f", parsed);
+    }
+
+    private void maybeAutoSave() {
+        if (!dirty || applyPending || confirmClose || confirmReset) return;
+        long now = System.currentTimeMillis();
+        if (now - lastEditAt < AUTO_SAVE_DEBOUNCE_MS) return;
+        if (!canAutoSave()) return;
+        StateSnapshot state = captureState();
+        if (Objects.equals(state, autoSaveFailureState)) return;
+        applyPatch(state, true);
+    }
+
+    private boolean canAutoSave() {
+        if (targetEntity != null && Minecraft.getInstance().player == null) return false;
+        if (targetEntity == null && !SpawnEggEditorHelper.isSpawnEgg(sourceStack)) return false;
+        if (canEditHealth() && healthBox != null) {
+            String raw = healthBox.getValue() == null ? "" : healthBox.getValue().trim();
+            if (!raw.isEmpty() && parsePositiveFloat(raw) == null) return false;
+        }
+        return true;
     }
 
     private void setStatus(Component message, int color) {
-        this.status = message;
-        this.statusColor = color;
-        this.statusTime = System.currentTimeMillis();
+        status = message;
+        statusColor = color;
+        statusTime = System.currentTimeMillis();
     }
 
     private Float parsePositiveFloat(String raw) {
-        if (raw == null) {
-            return null;
-        }
+        if (raw == null) return null;
         String t = raw.trim();
-        if (t.isEmpty()) {
-            return null;
-        }
+        if (t.isEmpty()) return null;
         try {
             float v = Float.parseFloat(t);
-            return v >= 0.0f ? Float.valueOf(v) : null;
-        }
-        catch (NumberFormatException ignored) {
+            return v >= 0.0f ? v : null;
+        } catch (NumberFormatException ignored) {
             return null;
         }
     }
 
+    private boolean validateHealthInput() {
+        if (!canEditHealth() || healthBox == null) return true;
+        String raw = healthBox.getValue() == null ? "" : healthBox.getValue().trim();
+        if (raw.isEmpty() || parsePositiveFloat(raw) != null) return true;
+        activeTab = EntityTab.GENERAL;
+        drawerOpen = true;
+        contentAnim = 1f;
+        layoutWidgets();
+        healthBox.setFocused(true);
+        setStatus(Component.translatable("ankinbt.simple.invalid_number"), TXT_ERR);
+        return false;
+    }
+
     private Float resolveHealthForApply(Float healthInput, Float currentMaxHealth) {
-        if (!this.healToFullOnApply) {
-            return healthInput;
-        }
+        if (!healToFullOnApply) return healthInput;
         if (healthInput != null) {
-            if (currentMaxHealth != null && healthInput.floatValue() < currentMaxHealth.floatValue()) {
-                return currentMaxHealth;
-            }
+            if (currentMaxHealth != null && healthInput < currentMaxHealth) return currentMaxHealth;
             return healthInput;
         }
         return currentMaxHealth;
     }
 
     public boolean mouseClicked(double mx, double my, int button) {
-        if (this.confirmClose || this.confirmReset) {
-            return this.clickConfirm((int)mx, (int)my);
+        if (confirmClose || confirmReset) {
+            if (button != 0) return true;
+            return clickConfirm((int) mx, (int) my);
         }
-        if (button == 0 && this.hitHealToggle((int)mx, (int)my)) {
-            this.pushUndo();
-            this.healToFullOnApply = !this.healToFullOnApply;
-            this.dirty = true;
+        if (button == 0 && EditorBrandLayer.isSettingsButton(mx, my, width)) {
+            UiSound.playClick();
+            Minecraft.getInstance().setScreen(new AnkiConfigScreen(this));
             return true;
         }
-        if (button == 0 && this.clickHealthAdjuster((int)mx, (int)my)) {
+        if (button == 0) editorSizeFocused = false;
+        if (button == 0 || button == 1) {
+            EditorDock.SizeControl sizeControl = EditorDock.sizeControl(width, height, editorScale);
+            if (button == 0 && sizeControl.reset().contains(mx, my)) {
+                resetEditorSize();
+                UiSound.playClick();
+                return true;
+            }
+            if (sizeControl.horizontal().contains(mx, my)) {
+                adjustEditorAxes(button == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP, 0.0f);
+                UiSound.playClick();
+                return true;
+            }
+            if (sizeControl.vertical().contains(mx, my)) {
+                adjustEditorAxes(0.0f, button == 1 ? EditorDock.AXIS_ADJUSTMENT_STEP
+                        : -EditorDock.AXIS_ADJUSTMENT_STEP);
+                UiSound.playClick();
+                return true;
+            }
+            if (button == 0 && sizeControl.hit().contains(mx, my)) {
+                resizingEditor = true;
+                editorSizeFocused = true;
+                draggingPanel = false;
+                blurFields();
+                updateEditorScale(mx);
+                return true;
+            }
+        }
+        if (handleMenuBarClick(mx, my, button)) return true;
+        if (!drawerOpen || drawerAnim < 0.92f || contentAnim < 0.92f
+                || drawerBounds == null || !drawerBounds.contains(mx, my)) {
+            if (button == 0) blurFields();
             return true;
         }
-        if (button != 0) {
+        if (activeTab == EntityTab.GENERAL && button == 0 && hitHealToggle((int) mx, (int) my)) {
+            pushUndo();
+            healToFullOnApply = !healToFullOnApply;
+            markDirty();
+            return true;
+        }
+        if (activeTab == EntityTab.GENERAL && button == 0 && clickHealthAdjuster((int) mx, (int) my)) {
+            return true;
+        }
+        if (button != 0) return true;
+        if (activeTab == EntityTab.GENERAL && handleTextFieldClick(mx, my, button)) {
+            return true;
+        }
+        for (UiBtn btn : buttons) {
+            if (btn.click((int) mx, (int) my, entityContentOffset())) {
+                rebuildButtons();
+                return true;
+            }
+        }
+        blurFields();
+        return true;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
+        if (confirmClose || confirmReset) return true;
+        if (!drawerOpen || drawerAnim < 0.20f || drawerBounds == null || !drawerBounds.contains(mx, my)) {
             return false;
         }
-        if (this.handleTextFieldClick(mx, my, button)) {
+        int top = bodyTop();
+        int bottom = bodyBottom();
+        if (my < top || my >= bottom) return true;
+        if (tabMaxScroll > 0) {
+            int delta = (int) Math.round(scrollY * 12.0);
+            if (delta == 0 && Math.abs(scrollY) > 0.01) delta = scrollY > 0 ? 1 : -1;
+            tabScroll = Math.max(0, Math.min(tabMaxScroll, tabScroll - delta));
+        }
+        return true;
+    }
+
+    private int menuBrandWidth() {
+        EditorDock.Bounds menu = menuBounds();
+        return menu == null ? 58 : Math.min(72, Math.max(58, menu.width() / 7));
+    }
+
+    private int menuToolWidth() {
+        return 26;
+    }
+
+    private int menuToolsStart() {
+        EditorDock.Bounds menu = menuBounds();
+        return menu == null ? 0 : menu.x() + menu.width() - menuToolWidth() * 3;
+    }
+
+    private int menuTabsStart() {
+        EditorDock.Bounds menu = menuBounds();
+        return menu == null ? 0 : menu.x() + menuBrandWidth();
+    }
+
+    private EditorDock.Bounds menuBounds() {
+        if (drawerBounds != null && (drawerOpen || drawerAnim > 0.01f)) {
+            return new EditorDock.Bounds(drawerBounds.x(), drawerBounds.y(), drawerBounds.width(),
+                    Math.min(EditorDock.MENU_BAR_HEIGHT, drawerBounds.height()));
+        }
+        return barBounds;
+    }
+
+    private int menuTabX(int index) {
+        int count = EntityTab.values().length;
+        if (menuBounds() == null || count <= 0) return 0;
+        int start = menuTabsStart();
+        int end = menuToolsStart();
+        int available = Math.max(0, end - start);
+        return start + (available * Math.max(0, Math.min(index, count))) / count;
+    }
+
+    private int menuTabWidth(int index) {
+        return Math.max(1, menuTabX(index + 1) - menuTabX(index));
+    }
+
+    private int menuTabAt(double mx, double my) {
+        EditorDock.Bounds menu = menuBounds();
+        if (menu == null || !menu.contains(mx, my)) return -1;
+        int count = EntityTab.values().length;
+        for (int i = 0; i < count; i++) {
+            int x = menuTabX(i);
+            int w = menuTabWidth(i);
+            if (mx >= x && mx < x + w) return i;
+        }
+        return -1;
+    }
+
+    private void selectEntityTab(EntityTab selected) {
+        if (selected == null) return;
+        UiSound.playClick();
+        if (selected == activeTab) {
+            drawerOpen = !drawerOpen;
+            if (!drawerOpen) blurFields();
+            return;
+        }
+        activeTab = selected;
+        tabScroll = 0;
+        tabMaxScroll = 0;
+        drawerOpen = true;
+        contentAnim = AnkiConfig.isUiAnimationEnabled() ? 0f : 1f;
+        blurFields();
+        rebuildButtons();
+    }
+
+    private boolean handleMenuBarClick(double mx, double my, int button) {
+        EditorDock.Bounds menu = menuBounds();
+        if (button != 0 || menu == null || !menu.contains(mx, my)) return false;
+        int brandW = menuBrandWidth();
+        if (mx < menu.x() + brandW) {
+            draggingPanel = true;
+            dragOffsetX = (int) Math.round(mx) - (barBounds == null ? menu.x() : barBounds.x());
+            dragOffsetY = (int) Math.round(my) - (barBounds == null ? menu.y() : barBounds.y());
             return true;
         }
-        for (UiBtn btn : this.buttons) {
-            if (!btn.click((int)mx, (int)my)) continue;
-            this.rebuildButtons();
+        int toolW = menuToolWidth();
+        int toolsStart = menuToolsStart();
+        if (mx >= toolsStart) {
+            int tool = Math.max(0, Math.min(2, ((int) mx - toolsStart) / toolW));
+            if (tool == 0) openResetConfirm();
+            else if (tool == 1) applyPatch();
+            else tryClose();
             return true;
         }
-        if (this.nameBox != null) {
-            this.nameBox.setFocused(false);
+        int index = menuTabAt(mx, my);
+        if (index >= 0 && index < EntityTab.values().length) {
+            selectEntityTab(EntityTab.values()[index]);
+            return true;
         }
-        if (this.healthBox != null) {
-            this.healthBox.setFocused(false);
+        return true;
+    }
+
+    private void blurFields() {
+        if (getFocused() == nameBox || getFocused() == healthBox) {
+            setFocused(null);
         }
-        return false;
+        setDragging(false);
+        if (nameBox != null) nameBox.setFocused(false);
+        if (healthBox != null) healthBox.setFocused(false);
     }
 
     public boolean keyPressed(int key, int scan, int mod) {
-        boolean ctrl;
-        if (this.nameBox != null && this.nameBox.isFocused() && this.pressEditBox(this.nameBox, key, scan, mod)) {
+        if (confirmClose || confirmReset) {
+            if (key == 256) {
+                confirmClose = false;
+                confirmReset = false;
+            }
             return true;
         }
-        if (this.healthBox != null && this.healthBox.isFocused() && this.pressEditBox(this.healthBox, key, scan, mod)) {
-            return true;
+        if (editorSizeFocused) {
+            if (key == 263) { adjustEditorScale(-0.05f); return true; }
+            if (key == 262) { adjustEditorScale(0.05f); return true; }
+            if (key == 268) { setEditorScale(0.0f, true); return true; }
+            if (key == 269) { setEditorScale(1.0f, true); return true; }
+            if (key == 256) { editorSizeFocused = false; return true; }
         }
-        boolean bl = ctrl = (mod & 2) != 0;
+        boolean ctrl = (mod & 2) != 0;
         if (ctrl && key == 90) {
-            this.undo();
+            undo();
+            return true;
+        }
+        if (activeTab == EntityTab.GENERAL && drawerOpen && nameBox != null && nameBox.isFocused()) {
+            if (pressEditBox(nameBox, key, scan, mod)) return true;
+        }
+        if (activeTab == EntityTab.GENERAL && drawerOpen && healthBox != null && healthBox.isFocused()) {
+            if (pressEditBox(healthBox, key, scan, mod)) return true;
+        }
+        if ((key == 263 || key == 262)
+                && (nameBox == null || !nameBox.isFocused())
+                && (healthBox == null || !healthBox.isFocused())) {
+            EntityTab[] tabs = EntityTab.values();
+            int next = Math.floorMod(activeTab.ordinal() + (key == 263 ? -1 : 1), tabs.length);
+            selectEntityTab(tabs[next]);
             return true;
         }
         if (key == 256) {
-            this.tryClose();
+            tryClose();
             return true;
         }
         return false;
     }
 
     public boolean charTyped(char codePoint, int modifiers) {
-        if (this.nameBox != null && this.nameBox.isFocused() && this.typeEditBox(this.nameBox, codePoint, modifiers)) {
-            return true;
+        if (confirmClose || confirmReset) return true;
+        if (activeTab == EntityTab.GENERAL && drawerOpen && nameBox != null && nameBox.isFocused()) {
+            if (typeEditBox(nameBox, codePoint, modifiers)) return true;
         }
-        if (this.healthBox != null && this.healthBox.isFocused()) {
-            return this.typeEditBox(this.healthBox, codePoint, modifiers);
+        if (activeTab == EntityTab.GENERAL && drawerOpen && healthBox != null && healthBox.isFocused()) {
+            return typeEditBox(healthBox, codePoint, modifiers);
         }
         return false;
     }
 
-    public void render(GuiGraphics g, int mx, int my, float partialTick) {
-        this.recalcBounds();
-        float speed = AnkiConfig.isUiAnimationEnabled() ? AnkiConfig.getUiAnimationSpeed() : 1.0f;
-        this.openAnim = UiTheme.approach(this.openAnim, 1.0f, speed);
-        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
-        float opacity = AnkiConfig.getUiOpacity();
-        int scrim = UiTheme.scrim(opacity, this.openAnim);
-        int panel = UiTheme.panel(opacity, this.openAnim);
-        int card = UiTheme.card(opacity, this.openAnim);
-        int border = UiTheme.border(opacity, this.openAnim);
-        int shadow = UiTheme.shadow(opacity, this.openAnim, AnkiConfig.isUiShadowEnabled());
-        g.fill(0, 0, this.width, this.height, scrim);
-        if (shadow != 0) {
-            g.fill(this.px + 4, this.py + 4, this.px + this.pw + 4, this.py + this.ph + 4, shadow);
+    @Override
+    public void render(net.minecraft.client.gui.GuiGraphics g, int mx, int my, float partialTick) {
+        render(new LegacyGuiGraphics(g), mx, my, partialTick);
+    }
+
+    public void render(LegacyGuiGraphics g, int mx, int my, float partialTick) {
+        pendingTooltip = null;
+        recalcBounds();
+        float cfgSpeed = AnkiConfig.getUiAnimationSpeed();
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.06f, Math.min(0.16f, cfgSpeed)) : 1.0f;
+        openAnim = UiTheme.approach(openAnim, 1.0f, speed);
+        float motionSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.10f, cfgSpeed * 1.7f) : 1.0f;
+        drawerAnim = UiTheme.approach(drawerAnim, drawerOpen ? 1.0f : 0.0f, motionSpeed);
+        contentAnim = UiTheme.approach(contentAnim, 1.0f, motionSpeed);
+        syncFieldAvailability();
+        maybeAutoSave();
+        brandAnim = EditorBrandLayer.approachOpen(brandAnim);
+        boolean settingsHovered = EditorBrandLayer.isSettingsButton(mx, my, width);
+        settingsHoverAnim = EditorBrandLayer.approachSettingsHover(settingsHoverAnim, settingsHovered);
+        modalAnim = UiTheme.approach(modalAnim, confirmClose || confirmReset ? 1.0f : 0.0f,
+                Math.min(1.0f, motionSpeed * 1.8f));
+
+        EditorBrandLayer.renderBackgroundLogo(g, width, height);
+        g.fill(0, 0, width, height, UiTheme.scrim(AnkiConfig.getUiOpacity(), openAnim));
+        renderEntityDrawer(g, mx, my);
+        renderEntityMenuBar(g, mx, my);
+        if (!confirmClose && !confirmReset) {
+            sizeControlHoverAnim = EditorDock.renderSizeControl(g, font, width, height, mx, my,
+                    editorScale, sizeControlHoverAnim, resizingEditor || editorSizeFocused,
+                    UiTheme.accent(AnkiConfig.getUiAccentPreset()));
         }
-        g.fill(this.px, this.py, this.px + this.pw, this.py + this.ph, panel);
-        this.border(g, this.px, this.py, this.pw, this.ph, border);
-        g.fill(this.px + 1, this.py + 1, this.px + this.pw - 1, this.py + 34, UiTheme.header(opacity, this.openAnim));
-        g.fill(this.px + 1, this.py + 34, this.px + this.pw - 1, this.py + 35, border);
-        g.fill(this.px + 1, this.py + 48, this.px + this.pw - 1, this.py + this.ph - 40, card);
-        VersionCompat.get().drawString(g, this.font, this.title, this.px + 12, this.py + 12, -788737, false);
-        String mode = this.targetEntity != null ? Component.translatable((String)"ankinbt.entity.mode.entity").getString() : Component.translatable((String)"ankinbt.entity.mode.spawn_egg").getString();
-        VersionCompat.get().drawString(g, this.font, mode, this.px + 170, this.py + 13, -7429177, false);
-        int left = this.px + 18;
-        int mid = this.px + this.pw / 2;
-        int nameY = this.py + 74;
-        int typeY = nameY + 16;
-        int posY = typeY + 16;
-        int healthY = posY + 16;
-        int flagY = this.canEditHealth() ? this.healthAdjustBaseY() + 22 : healthY + 16;
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.entity.section.current"), left, this.py + 64, accent, false);
-        this.drawInlineLabel(g, left, nameY, Component.translatable((String)"ankinbt.entity.info.name").getString());
-        this.renderInlineField(g, this.nameBox, this.currentName(), mx, my, accent);
-        this.drawInfo(g, left, typeY, Component.translatable((String)"ankinbt.entity.info.type").getString(), this.currentType());
-        this.drawInfo(g, left, posY, Component.translatable((String)"ankinbt.entity.info.pos").getString(), this.currentPos());
-        this.drawInlineLabel(g, left, healthY, Component.translatable((String)"ankinbt.entity.info.health").getString());
-        if (this.canEditHealth()) {
-            this.renderInlineHealthField(g, mx, my, accent);
-            this.renderHealthAdjusters(g, mx, my, accent);
+        String mode = targetEntity != null
+                ? Component.translatable("ankinbt.entity.mode.entity").getString()
+                : Component.translatable("ankinbt.entity.mode.spawn_egg").getString();
+        EditorBrandLayer.renderStatus(g, font, width, height, brandAnim, mode, editorScale,
+                editorWidthAdjustment, editorHeightAdjustment);
+        EditorBrandLayer.renderSettingsButton(g, font, width, mx, my, settingsHoverAnim);
+
+        if (confirmReset) {
+            renderConfirm(g, mx, my,
+                    Component.translatable("ankinbt.entity.reset_changes").getString(),
+                    Component.translatable("ankinbt.confirm.discard_hint").getString(),
+                    0xFFEF4444);
+        } else if (confirmClose) {
+            renderUnsavedConfirmLikeSimple(g, mx, my);
         } else {
-            VersionCompat.get().drawString(g, this.font, this.currentHealth(), left + 84, healthY, -2497806, false);
+            renderPendingTooltip(g);
         }
-        this.drawInfo(g, left, flagY, Component.translatable((String)"ankinbt.entity.info.flags").getString(), this.currentFlags());
-        this.renderHealToggle(g, accent);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.entity.section.actions"), mid + 8, this.py + 64, accent, false);
-        if (AnkiConfig.isEntityLivePreview()) {
-            VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.entity.section.preview"), left, this.previewSectionY(), accent, false);
-            Object preview = this.buildPatch().toString();
-            if (((String)preview).length() > 78) {
-                preview = ((String)preview).substring(0, 75) + "...";
+
+    }
+
+    private void requestTooltip(Component tooltip, int mx, int my) {
+        if (tooltip == null) return;
+        pendingTooltip = tooltip;
+        pendingTooltipX = mx;
+        pendingTooltipY = my;
+    }
+
+    private void renderPendingTooltip(LegacyGuiGraphics g) {
+        if (pendingTooltip == null) return;
+        g.renderTooltip(font, pendingTooltip,
+                pendingTooltipX, pendingTooltipY);
+    }
+
+    private void renderEntityMenuBar(LegacyGuiGraphics g, int mx, int my) {
+        EditorDock.Bounds menu = menuBounds();
+        if (menu == null) return;
+        int bx = menu.x();
+        int by = menu.y();
+        int bw = menu.width();
+        int bh = menu.height();
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        g.fill(bx, by, bx + bw, by + bh, UiTheme.toolbar(AnkiConfig.getUiOpacity(), openAnim));
+        border(g, bx, by, bw, bh, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+        g.fill(bx, by + bh - 1, bx + bw, by + bh, UiTheme.withAlpha(accent & 0x00FFFFFF, Math.round(255 * openAnim)));
+
+        int brandW = menuBrandWidth();
+        boolean moveHover = mx >= bx && mx < bx + brandW && my >= by && my < by + bh;
+        Component moveIcon = UiIcons.component(UiIcons.MOVE);
+        g.drawString(font, moveIcon,
+                bx + (brandW - font.width(moveIcon)) / 2, by + 10,
+                moveHover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (moveHover && !draggingPanel) {
+            requestTooltip(Component.translatable("ankinbt.ui.drag_editor"), mx, my);
+        }
+        if (dirty) g.fill(bx + brandW - 6, by + 7, bx + brandW - 3, by + 10, TXT_ERR);
+
+        int toolW = menuToolWidth();
+        int toolsStart = menuToolsStart();
+        float hoverSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1f;
+        for (int i = 0; i < EntityTab.values().length; i++) {
+            EntityTab tab = EntityTab.values()[i];
+            int tx = menuTabX(i);
+            int tabW = menuTabWidth(i);
+            boolean hover = mx >= tx && mx < tx + tabW && my >= by && my < by + bh;
+            boolean active = tab == activeTab;
+            tabHoverAnim[i] = UiTheme.approach(tabHoverAnim[i], hover ? 1f : 0f, hoverSpeed);
+            if (active && "segmented".equals(AnkiConfig.getUiNavigationStyle())) {
+                g.fill(tx + 2, by + 3, tx + tabW - 2, by + bh - 3, UiTheme.withAlpha(accent & 0x00FFFFFF, 86));
+            } else if (active && "underline".equals(AnkiConfig.getUiNavigationStyle())) {
+                // Keep the active page legible even when the underline is selected.
+                g.fill(tx + 2, by + 3, tx + tabW - 2, by + bh - 3,
+                        UiTheme.withAlpha(accent & 0x00FFFFFF, 24));
+            } else if (tabHoverAnim[i] > 0.01f) {
+                g.fill(tx + 1, by + 2, tx + tabW - 1, by + bh - 2, UiTheme.mix(0x00000000, 0x4A334155, tabHoverAnim[i]));
             }
-            VersionCompat.get().drawString(g, this.font, (String)preview, left, this.previewSectionY() + 16, -2497806, false);
+            if (i > 0 && tabW > 4) {
+                g.fill(tx, by + 7, tx + 1, by + bh - 7,
+                        UiTheme.withAlpha(UiTheme.themedBorder(1f, 1f) & 0x00FFFFFF, 72));
+            }
+            if (active && "compact".equals(AnkiConfig.getUiNavigationStyle())) {
+                g.fill(tx + 3, by + 7, tx + 5, by + bh - 7, accent);
+            }
+            Component icon = UiIcons.component(tab.icon);
+            String label = Component.translatable(tab.translationKey).getString();
+            int tabTextColor = active ? UiTheme.textMain()
+                    : (hover ? UiTheme.textMain() : UiTheme.textDim());
+            int total = font.width(icon) + 4 + font.width(label);
+            if (tabW >= total + 8) {
+                int start = tx + (tabW - total) / 2;
+                g.drawString(font, icon, start, by + 10, tabTextColor, false);
+                g.drawString(font, label, start + font.width(icon) + 4, by + 10, tabTextColor, false);
+            } else {
+                int labelWidth = Math.max(0, tabW - font.width(icon) - 12);
+                if (labelWidth >= font.width("..")) {
+                    String compactLabel = trimToWidth(label, labelWidth);
+                    int compactTotal = font.width(icon) + 4 + font.width(compactLabel);
+                    int start = tx + Math.max(2, (tabW - compactTotal) / 2);
+                    g.drawString(font, icon, start, by + 10,
+                            tabTextColor, false);
+                    g.drawString(font, compactLabel,
+                            start + font.width(icon) + 4, by + 10,
+                            tabTextColor, false);
+                } else {
+                    g.drawString(font, icon,
+                            tx + (tabW - font.width(icon)) / 2, by + 10,
+                            tabTextColor, false);
+                }
+                if (hover) requestTooltip(Component.literal(label), mx, my);
+            }
         }
-        for (UiBtn btn : this.buttons) {
-            btn.render(g, this.font, mx, my, accent);
+        int activeX = menuTabX(activeTab.ordinal());
+        int activeW = menuTabWidth(activeTab.ordinal());
+        if (activeIndicatorX < 0f) activeIndicatorX = activeX;
+        activeIndicatorX = UiTheme.approach(activeIndicatorX, activeX, hoverSpeed);
+        if ("underline".equals(AnkiConfig.getUiNavigationStyle())) {
+            int indicatorLeft = Math.round(activeIndicatorX) + (activeW > 10 ? 5 : 0);
+            int indicatorRight = Math.round(activeIndicatorX) + (activeW > 10 ? activeW - 5 : activeW);
+            if (indicatorRight > indicatorLeft) {
+                g.fill(indicatorLeft, by + bh - 3, indicatorRight, by + bh - 1, accent);
+            }
         }
-        if (this.confirmReset) {
-            this.renderConfirm(g, mx, my, Component.translatable((String)"ankinbt.entity.reset_changes").getString(), Component.translatable((String)"ankinbt.confirm.discard_hint").getString(), -1096636);
-        } else if (this.confirmClose) {
-            this.renderUnsavedConfirmLikeSimple(g, mx, my);
+
+        renderMenuTool(g, mx, my, toolsStart, by, toolW, 0, UiIcons.RESET,
+                Component.translatable("ankinbt.entity.reset_changes"));
+        renderMenuTool(g, mx, my, toolsStart + toolW, by, toolW, 1, UiIcons.SAVE,
+                Component.translatable("ankinbt.entity.apply_patch"));
+        renderMenuTool(g, mx, my, toolsStart + toolW * 2, by, toolW, 2, UiIcons.CLOSE,
+                Component.translatable("ankinbt.btn.close"));
+    }
+
+    private void renderMenuTool(LegacyGuiGraphics g, int mx, int my, int x, int y, int width, int index,
+                                String glyph, Component tooltip) {
+        boolean hover = mx >= x && mx < x + width && my >= y && my < y + EditorDock.MENU_BAR_HEIGHT;
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, AnkiConfig.getUiAnimationSpeed() * 2.4f) : 1f;
+        toolHoverAnim[index] = UiTheme.approach(toolHoverAnim[index], hover ? 1f : 0f, speed);
+        g.fill(x, y + 2, x + width, y + EditorDock.MENU_BAR_HEIGHT - 2,
+                UiTheme.mix(0x00000000, 0x4A334155, toolHoverAnim[index]));
+        Component icon = UiIcons.component(glyph);
+        g.drawString(font, icon, x + (width - font.width(icon)) / 2,
+                y + 10, hover ? UiTheme.textMain() : UiTheme.textDim(), false);
+        if (hover) requestTooltip(tooltip, mx, my);
+    }
+
+    private void renderEntityDrawer(LegacyGuiGraphics g, int mx, int my) {
+        if (drawerAnim <= 0.01f || drawerBounds == null) return;
+        int reveal = Math.max(1, Math.round(ph * drawerAnim));
+        int clipTop = drawerAbove ? py + ph - reveal : py;
+        int clipBottom = drawerAbove ? py + ph : py + reveal;
+        g.enableScissor(px, clipTop, px + pw, clipBottom);
+        g.fill(px, py, px + pw, py + ph, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+        border(g, px, py, pw, ph, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+
+        g.fill(px + 8, py + 29, px + pw - 8, py + 30, UiTheme.themedBorder(1f, 1f));
+
+        int offset = entityContentOffset();
+        if (offset != 0) {
+            nameBox.setY(nameFieldY() + offset);
+            healthBox.setY(healthFieldY() + offset);
+        } else {
+            layoutWidgets();
         }
-        if (this.status != null && !this.status.getString().isEmpty() && System.currentTimeMillis() - this.statusTime < 2600L) {
-            int statusY = this.py + this.ph - 44;
-            VersionCompat.get().drawString(g, this.font, this.status, left, statusY, this.statusColor, false);
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        int bodyClipTop = Math.max(clipTop, bodyTop());
+        int bodyClipBottom = Math.min(clipBottom, bodyBottom());
+        if (bodyClipBottom > bodyClipTop) {
+            g.enableScissor(px + 1, bodyClipTop, px + pw - 1, bodyClipBottom);
+            if (activeTab == EntityTab.GENERAL) renderEntityGeneral(g, mx, my, accent, offset);
+            else if (activeTab == EntityTab.INFO) renderEntityInfo(g, accent, offset);
+            else {
+                for (UiBtn btn : buttons) btn.render(g, font, mx, my, accent, offset);
+                if (activeTab == EntityTab.TOOLS && buttons.isEmpty()) {
+                    g.drawString(font,
+                            Component.translatable("ankinbt.entity.tools_empty"), px + 12,
+                            bodyTop() + 14 + offset, UiTheme.textDim(), false);
+                }
+            }
+            g.disableScissor();
+            g.enableScissor(px, clipTop, px + pw, clipBottom);
+            renderContentScrollbar(g, bodyClipTop, bodyClipBottom);
         }
+
+        int footerY = py + ph - 26;
+        g.fill(px + 1, footerY, px + pw - 1, footerY + 1, UiTheme.themedBorder(1f, 1f));
+        Component footer = status != null && !status.getString().isEmpty() && System.currentTimeMillis() - statusTime < 2600
+                ? status : Component.translatable("ankinbt.entity.footer_ready");
+        int footerColor = footer == status ? statusColor : UiTheme.textDim();
+        g.drawString(font,
+                trimToWidth(footer.getString(), Math.max(40, pw - 20)), px + 10, footerY + 9, footerColor, false);
+        g.disableScissor();
+    }
+
+    private void renderEntityGeneral(LegacyGuiGraphics g, int mx, int my, int accent, int offset) {
+        int x = infoCardX();
+        int w = infoCardWidth();
+        int nameY = nameCardY() + offset;
+        renderOptionSurface(g, x, nameY, w, nameCardHeight(), mx, my, false);
+        drawInlineLabel(g, x + 10, nameRowY() + offset,
+                Component.translatable("ankinbt.entity.info.name").getString());
+        renderInlineField(g, nameBox, currentName(), mx, my, accent);
+
+        int healthY = healthCardY() + offset;
+        int healthHeight = healthCardHeight();
+        if (healthHeight > 0) {
+            renderOptionSurface(g, x, healthY, w, healthHeight, mx, my, false);
+        }
+        drawInlineLabel(g, x + 10, healthRowY() + offset,
+                Component.translatable("ankinbt.entity.info.health").getString());
+        if (canEditHealth()) {
+            renderInlineHealthField(g, mx, my, accent);
+            renderHealthAdjusters(g, mx, my, accent);
+        } else {
+            g.drawString(font, currentHealth(),
+                    valueColumnX(), healthRowY() + offset, UiTheme.textMain(), false);
+        }
+        renderHealToggle(g, accent);
+
+        int previewHeight = previewCardHeight();
+        if (AnkiConfig.isEntityLivePreview() && previewHeight >= 24) {
+            int previewY = previewCardY() + offset;
+            renderOptionSurface(g, x, previewY, w, previewHeight, mx, my, false);
+            String preview = trimToWidth(buildPatch().toString(), Math.max(40, w - 20));
+            g.drawString(font,
+                    Component.translatable("ankinbt.entity.section.preview"), x + 10, previewY + 7, accent, false);
+            if (previewHeight >= 29) {
+                g.drawString(font, preview,
+                        valueColumnX(), previewY + 7, UiTheme.textDim(), false);
+            }
+        }
+    }
+
+    private void renderEntityInfo(LegacyGuiGraphics g, int accent, int offset) {
+        String[][] rows = {
+                {Component.translatable("ankinbt.entity.info.name").getString(), currentName()},
+                {Component.translatable("ankinbt.entity.info.type").getString(), currentType()},
+                {Component.translatable("ankinbt.entity.info.pos").getString(), currentPos()},
+                {Component.translatable("ankinbt.entity.info.health").getString(), currentHealth()},
+                {Component.translatable("ankinbt.entity.info.flags").getString(), currentFlags()}
+        };
+        int x = px + 10;
+        int baseY = bodyTop() + 4;
+        int y = baseY + offset;
+        int w = pw - 20;
+        int availableHeight = Math.max(1, bodyBottom() - baseY);
+        int preferredRowHeight = AnkiConfig.isUiCompactLayout() ? 28 : 32;
+        int preferredGap = 5;
+        int singleColumnHeight = rows.length * preferredRowHeight + (rows.length - 1) * preferredGap;
+        int columns = singleColumnHeight > availableHeight ? 2 : 1;
+        int rowCount = (rows.length + columns - 1) / columns;
+        int gap = availableHeight < 84 ? 2 : preferredGap;
+        int fittedHeight = Math.max(12,
+                (availableHeight - gap * (rowCount - 1)) / Math.max(1, rowCount));
+        int rowH = Math.min(preferredRowHeight, fittedHeight);
+        int cellW = Math.max(1, (w - gap * (columns - 1)) / columns);
+        int labelWidth = Math.min(labelColumnWidth(), Math.max(28, cellW - 38));
+        for (int i = 0; i < rows.length; i++) {
+            int col = i % columns;
+            int row = i / columns;
+            int rx = x + col * (cellW + gap);
+            int ry = y + row * (rowH + gap);
+            renderOptionSurface(g, rx, ry, cellW, rowH, -1, -1, false);
+            int textY = ry + Math.max(3, (rowH - 8) / 2);
+            String label = trimToWidth(rows[i][0] + ":", Math.max(18, labelWidth - 4));
+            g.drawString(font, label,
+                    rx + 9, textY, UiTheme.textDim(), false);
+            int valueX = rx + 10 + labelWidth;
+            g.drawString(font,
+                    trimToWidth(rows[i][1], Math.max(20, rx + cellW - valueX - 8)), valueX, textY,
+                    i == 0 ? accent : UiTheme.textMain(), false);
+        }
+    }
+
+    private void renderOptionSurface(LegacyGuiGraphics g, int x, int y, int w, int h, int mx, int my, boolean selected) {
+        boolean hover = mx >= x && mx < x + w && my >= y && my < y + h;
+        String style = AnkiConfig.getUiOptionStyle();
+        int fill = "compact".equals(style) ? UiTheme.withAlpha(UiTheme.baseRgb(), hover ? 48 : 22)
+                : UiTheme.card(AnkiConfig.getUiOpacity(), openAnim);
+        if (selected) fill = UiTheme.withAlpha(UiTheme.accent(AnkiConfig.getUiAccentPreset()) & 0x00FFFFFF, 64);
+        g.fill(x, y, x + w, y + h, fill);
+        int edge = selected ? UiTheme.accent(AnkiConfig.getUiAccentPreset()) : UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 1f);
+        if ("rows".equals(style)) g.fill(x, y + h - 1, x + w, y + h, edge);
+        else if ("compact".equals(style)) g.fill(x, y, x + (hover ? 2 : 1), y + h, edge);
+        else border(g, x, y, w, h, edge);
+    }
+
+    private int entityContentOffset() {
+        int revealOffset = Math.round((1f - contentAnim) * (drawerAbove ? -7f : 7f));
+        return revealOffset - tabScroll;
+    }
+
+    private void updateTabScrollBounds() {
+        int contentBottom = bodyBottom();
+        if (!buttons.isEmpty()) {
+            for (UiBtn button : buttons) {
+                contentBottom = Math.max(contentBottom, button.y + button.h + 8);
+            }
+        }
+        tabMaxScroll = Math.max(0, contentBottom - bodyBottom());
+        tabScroll = Math.max(0, Math.min(tabScroll, tabMaxScroll));
+    }
+
+    private void renderContentScrollbar(LegacyGuiGraphics g, int clipTop, int clipBottom) {
+        if (tabMaxScroll <= 0 || clipBottom <= clipTop) return;
+        int trackTop = Math.max(clipTop + 2, bodyTop());
+        int trackBottom = Math.min(clipBottom - 2, bodyBottom() - 2);
+        int trackHeight = trackBottom - trackTop;
+        if (trackHeight < 10) return;
+        int thumbHeight = Math.max(8, Math.round(trackHeight * (trackHeight / (float) (trackHeight + tabMaxScroll))));
+        int travel = Math.max(1, trackHeight - thumbHeight);
+        int thumbY = trackTop + Math.round(travel * (tabScroll / (float) Math.max(1, tabMaxScroll)));
+        int x = px + pw - 5;
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        g.fill(x, trackTop, x + 2, trackBottom, UiTheme.withAlpha(UiTheme.baseRgb(), 54));
+        g.fill(x, thumbY, x + 2, thumbY + thumbHeight,
+                UiTheme.withAlpha(accent & 0x00FFFFFF, 190));
+    }
+
+    private int closeButtonX() {
+        return px + pw - 30;
+    }
+
+    private void renderSectionCard(LegacyGuiGraphics g, int x, int y, int w, int h, Component heading,
+                                   int accent, int card, int edge) {
+        g.fill(x, y, x + w, y + h, card);
+        border(g, x, y, w, h, edge);
+        int marker = Math.max(18, Math.round((w - 2) * openAnim));
+        g.fill(x + 1, y + 1, Math.min(x + w - 1, x + 1 + marker), y + 3,
+                UiTheme.withAlpha(accent & 0x00FFFFFF, 210));
+        g.drawString(font, heading, x + 10, y + 10, accent, false);
+    }
+
+    private String trimToWidth(String value, int maxWidth) {
+        if (value == null) return "";
+        if (font.width(value) <= maxWidth) return value;
+        return font.plainSubstrByWidth(value, Math.max(4, maxWidth - font.width("..."))) + "...";
     }
 
     private boolean pressEditBox(EditBox box, int key, int scan, int mod) {
         return box != null && box.keyPressed(key, scan, mod);
     }
-
     private boolean typeEditBox(EditBox box, char codePoint, int modifiers) {
         return box != null && box.charTyped(codePoint, modifiers);
     }
 
-    private void drawInfo(GuiGraphics g, int x, int y, String key, String value) {
-        VersionCompat.get().drawString(g, this.font, key + ":", x, y, -7429177, false);
-        VersionCompat.get().drawString(g, this.font, value, x + 84, y, -2497806, false);
+    private void drawInlineLabel(LegacyGuiGraphics g, int x, int y, String key) {
+        String label = trimToWidth(key + ":", Math.max(20, labelColumnWidth() - 4));
+        g.drawString(font, label, x, y, UiTheme.textDim(), false);
     }
 
-    private void drawInlineLabel(GuiGraphics g, int x, int y, String key) {
-        VersionCompat.get().drawString(g, this.font, key + ":", x, y, -7429177, false);
-    }
-
-    private void renderInlineField(GuiGraphics g, EditBox box, String placeholder, int mx, int my, int accent) {
-        boolean placeholderMode;
-        if (box == null) {
-            return;
-        }
+    private void renderInlineField(LegacyGuiGraphics g, EditBox box, String placeholder, int mx, int my, int accent) {
+        if (box == null) return;
         boolean focused = box.isFocused();
         boolean hover = mx >= box.getX() && mx < box.getX() + box.getWidth() && my >= box.getY() && my < box.getY() + box.getHeight();
         String raw = box.getValue();
-        boolean bl = placeholderMode = (raw == null || raw.isBlank()) && !focused && placeholder != null && !placeholder.isBlank();
-        String shown = placeholderMode ? placeholder : (raw == null ? "" : raw);
-        int color = placeholderMode ? -7429177 : -2497806;
-        int textY = box.getY() + 2;
-        int maxWidth = Math.max(12, box.getWidth() - 4);
-        if (this.font.width(shown) > maxWidth) {
-            shown = this.font.plainSubstrByWidth(shown, maxWidth);
+        boolean placeholderMode = (raw == null || raw.isBlank()) && !focused && placeholder != null && !placeholder.isBlank();
+        if (placeholderMode) {
+            String shown = placeholder;
+            int maxWidth = Math.max(12, box.getWidth() - 4);
+            if (font.width(shown) > maxWidth) {
+                shown = font.plainSubstrByWidth(shown, maxWidth);
+            }
+            g.drawString(font, shown,
+                    box.getX(), box.getY() + 2, UiTheme.textDim(), false);
+        } else {
+            box.render(g.unwrap(), mx, my, 0f);
         }
-        VersionCompat.get().drawString(g, this.font, shown, box.getX(), textY, color, false);
-        int underline = focused ? accent : (hover ? -12494202 : -13878436);
+        int underline = focused ? accent : (hover
+                ? UiTheme.withAlpha(accent & 0x00FFFFFF, 150)
+                : UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 1.0f));
         g.fill(box.getX(), box.getY() + box.getHeight() - 1, box.getX() + box.getWidth(), box.getY() + box.getHeight(), underline);
-        if (focused && (System.currentTimeMillis() / 500L & 1L) == 0L) {
-            int cursorX = Math.min(box.getX() + this.font.width(shown) + 1, box.getX() + box.getWidth() - 1);
-            g.fill(cursorX, box.getY() + 1, cursorX + 1, box.getY() + box.getHeight() - 2, -2497806);
-        }
     }
 
-    private void renderInlineHealthField(GuiGraphics g, int mx, int my, int accent) {
-        if (this.healthBox == null) {
-            return;
-        }
-        String raw = this.healthBox.getValue();
-        if (raw == null || raw.isBlank()) {
-            raw = this.currentHealthNumeric();
-        }
+    private void renderInlineHealthField(LegacyGuiGraphics g, int mx, int my, int accent) {
+        if (healthBox == null) return;
+        String raw = healthBox.getValue();
+        if (raw == null || raw.isBlank()) raw = currentHealthNumeric();
         String shown = raw == null ? "" : raw;
-        this.renderInlineField(g, this.healthBox, shown, mx, my, accent);
-        Float max = this.currentMaxHealth();
+        renderInlineField(g, healthBox, shown, mx, my, accent);
+        Float max = currentMaxHealth();
         if (max != null) {
             String tail = " / " + String.format(Locale.ROOT, "%.1f", max);
-            int tailX = Math.min(this.healthBox.getX() + Math.min(this.font.width(shown), this.healthBox.getWidth() - 4) + 8, this.healthBox.getX() + this.healthBox.getWidth() + 12);
-            VersionCompat.get().drawString(g, this.font, tail, tailX, this.healthBox.getY() + 2, -7429177, false);
+            int tailX = Math.min(healthBox.getX() + Math.min(font.width(shown), healthBox.getWidth() - 4) + 8, healthBox.getX() + healthBox.getWidth() + 12);
+            int tailLimit = infoCardX() + infoCardWidth() - 8;
+            if (tailX + font.width(tail) <= tailLimit) {
+                g.drawString(font, tail, tailX, healthBox.getY() + 2, UiTheme.textDim(), false);
+            }
         }
     }
 
-    private void renderHealthAdjusters(GuiGraphics g, int mx, int my, int accent) {
-        if (!this.canEditHealth() || this.healthBox == null) {
-            return;
-        }
-        String[] labels = new String[]{"-10", "-1", "+1", "+10", "+100"};
-        int x = this.healthAdjustBaseX();
-        int y = this.healthAdjustBaseY();
+    private void renderHealthAdjusters(LegacyGuiGraphics g, int mx, int my, int accent) {
+        if (!canEditHealth() || healthBox == null || !healthAdjustersVisible()) return;
+        String[] labels = healthAdjustLabels();
+        int y = healthAdjustBaseY();
         int h = 16;
-        for (int i = 0; i < labels.length; ++i) {
-            int w = this.healthAdjustWidth(labels[i]);
-            int bx = this.healthAdjustButtonX(labels, i);
+        for (int i = 0; i < labels.length; i++) {
+            int w = healthAdjustWidth(labels[i]);
+            int bx = healthAdjustButtonX(labels, i);
             boolean hover = mx >= bx && mx < bx + w && my >= y && my < y + h;
-            g.fill(bx, y, bx + w, y + h, hover ? 1244084050 : 840178731);
-            this.border(g, bx, y, w, h, hover ? accent : -13878436);
+            int fill = hover
+                    ? UiTheme.withAlpha(accent & 0x00FFFFFF, 54)
+                    : UiTheme.withAlpha(UiTheme.baseRgb(), "compact".equals(AnkiConfig.getUiOptionStyle()) ? 22 : 72);
+            g.fill(bx, y, bx + w, y + h, fill);
+            border(g, bx, y, w, h, hover ? accent : UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 1.0f));
             String label = labels[i];
-            VersionCompat.get().drawString(g, this.font, label, bx + (w - this.font.width(label)) / 2, y + 4, -2497806, false);
+            g.drawString(font, label, bx + (w - font.width(label)) / 2, y + 4, UiTheme.textMain(), false);
         }
     }
 
     private String currentName() {
-        if (this.targetEntity != null) {
-            String custom = this.currentCustomNameInput();
-            if (!custom.isBlank()) {
-                return custom;
-            }
-            return this.normalizeCustomNameInput(this.targetEntity.getDisplayName().getString());
+        if (targetEntity != null) {
+            String custom = currentCustomNameInput();
+            if (!custom.isBlank()) return custom;
+            return normalizeCustomNameInput(targetEntity.getDisplayName().getString());
         }
-        if (!this.sourceStack.isEmpty()) {
-            return this.sourceStack.getHoverName().getString();
-        }
+        if (!sourceStack.isEmpty()) return sourceStack.getHoverName().getString();
         return "-";
     }
 
     private String currentCustomNameInput() {
-        if (this.targetEntity != null) {
-            Component custom = this.targetEntity.getCustomName();
-            return custom == null ? "" : this.normalizeCustomNameInput(custom.getString());
+        if (targetEntity != null) {
+            Component custom = targetEntity.getCustomName();
+            return custom == null ? "" : normalizeCustomNameInput(custom.getString());
         }
         return "";
     }
 
     private String currentType() {
-        if (this.targetEntity != null) {
-            return this.targetEntity.getType().toString().toLowerCase(Locale.ROOT);
-        }
-        if (!this.sourceStack.isEmpty()) {
-            return SpawnEggEditorHelper.getItemId(this.sourceStack);
-        }
+        if (targetEntity != null) return targetEntity.getType().toString().toLowerCase(Locale.ROOT);
+        if (!sourceStack.isEmpty()) return SpawnEggEditorHelper.getItemId(sourceStack);
         return "-";
     }
 
     private String currentPos() {
-        if (this.targetEntity == null) {
-            return "-";
-        }
-        return String.format(Locale.ROOT, "%.1f, %.1f, %.1f", this.targetEntity.getX(), this.targetEntity.getY(), this.targetEntity.getZ());
+        if (targetEntity == null) return "-";
+        return String.format(Locale.ROOT, "%.1f, %.1f, %.1f", targetEntity.getX(), targetEntity.getY(), targetEntity.getZ());
     }
 
     private String currentHealth() {
-        Entity entity = this.targetEntity;
-        if (!(entity instanceof LivingEntity)) {
-            return "-";
-        }
-        LivingEntity living = (LivingEntity)entity;
-        return String.format(Locale.ROOT, "%.1f / %.1f", Float.valueOf(living.getHealth()), Float.valueOf(living.getMaxHealth()));
+        if (!(targetEntity instanceof LivingEntity living)) return "-";
+        return String.format(Locale.ROOT, "%.1f / %.1f", living.getHealth(), living.getMaxHealth());
     }
 
     private String currentHealthNumeric() {
-        Entity entity = this.targetEntity;
-        if (!(entity instanceof LivingEntity)) {
-            return "";
-        }
-        LivingEntity living = (LivingEntity)entity;
-        return String.format(Locale.ROOT, "%.1f", Float.valueOf(living.getHealth()));
+        if (!(targetEntity instanceof LivingEntity living)) return "";
+        return String.format(Locale.ROOT, "%.1f", living.getHealth());
     }
 
     private boolean canEditHealth() {
-        return this.targetEntity instanceof LivingEntity || !this.sourceStack.isEmpty();
+        return targetEntity instanceof LivingEntity || !sourceStack.isEmpty();
     }
 
     private int healthAdjustBaseX() {
-        return this.healthBox == null ? this.px + 102 : this.healthBox.getX();
+        return valueColumnX();
     }
 
     private int healthAdjustBaseY() {
-        return this.healthBox == null ? this.py + 144 : this.healthBox.getY() + 22;
+        return healthBox == null ? healthRowY() + 18 : healthBox.getY() + 20;
     }
 
     private boolean clickHealthAdjuster(int mx, int my) {
-        if (!this.canEditHealth() || this.healthBox == null) {
-            return false;
-        }
-        int y = this.healthAdjustBaseY();
+        if (!canEditHealth() || healthBox == null || !healthAdjustersVisible()) return false;
+        int y = healthAdjustBaseY();
         int h = 16;
-        String[] labels = new String[]{"-10", "-1", "+1", "+10", "+100"};
-        float[] deltas = new float[]{-10.0f, -1.0f, 1.0f, 10.0f, 100.0f};
-        for (int i = 0; i < deltas.length; ++i) {
-            int w = this.healthAdjustWidth(labels[i]);
-            int bx = this.healthAdjustButtonX(labels, i);
-            if (mx < bx || mx >= bx + w || my < y || my >= y + h) continue;
-            this.pushUndo();
-            this.adjustHealthBy(deltas[i]);
-            return true;
+        String[] labels = healthAdjustLabels();
+        float[] deltas = healthAdjustDeltas();
+        for (int i = 0; i < deltas.length; i++) {
+            int w = healthAdjustWidth(labels[i]);
+            int bx = healthAdjustButtonX(labels, i);
+            if (mx >= bx && mx < bx + w && my >= y && my < y + h) {
+                pushUndo();
+                adjustHealthBy(deltas[i]);
+                return true;
+            }
         }
         return false;
     }
 
+    private String[] healthAdjustLabels() {
+        if (valueColumnWidth() < 94) return new String[]{"-1", "+1"};
+        if (valueColumnWidth() < 132) return new String[]{"-1", "+1", "+10"};
+        if (valueColumnWidth() < 168) return new String[]{"-10", "-1", "+1", "+10"};
+        return new String[]{"-10", "-1", "+1", "+10", "+100"};
+    }
+
+    private float[] healthAdjustDeltas() {
+        if (valueColumnWidth() < 94) return new float[]{-1.0f, 1.0f};
+        if (valueColumnWidth() < 132) return new float[]{-1.0f, 1.0f, 10.0f};
+        if (valueColumnWidth() < 168) return new float[]{-10.0f, -1.0f, 1.0f, 10.0f};
+        return new float[]{-10.0f, -1.0f, 1.0f, 10.0f, 100.0f};
+    }
+
+    private boolean healthAdjustersVisible() {
+        int cardBottom = healthCardY() + healthCardHeight() + entityContentOffset();
+        return healthAdjustBaseY() + 16 <= cardBottom - 4;
+    }
+
     private void adjustHealthBy(float delta) {
-        Entity entity;
-        Float current = this.parsePositiveFloat(this.healthBox == null ? "" : this.healthBox.getValue());
-        if (current == null && (entity = this.targetEntity) instanceof LivingEntity) {
-            LivingEntity living = (LivingEntity)entity;
-            current = Float.valueOf(living.getHealth());
+        Float current = parsePositiveFloat(healthBox == null ? "" : healthBox.getValue());
+        if (current == null && targetEntity instanceof LivingEntity living) {
+            current = living.getHealth();
         }
-        if (current == null) {
-            current = Float.valueOf(1.0f);
+        if (current == null) current = 1.0f;
+        float next = Math.max(0.0f, current + delta);
+        if (healthBox != null) {
+            setBoxValueSilently(healthBox, formatEditableHealth(next));
         }
-        float next = Math.max(0.0f, current.floatValue() + delta);
-        if (this.healthBox != null) {
-            this.healthBox.setValue(this.formatEditableHealth(next));
-        }
-        this.dirty = true;
+        markDirty();
     }
 
     private String formatEditableHealth(float value) {
         float rounded = Math.round(value);
         if (Math.abs(value - rounded) < 0.001f) {
-            return Integer.toString((int)rounded);
+            return Integer.toString((int) rounded);
         }
-        return String.format(Locale.ROOT, "%.1f", Float.valueOf(value));
+        return String.format(Locale.ROOT, "%.1f", value);
     }
 
     private String currentFlags() {
-        if (this.targetEntity == null) {
-            return "-";
-        }
-        boolean inv = this.targetEntity.isInvulnerable();
-        boolean ng = this.targetEntity.isNoGravity();
-        boolean sl = this.targetEntity.isSilent();
-        return "Inv=" + inv + ", G=" + !ng + ", S=" + sl;
+        if (targetEntity == null) return "-";
+        boolean inv = targetEntity.isInvulnerable();
+        boolean ng = targetEntity.isNoGravity();
+        boolean sl = targetEntity.isSilent();
+        return "Inv=" + inv + ", G=" + (!ng) + ", S=" + sl;
     }
 
     private void applyLocalPreview(CompoundTag patch) {
-        AgeableMob ageable;
-        Entity entity;
-        if (this.targetEntity == null || patch == null) {
-            return;
+        if (targetEntity == null || patch == null) return;
+        if (patch.contains("Invulnerable")) targetEntity.setInvulnerable(readBoolTag(patch, "Invulnerable", false));
+        if (patch.contains("NoGravity")) targetEntity.setNoGravity(readBoolTag(patch, "NoGravity", false));
+        if (patch.contains("Silent")) targetEntity.setSilent(readBoolTag(patch, "Silent", false));
+        if (patch.contains("NoAI") && targetEntity instanceof Mob mob) mob.setNoAi(readBoolTag(patch, "NoAI", false));
+        if (patch.contains("IsBaby") && targetEntity instanceof AgeableMob ageable) {
+            if (readBoolTag(patch, "IsBaby", false)) ageable.setAge(-24000);
+            else ageable.setAge(0);
         }
-        if (patch.contains("Invulnerable")) {
-            this.targetEntity.setInvulnerable(this.readBoolTag(patch, "Invulnerable", false));
-        }
-        if (patch.contains("NoGravity")) {
-            this.targetEntity.setNoGravity(this.readBoolTag(patch, "NoGravity", false));
-        }
-        if (patch.contains("Silent")) {
-            this.targetEntity.setSilent(this.readBoolTag(patch, "Silent", false));
-        }
-        if (patch.contains("NoAI") && (entity = this.targetEntity) instanceof Mob) {
-            Mob mob = (Mob)entity;
-            mob.setNoAi(this.readBoolTag(patch, "NoAI", false));
-        }
-        if (patch.contains("IsBaby") && (entity = this.targetEntity) instanceof AgeableMob) {
-            ageable = (AgeableMob)entity;
-            if (this.readBoolTag(patch, "IsBaby", false)) {
-                ageable.setAge(-24000);
-            } else {
-                ageable.setAge(0);
-            }
-        }
-        if (patch.contains("CustomNameVisible")) {
-            this.targetEntity.setCustomNameVisible(this.readBoolTag(patch, "CustomNameVisible", false));
-        }
+        if (patch.contains("CustomNameVisible")) targetEntity.setCustomNameVisible(readBoolTag(patch, "CustomNameVisible", false));
         if (patch.contains("CustomName")) {
-            this.applyLocalCustomName(this.nameBox == null ? "" : this.nameBox.getValue());
+            applyLocalCustomName(nameBox == null ? "" : nameBox.getValue());
         }
-        if (patch.contains("Age") && (entity = this.targetEntity) instanceof AgeableMob) {
-            ageable = (AgeableMob)entity;
-            ageable.setAge(this.readIntTag(patch, "Age", 0));
+        if (patch.contains("Age") && targetEntity instanceof AgeableMob ageable) {
+            ageable.setAge(readIntTag(patch, "Age", 0));
         }
     }
 
     private void applyLocalCustomName(String name) {
-        if (this.targetEntity == null) {
-            return;
-        }
-        String normalized = this.normalizeCustomNameInput(name);
-        MutableComponent component = normalized.isBlank() ? null : Component.literal((String)normalized);
-        this.targetEntity.setCustomName((Component)component);
-        this.targetEntity.setCustomNameVisible(!normalized.isBlank());
-    }
-
-    private int previewSectionY() {
-        int base = this.healToggleY() + 26;
-        return Math.min(base, this.py + this.ph - 92);
+        if (targetEntity == null) return;
+        String normalized = normalizeCustomNameInput(name);
+        Component component = normalized.isBlank() ? null : Component.literal(normalized);
+        targetEntity.setCustomName(component);
+        targetEntity.setCustomNameVisible(!normalized.isBlank());
     }
 
     private int readIntTag(CompoundTag patch, String key, int def) {
-        Optional opt;
-        if (patch == null || key == null || key.isBlank()) {
-            return def;
-        }
+        if (patch == null || key == null || key.isBlank()) return def;
         try {
-            Object var7_9;
             Object out = patch.getClass().getMethod("getInt", String.class).invoke(patch, key);
-            if (out instanceof Number) {
-                Number n = (Number)out;
-                return n.intValue();
-            }
-            if (out instanceof Optional && (var7_9 = (opt = (Optional)out).orElse(null)) instanceof Number) {
-                Number n = (Number)var7_9;
-                return n.intValue();
-            }
-        }
-        catch (Throwable out) {
-            // empty catch block
-        }
+            if (out instanceof Number n) return n.intValue();
+            if (out instanceof java.util.Optional<?> opt && opt.orElse(null) instanceof Number n) return n.intValue();
+        } catch (Throwable ignored) {}
         try {
-            Object out;
             Object raw = patch.getClass().getMethod("get", String.class).invoke(patch, key);
-            if (raw instanceof Optional) {
-                opt = (Optional)raw;
-                raw = opt.orElse(null);
+            if (raw instanceof java.util.Optional<?> opt) raw = opt.orElse(null);
+            if (raw != null) {
+                Object out = raw.getClass().getMethod("getAsInt").invoke(raw);
+                if (out instanceof Number n) return n.intValue();
             }
-            if (raw != null && (out = raw.getClass().getMethod("getAsInt", new Class[0]).invoke(raw, new Object[0])) instanceof Number) {
-                Number n = (Number)out;
-                return n.intValue();
-            }
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+        } catch (Throwable ignored) {}
         return def;
     }
 
     private boolean readBoolTag(CompoundTag patch, String key, boolean def) {
-        Optional opt;
-        if (patch == null || key == null || key.isBlank()) {
-            return def;
-        }
+        if (patch == null || key == null || key.isBlank()) return def;
         try {
-            Object var7_9;
             Object out = patch.getClass().getMethod("getBoolean", String.class).invoke(patch, key);
-            if (out instanceof Boolean) {
-                Boolean b = (Boolean)out;
-                return b;
-            }
-            if (out instanceof Optional && (var7_9 = (opt = (Optional)out).orElse(null)) instanceof Boolean) {
-                Boolean b = (Boolean)var7_9;
-                return b;
-            }
-        }
-        catch (Throwable out) {
-            // empty catch block
-        }
+            if (out instanceof Boolean b) return b;
+            if (out instanceof java.util.Optional<?> opt && opt.orElse(null) instanceof Boolean b) return b;
+        } catch (Throwable ignored) {}
         try {
-            Object out;
             Object raw = patch.getClass().getMethod("get", String.class).invoke(patch, key);
-            if (raw instanceof Optional) {
-                opt = (Optional)raw;
-                raw = opt.orElse(null);
+            if (raw instanceof java.util.Optional<?> opt) raw = opt.orElse(null);
+            if (raw != null) {
+                Object out = raw.getClass().getMethod("getAsBoolean").invoke(raw);
+                if (out instanceof Boolean b) return b;
             }
-            if (raw != null && (out = raw.getClass().getMethod("getAsBoolean", new Class[0]).invoke(raw, new Object[0])) instanceof Boolean) {
-                Boolean b = (Boolean)out;
-                return b;
-            }
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
+        } catch (Throwable ignored) {}
         return def;
     }
 
     private void setLocalMaxHealth(Object entity, float value) {
-        LivingEntity living;
-        block5: {
-            block4: {
-                if (!(entity instanceof LivingEntity)) break block4;
-                living = (LivingEntity)entity;
-                if (!(value <= 0.0f)) break block5;
-            }
-            return;
-        }
-        AttributeInstance attr = living.getAttribute(Attributes.MAX_HEALTH);
-        if (attr != null) {
-            attr.setBaseValue((double)value);
-        }
+        if (!(entity instanceof LivingEntity living) || value <= 0.0f) return;
+        var attr = living.getAttribute(Attributes.MAX_HEALTH);
+        if (attr != null) attr.setBaseValue(value);
     }
 
     private Float currentMaxHealth() {
-        Entity entity = this.targetEntity;
-        if (!(entity instanceof LivingEntity)) {
-            return null;
-        }
-        LivingEntity living = (LivingEntity)entity;
-        return Float.valueOf(living.getMaxHealth());
+        if (!(targetEntity instanceof LivingEntity living)) return null;
+        return living.getMaxHealth();
     }
 
-    private void border(GuiGraphics g, int x, int y, int w, int h, int c) {
+    private void border(LegacyGuiGraphics g, int x, int y, int w, int h, int c) {
         g.fill(x, y, x + w, y + 1, c);
         g.fill(x, y + h - 1, x + w, y + h, c);
         g.fill(x, y, x + 1, y + h, c);
@@ -973,173 +1640,146 @@ extends Screen {
     }
 
     private int healToggleX() {
-        return this.px + 18;
+        return valueColumnX();
     }
 
     private int healToggleY() {
-        if (this.canEditHealth() && this.healthBox != null) {
-            return this.healthAdjustBaseY() + 44;
+        if (canEditHealth() && healthBox != null) {
+            return healthAdjustBaseY() + 20;
         }
-        return this.py + 168;
+        return healthRowY() + entityContentOffset() + 20;
     }
 
     private boolean hitHealToggle(int mx, int my) {
-        int x = this.healToggleX();
-        int y = this.healToggleY();
+        int x = healToggleX();
+        int y = healToggleY();
+        if (!healToggleVisible()) return false;
         int size = 12;
-        int textW = this.font.width((FormattedText)HEAL_FULL_LABEL);
+        int textW = font.width(healToggleText());
         return mx >= x && mx < x + size + 6 + textW && my >= y && my < y + size;
     }
 
-    private void renderHealToggle(GuiGraphics g, int accent) {
-        int x = this.healToggleX();
-        int y = this.healToggleY();
+    private void renderHealToggle(LegacyGuiGraphics g, int accent) {
+        int x = healToggleX();
+        int y = healToggleY();
         int size = 12;
-        g.fill(x, y, x + size, y + size, 1243293240);
-        this.border(g, x, y, size, size, this.healToFullOnApply ? accent : -13878436);
-        if (this.healToFullOnApply) {
-            g.fill(x + 3, y + 3, x + size - 3, y + size - 3, -14498466);
-        }
-        VersionCompat.get().drawString(g, this.font, HEAL_FULL_LABEL, x + size + 6, y + 2, -2497806, false);
+        if (!healToggleVisible()) return;
+        g.fill(x, y, x + size, y + size, UiTheme.withAlpha(UiTheme.baseRgb(), 84));
+        border(g, x, y, size, size, healToFullOnApply ? accent : UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 1.0f));
+        if (healToFullOnApply) g.fill(x + 3, y + 3, x + size - 3, y + size - 3, accent);
+        g.drawString(font, healToggleText(),
+                x + size + 6, y + 2, UiTheme.textMain(), false);
+    }
+
+    private boolean healToggleVisible() {
+        int cardBottom = healthCardY() + healthCardHeight() + entityContentOffset();
+        return healToggleY() + 12 <= cardBottom - 4;
+    }
+
+    private String healToggleText() {
+        return trimToWidth(HEAL_FULL_LABEL.getString(), Math.max(8, valueColumnWidth() - 18));
     }
 
     private boolean handleTextFieldClick(double mx, double my, int button) {
-        if (this.focusInlineBox(this.nameBox, mx, my, this.currentName())) {
-            if (this.healthBox != null) {
-                this.healthBox.setFocused(false);
-            }
+        if (focusInlineBox(nameBox, mx, my, null)) {
+            if (healthBox != null) healthBox.setFocused(false);
             return true;
         }
-        if (this.nameBox != null) {
-            this.nameBox.setFocused(false);
-        }
-        if (this.canEditHealth() && this.focusInlineBox(this.healthBox, mx, my, this.currentHealthNumeric())) {
-            if (this.nameBox != null) {
-                this.nameBox.setFocused(false);
-            }
+        if (nameBox != null) nameBox.setFocused(false);
+
+        if (canEditHealth() && focusInlineBox(healthBox, mx, my, currentHealthNumeric())) {
+            if (nameBox != null) nameBox.setFocused(false);
             return true;
         }
-        if (this.healthBox != null) {
-            this.healthBox.setFocused(false);
-        }
+        if (healthBox != null) healthBox.setFocused(false);
+        this.clearFocus();
         return false;
     }
 
     private boolean focusInlineBox(EditBox box, double mx, double my, String fallback) {
-        if (box == null || !this.hitInlineField(box, mx, my)) {
-            return false;
-        }
+        if (box == null || !box.active || !box.visible || !hitInlineField(box, mx, my)) return false;
+        if (!box.isFocused()) pushUndo();
         if ((box.getValue() == null || box.getValue().isBlank()) && fallback != null && !fallback.isBlank()) {
-            this.setInlineBoxValue(box, fallback);
+            setInlineBoxValue(box, fallback);
         }
         box.setFocused(true);
+        this.setFocused(box);
+        setDragging(true);
         return true;
     }
 
     private boolean hitInlineField(EditBox box, double mx, double my) {
-        if (box == null) {
-            return false;
-        }
-        return mx >= (double)(box.getX() - 2) && mx < (double)(box.getX() + box.getWidth() + 2) && my >= (double)(box.getY() - 2) && my < (double)(box.getY() + box.getHeight() + 2);
+        if (box == null) return false;
+        return mx >= box.getX() - 2 && mx < box.getX() + box.getWidth() + 2
+                && my >= box.getY() - 2 && my < box.getY() + box.getHeight() + 2;
     }
 
     private void setInlineBoxValue(EditBox box, String value) {
-        if (box == null) {
-            return;
-        }
-        boolean wasDirty = this.dirty;
-        String next = box == this.nameBox ? this.normalizeCustomNameInput(value) : (value == null ? "" : value);
-        box.setValue(next);
-        this.dirty = wasDirty;
+        if (box == null) return;
+        String next = box == nameBox ? normalizeCustomNameInput(value) : (value == null ? "" : value);
+        setBoxValueSilently(box, next);
     }
 
     private int healthAdjustWidth(String label) {
-        return Math.max(28, this.font.width(label) + 12);
+        return Math.max(28, font.width(label) + 12);
     }
 
     private int healthAdjustButtonX(String[] labels, int index) {
-        int x = this.healthAdjustBaseX();
-        for (int i = 0; i < index; ++i) {
-            x += this.healthAdjustWidth(labels[i]) + 4;
+        int x = healthAdjustBaseX();
+        for (int i = 0; i < index; i++) {
+            x += healthAdjustWidth(labels[i]) + 4;
         }
         return x;
     }
 
     private String toCustomNameJson(String value) {
-        return "{\"text\":" + this.jsonString(this.normalizeCustomNameInput(value)) + "}";
+        return "{\"text\":" + jsonString(normalizeCustomNameInput(value)) + "}";
     }
 
     private String jsonString(String value) {
         StringBuilder out = new StringBuilder(value.length() + 8);
-        out.append('\"');
-        block7: for (int i = 0; i < value.length(); ++i) {
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
             switch (ch) {
-                case '\\': {
-                    out.append("\\\\");
-                    continue block7;
-                }
-                case '\"': {
-                    out.append("\\\"");
-                    continue block7;
-                }
-                case '\n': {
-                    out.append("\\n");
-                    continue block7;
-                }
-                case '\r': {
-                    out.append("\\r");
-                    continue block7;
-                }
-                case '\t': {
-                    out.append("\\t");
-                    continue block7;
-                }
-                default: {
-                    out.append(ch);
-                }
+                case '\\' -> out.append("\\\\");
+                case '"' -> out.append("\\\"");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> out.append(ch);
             }
         }
-        out.append('\"');
+        out.append('"');
         return out.toString();
     }
 
     private String normalizeCustomNameInput(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
+        if (value == null || value.isBlank()) return "";
         String trimmed = value.trim();
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
             return value;
         }
         try {
-            String decoded = this.extractJsonText(JsonParser.parseString((String)trimmed));
+            String decoded = extractJsonText(JsonParser.parseString(trimmed));
             return decoded == null ? value : decoded;
-        }
-        catch (Throwable ignored) {
+        } catch (Throwable ignored) {
             return value;
         }
     }
 
     private String extractJsonText(JsonElement element) {
-        if (element == null || element.isJsonNull()) {
-            return "";
-        }
-        if (element.isJsonPrimitive()) {
-            return element.getAsString();
-        }
+        if (element == null || element.isJsonNull()) return "";
+        if (element.isJsonPrimitive()) return element.getAsString();
         if (element.isJsonArray()) {
             StringBuilder out = new StringBuilder();
             for (JsonElement entry : element.getAsJsonArray()) {
-                String text = this.extractJsonText(entry);
-                if (text == null) continue;
-                out.append(text);
+                String text = extractJsonText(entry);
+                if (text != null) out.append(text);
             }
             return out.toString();
         }
-        if (!element.isJsonObject()) {
-            return null;
-        }
+        if (!element.isJsonObject()) return null;
         JsonObject object = element.getAsJsonObject();
         StringBuilder out = new StringBuilder();
         if (object.has("text")) {
@@ -1147,271 +1787,149 @@ extends Screen {
         }
         if (object.has("extra") && object.get("extra").isJsonArray()) {
             for (JsonElement extra : object.getAsJsonArray("extra")) {
-                String text = this.extractJsonText(extra);
-                if (text == null) continue;
-                out.append(text);
+                String text = extractJsonText(extra);
+                if (text != null) out.append(text);
             }
         }
         return out.toString();
     }
 
-    private boolean applyPatchToIntegratedServer(Minecraft mc, String customName, Float healthInput, Float currentMaxHealth, Float healthToApply) {
-        if (mc == null || this.targetEntity == null) {
-            return false;
+    private void applyPatchToIntegratedServerAsync(Minecraft mc, String customName, Float healthInput,
+                                                   Float currentMaxHealth, Float healthToApply,
+                                                   Consumer<Boolean> completion) {
+        if (mc == null || targetEntity == null) {
+            completion.accept(false);
+            return;
         }
-        IntegratedServer server = mc.getSingleplayerServer();
+        var server = mc.getSingleplayerServer();
         if (server == null) {
-            return false;
+            completion.accept(false);
+            return;
         }
-        AtomicBoolean success = new AtomicBoolean(false);
-        CountDownLatch latch = new CountDownLatch(1);
-        server.execute(() -> {
-            try {
-                Entity serverEntity = EditorCommandHelper.findIntegratedServerEntity(server, this.targetEntity.getId(), this.targetEntity.getUUID());
-                if (serverEntity == null) {
-                    return;
-                }
-                if (this.stInvulnerable != -1) {
-                    serverEntity.setInvulnerable(this.stInvulnerable == 1);
-                }
-                if (this.stNoGravity != -1) {
-                    serverEntity.setNoGravity(this.stNoGravity == 1);
-                }
-                if (this.stSilent != -1) {
-                    serverEntity.setSilent(this.stSilent == 1);
-                }
-                if (this.stNoAi != -1 && serverEntity instanceof Mob) {
-                    Mob mob = (Mob)serverEntity;
-                    mob.setNoAi(this.stNoAi == 1);
-                }
-                if (this.stBaby != -1 && serverEntity instanceof AgeableMob) {
-                    AgeableMob ageable = (AgeableMob)serverEntity;
-                    ageable.setAge(this.stBaby == 1 ? -24000 : 0);
-                }
-                MutableComponent serverName = customName.isBlank() ? null : Component.literal((String)customName);
-                serverEntity.setCustomName((Component)serverName);
-                serverEntity.setCustomNameVisible(!customName.isBlank());
-                if (serverEntity instanceof LivingEntity) {
-                    AttributeInstance attr;
-                    LivingEntity living = (LivingEntity)serverEntity;
-                    if (healthInput != null && (currentMaxHealth == null || healthInput.floatValue() > currentMaxHealth.floatValue() + 0.01f) && (attr = living.getAttribute(Attributes.MAX_HEALTH)) != null) {
-                        attr.setBaseValue((double)healthInput.floatValue());
-                    }
-                    if (healthToApply != null) {
-                        living.setHealth(Math.max(0.0f, healthToApply.floatValue()));
-                    }
-                }
-                success.set(true);
-            }
-            catch (Throwable throwable) {
-            }
-            finally {
-                latch.countDown();
-            }
-        });
+
         try {
-            if (!latch.await(3L, TimeUnit.SECONDS)) {
-                return false;
-            }
+            server.execute(() -> {
+                boolean success = false;
+                try {
+                    Entity serverEntity = EditorCommandHelper.findIntegratedServerEntity(
+                            server, targetEntity.getId(), targetEntity.getUUID());
+                    if (serverEntity != null) {
+                        if (stInvulnerable != -1) serverEntity.setInvulnerable(stInvulnerable == 1);
+                        if (stNoGravity != -1) serverEntity.setNoGravity(stNoGravity == 1);
+                        if (stSilent != -1) serverEntity.setSilent(stSilent == 1);
+                        if (stNoAi != -1 && serverEntity instanceof Mob mob) mob.setNoAi(stNoAi == 1);
+                        if (stBaby != -1 && serverEntity instanceof AgeableMob ageable) {
+                            ageable.setAge(stBaby == 1 ? -24000 : 0);
+                        }
+
+                        Component serverName = customName.isBlank() ? null : Component.literal(customName);
+                        serverEntity.setCustomName(serverName);
+                        serverEntity.setCustomNameVisible(!customName.isBlank());
+
+                        if (serverEntity instanceof LivingEntity living) {
+                            if (healthInput != null
+                                    && (currentMaxHealth == null || healthInput > currentMaxHealth + 0.01f)) {
+                                var attr = living.getAttribute(Attributes.MAX_HEALTH);
+                                if (attr != null) attr.setBaseValue(healthInput);
+                            }
+                            if (healthToApply != null) living.setHealth(Math.max(0.0f, healthToApply));
+                        }
+                        success = true;
+                    }
+                } catch (Throwable ignored) {
+                }
+                boolean result = success;
+                mc.execute(() -> completion.accept(result));
+            });
+        } catch (Throwable ignored) {
+            applyPending = false;
+            completion.accept(false);
         }
-        catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
-        return success.get();
     }
 
+    @Override
     public void onClose() {
-        this.tryClose();
+        tryClose();
     }
 
+    @Override
     public boolean isPauseScreen() {
         return false;
     }
 
-    public boolean keyPressed(KeyEvent event) {
-        if (this.keyPressed(event.key(), event.scancode(), event.modifiers())) {
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (resizingEditor && button == 0) {
+            updateEditorScale(mouseX);
             return true;
         }
-        return super.keyPressed(event.key(), event.scancode(), event.modifiers());
-    }
-
-    public boolean charTyped(CharacterEvent event) {
-        if (this.charTyped((char)event.codepoint(), event.modifiers())) {
+        if (draggingPanel && button == 0) {
+            applyMenuLayout(EditorDock.menuLayoutAt(width, height, 300, false,
+                    (int) Math.round(mouseX) - dragOffsetX,
+                    (int) Math.round(mouseY) - dragOffsetY, editorScale,
+                    editorWidthAdjustment, editorHeightAdjustment));
+            rebuildButtons();
             return true;
         }
-        return super.charTyped((char)event.codepoint(), event.modifiers());
+        if (button == 0 && getFocused() instanceof EditBox box && box.isFocused()) {
+            return box.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
-    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        if (this.mouseClicked(event.x(), event.y(), event.button())) {
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (resizingEditor && button == 0) {
+            resizingEditor = false;
+            AnkiConfig.setEntityEditorScale(editorScale);
             return true;
         }
-        return super.mouseClicked(event.x(), event.y(), event.button());
-    }
-
-    private StateSnapshot captureState() {
-        return new StateSnapshot(this.stNoAi, this.stInvulnerable, this.stNoGravity, this.stSilent, this.stBaby, this.healToFullOnApply, this.nameBox == null ? "" : this.nameBox.getValue(), this.healthBox == null ? "" : this.healthBox.getValue());
-    }
-
-    private void applyState(StateSnapshot s) {
-        if (s == null) {
-            return;
-        }
-        this.stNoAi = s.stNoAi;
-        this.stInvulnerable = s.stInvulnerable;
-        this.stNoGravity = s.stNoGravity;
-        this.stSilent = s.stSilent;
-        this.stBaby = s.stBaby;
-        this.healToFullOnApply = s.healFull;
-        if (this.nameBox != null) {
-            this.nameBox.setValue(s.name == null ? "" : s.name);
-        }
-        if (this.healthBox != null) {
-            this.healthBox.setValue(s.health == null ? "" : s.health);
-        }
-    }
-
-    private void pushUndo() {
-        StateSnapshot current = this.captureState();
-        if (!this.undoStack.isEmpty() && Objects.equals(this.undoStack.get(this.undoStack.size() - 1), current)) {
-            return;
-        }
-        this.undoStack.add(current);
-        while (this.undoStack.size() > 40) {
-            this.undoStack.remove(0);
-        }
-    }
-
-    private void undo() {
-        if (this.undoStack.size() <= 1) {
-            return;
-        }
-        this.undoStack.remove(this.undoStack.size() - 1);
-        this.applyState(this.undoStack.get(this.undoStack.size() - 1));
-        this.dirty = true;
-        this.setStatus((Component)Component.translatable((String)"ankinbt.status.edited"), -7429177);
-    }
-
-    private void tryClose() {
-        if (this.dirty) {
-            this.confirmClose = true;
-            return;
-        }
-        Minecraft.getInstance().setScreen(this.parent);
-    }
-
-    private void renderConfirm(GuiGraphics g, int mx, int my, String title, String desc, int color) {
-        int w = 320;
-        int h = 110;
-        int x = (this.width - w) / 2;
-        int y = (this.height - h) / 2;
-        g.fill(0, 0, this.width, this.height, -2013265920);
-        g.fill(x, y, x + w, y + h, -267315418);
-        this.border(g, x, y, w, h, -13878436);
-        VersionCompat.get().drawString(g, this.font, title, x + 12, y + 12, color, false);
-        VersionCompat.get().drawString(g, this.font, desc, x + 12, y + 30, -2497806, false);
-        int by = y + h - 30;
-        g.fill(x + 12, by, x + 102, by + 20, 1780954962);
-        this.border(g, x + 12, by, 90, 20, -13878436);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.edit.cancel"), x + 20, by + 6, -2497806, false);
-        g.fill(x + w - 102, by, x + w - 12, by + 20, color == -1096636 ? -1969677541 : -1978243788);
-        this.border(g, x + w - 102, by, 90, 20, color);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.edit.apply"), x + w - 72, by + 6, -2497806, false);
-    }
-
-    private void renderUnsavedConfirmLikeSimple(GuiGraphics g, int mx, int my) {
-        int dw = 260;
-        int dh = 110;
-        int dx = (this.width - dw) / 2;
-        int dy = (this.height - dh) / 2;
-        g.fill(dx, dy, dx + dw, dy + dh, -267909104);
-        this.border(g, dx, dy, dw, dh, -1096636);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.confirm.title"), dx + 10, dy + 10, -1906448, false);
-        g.fill(dx + 1, dy + 24, dx + dw - 1, dy + 25, -14540234);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.confirm.unsaved"), dx + 10, dy + 32, -7035976, false);
-        VersionCompat.get().drawString(g, this.font, (Component)Component.translatable((String)"ankinbt.confirm.discard_hint"), dx + 10, dy + 46, -10193781, false);
-        int by = dy + dh - 32;
-        int bw2 = 70;
-        int bh2 = 22;
-        int saveX = dx + 10;
-        boolean sh = mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2;
-        g.fill(saveX, by, saveX + bw2, by + bh2, sh ? -15293622 : -14498466);
-        String saveLabel = Component.translatable((String)"ankinbt.confirm.save_close").getString();
-        VersionCompat.get().drawString(g, this.font, saveLabel, saveX + (bw2 - this.font.width(saveLabel)) / 2, by + 7, -1906448, false);
-        int discardX = dx + dw / 2 - bw2 / 2;
-        boolean dh2 = mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2;
-        g.fill(discardX, by, discardX + bw2, by + bh2, dh2 ? -2131803068 : 1089422404);
-        String discardLabel = Component.translatable((String)"ankinbt.confirm.discard").getString();
-        VersionCompat.get().drawString(g, this.font, discardLabel, discardX + (bw2 - this.font.width(discardLabel)) / 2, by + 7, -1906448, false);
-        int cancelX = dx + dw - bw2 - 10;
-        boolean ch = mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2;
-        g.fill(cancelX, by, cancelX + bw2, by + bh2, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        String cancelLabel = Component.translatable((String)"ankinbt.edit.cancel").getString();
-        VersionCompat.get().drawString(g, this.font, cancelLabel, cancelX + (bw2 - this.font.width(cancelLabel)) / 2, by + 7, -7035976, false);
-    }
-
-    private boolean clickConfirm(int mx, int my) {
-        if (this.confirmClose) {
-            return this.clickUnsavedConfirmLikeSimple(mx, my);
-        }
-        int w = 320;
-        int h = 110;
-        int x = (this.width - w) / 2;
-        int y = (this.height - h) / 2;
-        int by = y + h - 30;
-        if (mx >= x + 12 && mx < x + 102 && my >= by && my < by + 20) {
-            this.confirmClose = false;
-            this.confirmReset = false;
+        if (draggingPanel && button == 0) {
+            draggingPanel = false;
             return true;
         }
-        if (mx >= x + w - 102 && mx < x + w - 12 && my >= by && my < by + 20) {
-            if (this.confirmReset) {
-                this.confirmReset = false;
-                this.resetStates();
-            } else if (this.confirmClose) {
-                this.confirmClose = false;
-                this.dirty = false;
-                Minecraft.getInstance().setScreen(this.parent);
-            }
-            return true;
-        }
-        return true;
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    private boolean clickUnsavedConfirmLikeSimple(int mx, int my) {
-        int dw = 260;
-        int dh = 110;
-        int dx = (this.width - dw) / 2;
-        int dy = (this.height - dh) / 2;
-        int by = dy + dh - 32;
-        int bw2 = 70;
-        int bh2 = 22;
-        int saveX = dx + 10;
-        if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
-            this.applyPatch();
-            if (!this.dirty) {
-                this.confirmClose = false;
-                Minecraft.getInstance().setScreen(this.parent);
-            }
-            return true;
-        }
-        int discardX = dx + dw / 2 - bw2 / 2;
-        if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
-            this.confirmClose = false;
-            this.dirty = false;
-            Minecraft.getInstance().setScreen(this.parent);
-            return true;
-        }
-        int cancelX = dx + dw - bw2 - 10;
-        if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
-            this.confirmClose = false;
-            return true;
-        }
-        return true;
+    private void updateEditorScale(double mouseX) {
+        setEditorScale(EditorDock.sizeScaleFromMouse(width, mouseX), false);
     }
 
-    private record StateSnapshot(int stNoAi, int stInvulnerable, int stNoGravity, int stSilent, int stBaby, boolean healFull, String name, String health) {
+    private void adjustEditorScale(float delta) {
+        setEditorScale(editorScale + delta, true);
+    }
+
+    private void setEditorScale(float scale, boolean save) {
+        editorScale = Math.max(0.0f, Math.min(1.0f, scale));
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, false, current, 300, editorScale,
+                editorWidthAdjustment, editorHeightAdjustment));
+        rebuildButtons();
+        if (save) AnkiConfig.setEntityEditorScale(editorScale);
+    }
+
+    private void adjustEditorAxes(float widthDelta, float heightDelta) {
+        editorWidthAdjustment = EditorDock.adjustAxis(editorWidthAdjustment, widthDelta);
+        editorHeightAdjustment = EditorDock.adjustAxis(editorHeightAdjustment, heightDelta);
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, false, current, 300, editorScale,
+                editorWidthAdjustment, editorHeightAdjustment));
+        rebuildButtons();
+        AnkiConfig.setEntityEditorAxisAdjustments(editorWidthAdjustment, editorHeightAdjustment);
+    }
+
+    private void resetEditorSize() {
+        AnkiConfig.resetEntityEditorSizeToItem();
+        editorScale = AnkiConfig.getEntityEditorScale();
+        editorWidthAdjustment = AnkiConfig.getEntityEditorWidthAdjustment();
+        editorHeightAdjustment = AnkiConfig.getEntityEditorHeightAdjustment();
+        EditorDock.MenuLayout current = barBounds == null || drawerBounds == null
+                ? null : new EditorDock.MenuLayout(barBounds, drawerBounds, drawerAbove);
+        applyMenuLayout(EditorDock.resizeLayout(width, height, false, current, 300, editorScale,
+                editorWidthAdjustment, editorHeightAdjustment));
+        rebuildButtons();
     }
 
     static class UiBtn {
@@ -1424,6 +1942,7 @@ extends Screen {
         final boolean enabled;
         final Supplier<Boolean> selected;
         final int style;
+        float hoverAnim;
 
         UiBtn(int x, int y, int w, int h, Supplier<String> label, Runnable action, boolean enabled, Supplier<Boolean> selected, int style) {
             this.x = x;
@@ -1438,47 +1957,235 @@ extends Screen {
         }
 
         boolean hover(int mx, int my) {
-            return mx >= this.x && mx < this.x + this.w && my >= this.y && my < this.y + this.h;
+            return mx >= x && mx < x + w && my >= y && my < y + h;
         }
 
         boolean click(int mx, int my) {
-            if (!this.enabled || !this.hover(mx, my)) {
-                return false;
-            }
-            this.action.run();
+            return click(mx, my, 0);
+        }
+
+        boolean click(int mx, int my, int offsetY) {
+            if (!enabled || mx < x || mx >= x + w || my < y + offsetY || my >= y + offsetY + h) return false;
+            action.run();
             return true;
         }
 
-        void render(GuiGraphics g, Font font, int mx, int my, int accent) {
-            int edge;
-            int bg;
-            boolean chosen;
-            boolean hover = this.hover(mx, my);
-            boolean bl = chosen = this.selected != null && Boolean.TRUE.equals(this.selected.get());
-            if (!this.enabled) {
-                bg = 705697831;
-                edge = -13878436;
-            } else if (this.style == 1) {
-                bg = hover ? -1441508563 : -1978243788;
-                edge = -14498466;
-            } else if (this.style == -1) {
-                bg = hover ? -1434510051 : -1969677541;
-                edge = -1096636;
-            } else {
-                bg = chosen ? 0xAA000000 | accent & 0xFFFFFF : (hover ? 1780954962 : 1243293240);
-                edge = chosen ? accent : -13878436;
-            }
-            int color = this.enabled ? -2497806 : -7429177;
-            g.fill(this.x, this.y, this.x + this.w, this.y + this.h, bg);
-            g.fill(this.x, this.y, this.x + this.w, this.y + 1, edge);
-            g.fill(this.x, this.y + this.h - 1, this.x + this.w, this.y + this.h, edge);
-            g.fill(this.x, this.y, this.x + 1, this.y + this.h, edge);
-            g.fill(this.x + this.w - 1, this.y, this.x + this.w, this.y + this.h, edge);
-            Object text = this.label.get();
-            if (font.width((String)text) > this.w - 10) {
-                text = font.plainSubstrByWidth((String)text, this.w - 14) + "..";
-            }
-            VersionCompat.get().drawString(g, font, (String)text, this.x + 6, this.y + 7, color, false);
+        void render(LegacyGuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int accent) {
+            render(g, font, mx, my, accent, 0);
         }
+
+        void render(LegacyGuiGraphics g, net.minecraft.client.gui.Font font, int mx, int my, int accent, int offsetY) {
+            int drawY = y + offsetY;
+            boolean hover = mx >= x && mx < x + w && my >= drawY && my < drawY + h;
+            boolean chosen = selected != null && Boolean.TRUE.equals(selected.get());
+            float speed = AnkiConfig.isUiAnimationEnabled() ? Math.min(1.0f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1.0f;
+            hoverAnim = UiTheme.approach(hoverAnim, hover ? 1.0f : 0.0f, speed);
+            String optionStyle = AnkiConfig.getUiOptionStyle();
+
+            int bg;
+            int edge;
+            if (!enabled) {
+                bg = UiTheme.withAlpha(UiTheme.baseRgb(), 30);
+                edge = UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 0.55f);
+            } else if (style == 1) {
+                bg = UiTheme.withAlpha(0x166534, 116 + Math.round(42 * hoverAnim));
+                edge = 0xFF22C55E;
+            } else if (style == -1) {
+                bg = UiTheme.withAlpha(0x991B1B, 104 + Math.round(46 * hoverAnim));
+                edge = 0xFFEF4444;
+            } else {
+                int neutralAlpha = "compact".equals(optionStyle) ? 24 : "rows".equals(optionStyle) ? 38 : 68;
+                bg = chosen
+                        ? UiTheme.withAlpha(accent & 0x00FFFFFF, 82 + Math.round(36 * hoverAnim))
+                        : UiTheme.withAlpha(UiTheme.baseRgb(), neutralAlpha + Math.round(44 * hoverAnim));
+                edge = chosen ? accent : UiTheme.themedBorder(AnkiConfig.getUiOpacity(), 1.0f);
+            }
+            int color = enabled ? UiTheme.textMain() : UiTheme.textDim();
+
+            g.fill(x, drawY, x + w, drawY + h, bg);
+            if ("rows".equals(optionStyle)) {
+                g.fill(x, drawY + h - 1, x + w, drawY + h, edge);
+            } else if ("compact".equals(optionStyle)) {
+                g.fill(x, drawY, x + (chosen || hoverAnim > 0.05f ? 2 : 1), drawY + h, edge);
+            } else {
+                g.fill(x, drawY, x + w, drawY + 1, edge);
+                g.fill(x, drawY + h - 1, x + w, drawY + h, edge);
+                g.fill(x, drawY, x + 1, drawY + h, edge);
+                g.fill(x + w - 1, drawY, x + w, drawY + h, edge);
+            }
+
+            String text = label.get();
+            if (font.width(text) > w - 10) text = font.plainSubstrByWidth(text, Math.max(4, w - 18)) + "...";
+            int textY = drawY + Math.max(1, (h - 8) / 2);
+            g.drawString(font, text, x + 6, textY, color, false);
+        }
+    }
+
+    private record StateSnapshot(int stNoAi, int stInvulnerable, int stNoGravity, int stSilent, int stBaby, boolean healFull, String name, String health) {}
+
+    private StateSnapshot captureState() {
+        return new StateSnapshot(stNoAi, stInvulnerable, stNoGravity, stSilent, stBaby, healToFullOnApply,
+                nameBox == null ? "" : nameBox.getValue(), healthBox == null ? "" : healthBox.getValue());
+    }
+
+    private void applyState(StateSnapshot s) {
+        if (s == null) return;
+        stNoAi = s.stNoAi;
+        stInvulnerable = s.stInvulnerable;
+        stNoGravity = s.stNoGravity;
+        stSilent = s.stSilent;
+        stBaby = s.stBaby;
+        healToFullOnApply = s.healFull;
+        setBoxValueSilently(nameBox, s.name == null ? "" : s.name);
+        setBoxValueSilently(healthBox, s.health == null ? "" : s.health);
+    }
+
+    private void pushUndo() {
+        StateSnapshot current = captureState();
+        if (!undoStack.isEmpty() && Objects.equals(undoStack.get(undoStack.size() - 1), current)) return;
+        undoStack.add(current);
+        while (undoStack.size() > MAX_UNDO) undoStack.remove(0);
+    }
+
+    private void undo() {
+        if (undoStack.isEmpty()) return;
+        StateSnapshot previous = undoStack.remove(undoStack.size() - 1);
+        StateSnapshot current = captureState();
+        if (Objects.equals(previous, current) && !undoStack.isEmpty()) {
+            previous = undoStack.remove(undoStack.size() - 1);
+        }
+        applyState(previous);
+        markDirty();
+        setStatus(Component.translatable("ankinbt.status.edited"), TXT_DIM);
+    }
+
+    private void tryClose() {
+        if (dirty && AnkiConfig.isConfirmOnClose()) {
+            modalAnim = 0f;
+            confirmReset = false;
+            confirmClose = true;
+            return;
+        }
+        Minecraft.getInstance().setScreen(parent);
+    }
+
+    private void renderConfirm(LegacyGuiGraphics g, int mx, int my, String title, String desc, int color) {
+        int w = Math.min(320, width - 24), h = 126;
+        int x = (width - w) / 2;
+        int y = modalDialogY(h);
+        float opacity = AnkiConfig.getUiOpacity();
+        int edge = UiTheme.themedBorder(opacity, modalAnim);
+        g.fill(0, 0, width, height, UiTheme.withAlpha(0x000000, Math.round(152 * modalAnim)));
+        g.fill(x, y, x + w, y + h, UiTheme.panel(Math.max(0.72f, opacity), modalAnim));
+        border(g, x, y, w, h, edge);
+        g.fill(x + 1, y + 1, x + w - 1, y + 3, UiTheme.withAlpha(color & 0x00FFFFFF, Math.round(220 * modalAnim)));
+        g.drawString(font, title, x + 12, y + 12, color, false);
+        g.drawString(font, trimToWidth(desc, w - 24), x + 12, y + 34, UiTheme.textMain(), false);
+
+        int by = y + h - 34;
+        int gap = 8;
+        int bw = (w - 24 - gap) / 2;
+        renderModalButton(g, x + 12, by, bw, 22, Component.translatable("ankinbt.edit.cancel").getString(), mx, my, 0, 0);
+        renderModalButton(g, x + 12 + bw + gap, by, bw, 22, Component.translatable("ankinbt.edit.apply").getString(), mx, my, 1, -1);
+    }
+
+    private void renderUnsavedConfirmLikeSimple(LegacyGuiGraphics g, int mx, int my) {
+        int dw = Math.min(320, width - 24), dh = 126;
+        int dx = (width - dw) / 2, dy = modalDialogY(dh);
+        float opacity = AnkiConfig.getUiOpacity();
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        g.fill(0, 0, width, height, UiTheme.withAlpha(0x000000, Math.round(152 * modalAnim)));
+        g.fill(dx, dy, dx + dw, dy + dh, UiTheme.panel(Math.max(0.72f, opacity), modalAnim));
+        border(g, dx, dy, dw, dh, UiTheme.themedBorder(opacity, modalAnim));
+        g.fill(dx + 1, dy + 1, dx + dw - 1, dy + 3, UiTheme.withAlpha(accent & 0x00FFFFFF, Math.round(220 * modalAnim)));
+
+        g.drawString(font, Component.translatable("ankinbt.confirm.title"), dx + 12, dy + 12, UiTheme.textMain(), false);
+        g.drawString(font, trimToWidth(Component.translatable("ankinbt.confirm.unsaved").getString(), dw - 24), dx + 12, dy + 34, UiTheme.textDim(), false);
+        g.drawString(font, trimToWidth(Component.translatable("ankinbt.confirm.discard_hint").getString(), dw - 24), dx + 12, dy + 49, UiTheme.textDim(), false);
+
+        int by = dy + dh - 34;
+        int gap = 6;
+        int bw = (dw - 24 - gap * 2) / 3;
+        renderModalButton(g, dx + 12, by, bw, 22, Component.translatable("ankinbt.confirm.save_close").getString(), mx, my, 0, 1);
+        renderModalButton(g, dx + 12 + bw + gap, by, bw, 22, Component.translatable("ankinbt.confirm.discard").getString(), mx, my, 1, -1);
+        renderModalButton(g, dx + 12 + (bw + gap) * 2, by, bw, 22, Component.translatable("ankinbt.edit.cancel").getString(), mx, my, 2, 0);
+    }
+
+    private int modalDialogY(int height) {
+        return (this.height - height) / 2 + Math.round((1.0f - modalAnim) * 12.0f);
+    }
+
+    private void renderModalButton(LegacyGuiGraphics g, int x, int y, int w, int h, String label,
+                                   int mx, int my, int index, int tone) {
+        boolean hovered = mx >= x && mx < x + w && my >= y && my < y + h;
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.min(1.0f, AnkiConfig.getUiAnimationSpeed() * 2.2f) : 1.0f;
+        modalButtonHover[index] = UiTheme.approach(modalButtonHover[index], hovered ? 1.0f : 0.0f, speed);
+        int color = tone > 0 ? 0xFF22C55E : tone < 0 ? 0xFFEF4444 : UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        int fill = UiTheme.withAlpha(color & 0x00FFFFFF, 42 + Math.round(58 * modalButtonHover[index]));
+        g.fill(x, y, x + w, y + h, fill);
+        border(g, x, y, w, h, UiTheme.withAlpha(color & 0x00FFFFFF, 170 + Math.round(70 * modalButtonHover[index])));
+        String shown = trimToWidth(label, w - 12);
+        g.drawString(font, shown,
+                x + (w - font.width(shown)) / 2, y + Math.max(1, (h - 8) / 2), UiTheme.textMain(), false);
+    }
+
+    private boolean clickConfirm(int mx, int my) {
+        if (confirmClose) return clickUnsavedConfirmLikeSimple(mx, my);
+
+        int w = Math.min(320, width - 24), h = 126;
+        int x = (width - w) / 2;
+        int y = modalDialogY(h);
+        int by = y + h - 34;
+        int gap = 8;
+        int bw = (w - 24 - gap) / 2;
+        if (mx >= x + 12 && mx < x + 12 + bw && my >= by && my < by + 22) {
+            confirmClose = false;
+            confirmReset = false;
+            return true;
+        }
+        int applyX = x + 12 + bw + gap;
+        if (mx >= applyX && mx < applyX + bw && my >= by && my < by + 22) {
+            if (confirmReset) {
+                confirmReset = false;
+                resetStates();
+            } else if (confirmClose) {
+                confirmClose = false;
+                dirty = false;
+                Minecraft.getInstance().setScreen(parent);
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private boolean clickUnsavedConfirmLikeSimple(int mx, int my) {
+        int dw = Math.min(320, width - 24), dh = 126;
+        int dx = (width - dw) / 2, dy = modalDialogY(dh);
+        int by = dy + dh - 34;
+        int gap = 6;
+        int bw2 = (dw - 24 - gap * 2) / 3, bh2 = 22;
+
+        int saveX = dx + 12;
+        if (mx >= saveX && mx < saveX + bw2 && my >= by && my < by + bh2) {
+            applyPatch();
+            if (!dirty) {
+                confirmClose = false;
+                Minecraft.getInstance().setScreen(parent);
+            }
+            return true;
+        }
+        int discardX = saveX + bw2 + gap;
+        if (mx >= discardX && mx < discardX + bw2 && my >= by && my < by + bh2) {
+            confirmClose = false;
+            dirty = false;
+            Minecraft.getInstance().setScreen(parent);
+            return true;
+        }
+        int cancelX = discardX + bw2 + gap;
+        if (mx >= cancelX && mx < cancelX + bw2 && my >= by && my < by + bh2) {
+            confirmClose = false;
+            return true;
+        }
+        return true;
     }
 }

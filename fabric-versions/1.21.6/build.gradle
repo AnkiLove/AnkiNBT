@@ -41,6 +41,10 @@ task copySharedSources(type: Copy) {
         exclude 'com/ankinbt/AnkiNBT.java'
         exclude 'com/ankinbt/keybind/**'
         exclude 'com/ankinbt/compat/**'
+        exclude 'com/ankinbt/gui/InventoryEditorOverlay.java'
+        exclude 'com/ankinbt/gui/LegacyGuiGraphics.java'
+        filter { String line -> line.replace('SharedConstants.getCurrentVersion().getName()',
+                'SharedConstants.getCurrentVersion().name()') }
     }
     into 'build/shared-src/java'
 }
@@ -50,6 +54,11 @@ task copyVersionSources(type: Copy) {
         include 'com/ankinbt/AnkiNBTFabric.java'
         include 'com/ankinbt/compat/**'
         include 'com/ankinbt/keybind/**'
+        include 'com/ankinbt/gui/InventoryEditorOverlay.java'
+        include 'com/ankinbt/mixin/**'
+    }
+    from('src/main/java') {
+        include 'com/ankinbt/gui/LegacyGuiGraphics.java'
     }
     into 'build/version-src/java'
 }
@@ -60,6 +69,7 @@ task copySharedResources(type: Copy) {
         exclude 'pack.mcmeta'
     }
     into 'build/shared-resources'
+    from('../../LICENSE')
 }
 
 sourceSets {

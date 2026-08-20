@@ -1,158 +1,158 @@
-/*
- * Decompiled with CFR 0.152.
- *
- * Could not load the following classes:
- *  net.minecraft.client.Minecraft
- *  net.minecraft.client.gui.GuiGraphics
- *  net.minecraft.client.gui.screens.Screen
- *  net.minecraft.client.input.CharacterEvent
- *  net.minecraft.client.input.KeyEvent
- *  net.minecraft.client.input.MouseButtonEvent
- *  net.minecraft.nbt.Tag
- *  net.minecraft.network.chat.Component
- */
 package com.ankinbt.gui;
 
-import com.ankinbt.gui.NbtEditorScreen;
+import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.nbt.NbtHelper;
 import com.ankinbt.nbt.NbtTreeNode;
 import com.ankinbt.util.FlatEditBox;
+import com.ankinbt.util.UiSound;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import com.ankinbt.gui.LegacyGuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 
-public class AddTagScreen
-extends Screen {
-    private static final int PW = 300;
-    private static final int PH = 200;
-    private static final int BG = -402126832;
-    private static final int BORDER = -14540234;
-    private static final int ACCENT = -10262799;
-    private static final int C1 = -1906448;
-    private static final int C2 = -7035976;
-    private static final int C3 = -10193781;
-    private static final int INPUT_BG = -15592930;
-    private static final int ERR = -1096636;
-    private static final String[] TYPE_NAMES = new String[]{"Byte", "Short", "Int", "Long", "Float", "Double", "String", "Compound", "List"};
-    private static final byte[] TYPE_IDS = new byte[]{1, 2, 3, 4, 5, 6, 8, 10, 9};
+public class AddTagScreen extends Screen {
+
+    private static final int PW = 300, PH = 200;
+    private static final int ERR = 0xFFEF4444;
+
+    private static final String[] TYPE_NAMES = {
+            "Byte", "Short", "Int", "Long", "Float", "Double", "String", "Compound", "List"
+    };
+    private static final byte[] TYPE_IDS = {
+            Tag.TAG_BYTE, Tag.TAG_SHORT, Tag.TAG_INT, Tag.TAG_LONG,
+            Tag.TAG_FLOAT, Tag.TAG_DOUBLE, Tag.TAG_STRING, Tag.TAG_COMPOUND, Tag.TAG_LIST
+    };
+
     private final NbtEditorScreen parent;
     private final NbtTreeNode targetNode;
-    private FlatEditBox keyBox;
+    private FlatEditBox keyInput;
     private int selectedType = 6;
     private String error = null;
-    private int px;
-    private int py;
+    private int px, py, basePy;
+    private float openAnim;
+    private float cancelHover;
+    private float confirmHover;
+    private final float[] typeHover = new float[TYPE_NAMES.length];
 
     public AddTagScreen(NbtEditorScreen parent, NbtTreeNode targetNode) {
-        super((Component)Component.translatable((String)"ankinbt.add.title"));
+        super(Component.translatable("ankinbt.add.title"));
         this.parent = parent;
         this.targetNode = targetNode;
     }
 
+    @Override
     protected void init() {
         super.init();
-        this.px = (this.width - 300) / 2;
-        this.py = (this.height - 200) / 2;
-        this.ensureKeyBox();
+        px = (width - PW) / 2;
+        basePy = (height - PH) / 2;
+        py = basePy;
+        String value = keyInput == null ? "" : keyInput.getValue();
+        keyInput = new FlatEditBox(font, px + 12, py + 48, PW - 24, 20,
+                Component.translatable("ankinbt.add.key"));
+        keyInput.setMaxLength(32767);
+        keyInput.setHint(Component.translatable("ankinbt.add.key.hint"));
+        keyInput.setValue(value);
+        keyInput.setResponder(v -> error = null);
+        keyInput.setFocused(true);
+        this.setFocused(keyInput);
     }
 
-    public void render(GuiGraphics g, int mx, int my, float pt) {
-        g.fill(0, 0, this.width, this.height, Integer.MIN_VALUE);
-        g.fill(this.px, this.py, this.px + 300, this.py + 200, -402126832);
-        this.border(g, this.px, this.py, 300, 200, -14540234);
-        g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.add.title"), this.px + 12, this.py + 10, -1906448, false);
-        g.fill(this.px + 1, this.py + 26, this.px + 300 - 1, this.py + 27, -14540234);
-        int iy = this.py + 34;
-        g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.add.key"), this.px + 12, iy + 2, -7035976, false);
-        int ix = this.px + 12;
-        int iw = 276;
-        int ih = 20;
-        g.fill(ix, iy += 14, ix + iw, iy + ih, -15592930);
-        this.border(g, ix, iy, iw, ih, -10262799);
-        this.layoutKeyBox(ix, iy, iw, ih);
-        this.keyBox.render(g, mx, my, pt);
-        g.drawString(this.font, (Component)Component.translatable((String)"ankinbt.add.type"), this.px + 12, iy += ih + 8, -7035976, false);
+    @Override
+    public void render(net.minecraft.client.gui.GuiGraphics g, int mx, int my, float pt) {
+        render(new LegacyGuiGraphics(g), mx, my, pt);
+    }
+
+    public void render(LegacyGuiGraphics g, int mx, int my, float pt) {
+        float speed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.08f, AnkiConfig.getUiAnimationSpeed()) : 1f;
+        float hoverSpeed = AnkiConfig.isUiAnimationEnabled() ? Math.max(0.18f, speed * 2.4f) : 1f;
+        openAnim = UiTheme.approach(openAnim, 1f, speed);
+        py = basePy + Math.round((1f - openAnim) * 14f);
+        int accent = UiTheme.accent(AnkiConfig.getUiAccentPreset());
+        g.fill(0, 0, width, height, UiTheme.scrim(AnkiConfig.getUiOpacity(), openAnim));
+        if (AnkiConfig.isUiShadowEnabled()) g.fill(px + 4, py + 5, px + PW + 4, py + PH + 5,
+                UiTheme.shadow(AnkiConfig.getUiOpacity(), openAnim, true));
+        g.fill(px, py, px + PW, py + PH, UiTheme.surface(AnkiConfig.getUiOpacity(), openAnim));
+        border(g, px, py, PW, PH, UiTheme.themedBorder(AnkiConfig.getUiOpacity(), openAnim));
+        g.fill(px + 1, py + 1, px + PW - 1, py + 26, UiTheme.toolbar(AnkiConfig.getUiOpacity(), openAnim));
+
+        g.drawString(font, Component.translatable("ankinbt.add.title"), px + 12, py + 10, UiTheme.textMain(), false);
+        g.fill(px + 1, py + 26, px + PW - 1, py + 27, accent);
+
+        int iy = py + 34;
+        g.drawString(font, Component.translatable("ankinbt.add.key"), px + 12, iy + 2, UiTheme.textDim(), false);
+        iy += 14;
+        int ix = px + 12, iw = PW - 24, ih = 20;
+        layoutKeyInput(ix, iy, iw, accent);
+        keyInput.renderWidget(g.unwrap(), mx, my, pt);
+
+        iy += ih + 8;
+        g.drawString(font, Component.translatable("ankinbt.add.type"), px + 12, iy, UiTheme.textDim(), false);
         iy += 12;
-        int cols = 3;
-        int bw = (276 - (cols - 1) * 4) / cols;
-        int bh = 18;
-        for (int i = 0; i < TYPE_NAMES.length; ++i) {
-            boolean hover;
-            int col = i % cols;
-            int row = i / cols;
-            int bx = this.px + 12 + col * (bw + 4);
-            int by = iy + row * (bh + 3);
-            boolean bl = hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
-            g.fill(bx, by, bx + bw, by + bh, i == this.selectedType ? -10262799 : (hover ? 0x50FFFFFF : 0x30FFFFFF));
-            g.drawString(this.font, TYPE_NAMES[i], bx + (bw - this.font.width(TYPE_NAMES[i])) / 2, by + 5, i == this.selectedType ? -1906448 : -7035976, false);
+        int cols = 3, bw = (PW - 24 - (cols - 1) * 4) / cols, bh = 18;
+        for (int i = 0; i < TYPE_NAMES.length; i++) {
+            int col = i % cols, row = i / cols;
+            int bx = px + 12 + col * (bw + 4), by = iy + row * (bh + 3);
+            boolean hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
+            typeHover[i] = UiTheme.approach(typeHover[i], hover ? 1f : 0f, hoverSpeed);
+            g.fill(bx, by, bx + bw, by + bh, i == selectedType ? accent
+                    : UiTheme.mix(0x20FFFFFF, 0x58FFFFFF, typeHover[i]));
+            g.drawString(font, TYPE_NAMES[i], bx + (bw - font.width(TYPE_NAMES[i])) / 2, by + 5,
+                    i == selectedType ? UiTheme.textMain() : UiTheme.textDim(), false);
         }
-        if (this.error != null) {
-            g.drawString(this.font, this.error, this.px + 12, this.py + 200 - 38, -1096636, false);
-        }
-        int btnY = this.py + 200 - 30;
-        int btnW = 80;
-        int btnH = 22;
-        int cancelX = this.px + 150 - btnW - 8;
+
+        if (error != null) g.drawString(font, error, px + 12, py + PH - 38, ERR, false);
+
+        int btnY = py + PH - 30, btnW = 80, btnH = 22;
+        int cancelX = px + PW / 2 - btnW - 8;
         boolean ch = mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH;
-        g.fill(cancelX, btnY, cancelX + btnW, btnY + btnH, ch ? 0x50FFFFFF : 0x30FFFFFF);
-        this.border(g, cancelX, btnY, btnW, btnH, -14540234);
-        String cl = Component.translatable((String)"ankinbt.edit.cancel").getString();
-        g.drawString(this.font, cl, cancelX + (btnW - this.font.width(cl)) / 2, btnY + 7, -7035976, false);
-        int okX = this.px + 150 + 8;
+        cancelHover = UiTheme.approach(cancelHover, ch ? 1f : 0f, hoverSpeed);
+        g.fill(cancelX, btnY, cancelX + btnW, btnY + btnH, UiTheme.mix(0x28FFFFFF, 0x60FFFFFF, cancelHover));
+        border(g, cancelX, btnY, btnW, btnH, UiTheme.themedBorder(1f, 1f));
+        String cl = Component.translatable("ankinbt.edit.cancel").getString();
+        g.drawString(font, cl, cancelX + (btnW - font.width(cl)) / 2, btnY + 7, UiTheme.textDim(), false);
+
+        int okX = px + PW / 2 + 8;
         boolean oh = mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH;
-        g.fill(okX, btnY, okX + btnW, btnY + btnH, oh ? -10262799 : -11581723);
-        this.border(g, okX, btnY, btnW, btnH, -10262799);
-        String ol = Component.translatable((String)"ankinbt.add.confirm").getString();
-        g.drawString(this.font, ol, okX + (btnW - this.font.width(ol)) / 2, btnY + 7, -1906448, false);
+        confirmHover = UiTheme.approach(confirmHover, oh ? 1f : 0f, hoverSpeed);
+        g.fill(okX, btnY, okX + btnW, btnY + btnH,
+                UiTheme.mix(UiTheme.withAlpha(accent & 0x00FFFFFF, 176), accent, confirmHover));
+        border(g, okX, btnY, btnW, btnH, accent);
+        String ol = Component.translatable("ankinbt.add.confirm").getString();
+        g.drawString(font, ol, okX + (btnW - font.width(ol)) / 2, btnY + 7, UiTheme.textMain(), false);
     }
 
-    private void border(GuiGraphics g, int x, int y, int w, int h, int c) {
-        g.fill(x, y, x + w, y + 1, c);
-        g.fill(x, y + h - 1, x + w, y + h, c);
-        g.fill(x, y, x + 1, y + h, c);
-        g.fill(x + w - 1, y, x + w, y + h, c);
+    private void border(LegacyGuiGraphics g, int x, int y, int w, int h, int c) {
+        g.fill(x, y, x + w, y + 1, c); g.fill(x, y + h - 1, x + w, y + h, c);
+        g.fill(x, y, x + 1, y + h, c); g.fill(x + w - 1, y, x + w, y + h, c);
     }
 
-
-    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
-        if (this.tryMouseClicked(event.x(), event.y(), event.button())) {
-            return true;
-        }
-        return super.mouseClicked(event.x(), event.y(), event.button());
+    private void layoutKeyInput(int x, int y, int width, int accent) {
+        keyInput.setX(x);
+        keyInput.setY(y);
+        keyInput.setWidth(width);
+        keyInput.setThemeColors(UiTheme.withAlpha(UiTheme.baseRgb(), 245),
+                UiTheme.themedBorder(1f, 1f), accent);
     }
 
+    @Override
     public boolean mouseClicked(double mx, double my, int btn) {
-        return this.tryMouseClicked(mx, my, btn);
-    }
-
-    private boolean tryMouseClicked(double mx, double my, int btn) {
-        if (this.handleMouseClicked(mx, my, btn)) {
+        layoutKeyInput(px + 12, py + 48, PW - 24, UiTheme.accent(AnkiConfig.getUiAccentPreset()));
+        if (keyInput.mouseClicked(mx, my, btn)) {
+            keyInput.setFocused(true);
+            this.setFocused(keyInput);
             return true;
         }
-        if (this.minecraft != null) {
-            double sw = this.minecraft.getWindow().getScreenWidth();
-            double sh = this.minecraft.getWindow().getScreenHeight();
-            if (sw > 0.0 && sh > 0.0) {
-                double sx = mx * (double)this.width / sw;
-                double sy = my * (double)this.height / sh;
-                if ((Math.abs(sx - mx) > 0.5 || Math.abs(sy - my) > 0.5) && this.handleMouseClicked(sx, sy, btn)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return handleMouseClicked(mx, my, btn);
     }
 
     private boolean handleMouseClicked(double mx, double my, int btn) {
-        this.ensureKeyBox();
-        this.layoutKeyBox(this.px + 12, this.py + 34 + 14, 276, 20);
-        if (this.keyBox.mouseClicked(mx, my, btn)) {
-            this.keyBox.setFocused(true);
+        int inputY = py + 48;
+        if (keyInput != null && mx >= px + 12 && mx < px + PW - 12
+                && my >= inputY && my < inputY + 20) {
+            keyInput.setFocused(true);
+            keyInput.setCursorPosition(keyInput.getValue().length());
+            this.setFocused(keyInput);
             return true;
         }
         int iy = py + 34 + 14 + 20 + 8 + 12;
@@ -160,117 +160,51 @@ extends Screen {
         for (int i = 0; i < TYPE_NAMES.length; i++) {
             int col = i % cols, row = i / cols;
             int bx = px + 12 + col * (bw + 4), by = iy + row * (bh + 3);
-            if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) { selectedType = i; return true; }
+            if (mx >= bx && mx < bx + bw && my >= by && my < by + bh) { selectedType = i; UiSound.playClick(); return true; }
         }
         int btnY = py + PH - 30, btnW = 80, btnH = 22;
         int cancelX = px + PW / 2 - btnW - 8;
-        if (mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH) { goBack(); return true; }
+        if (mx >= cancelX && mx < cancelX + btnW && my >= btnY && my < btnY + btnH) { UiSound.playClick(); goBack(); return true; }
         int okX = px + PW / 2 + 8;
-        if (mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH) { confirm(); return true; }
+        if (mx >= okX && mx < okX + btnW && my >= btnY && my < btnY + btnH) { UiSound.playClick(); confirm(); return true; }
         return false;
     }
 
-    public boolean keyPressed(KeyEvent event) {
-        if (this.keyPressed(event.key(), event.scancode(), event.modifiers())) {
-            return true;
-        }
-        return super.keyPressed(event.key(), event.scancode(), event.modifiers());
-    }
-
+    @Override
     public boolean keyPressed(int key, int scan, int mod) {
-        if (this.handleKeyPressed(key, scan, mod)) {
-            return true;
-        }
+        if (key == 256) { goBack(); return true; }
+        if (key == 257 || key == 335) { confirm(); return true; }
+        if (keyInput.keyPressed(key, scan, mod)) { error = null; return true; }
         return super.keyPressed(key, scan, mod);
     }
 
-    private boolean handleKeyPressed(int key, int scan, int mod) {
-        if (key == 256) { goBack(); return true; }
-        if (key == 257 || key == 335) { confirm(); return true; }
-        this.ensureKeyBox();
-        if (this.keyBox.keyPressed(key, scan, mod)) {
-            this.error = null;
-            return true;
-        }
-        return false;
-    }
-
-    public boolean charTyped(CharacterEvent event) {
-        if (this.charTyped((char)event.codepoint(), event.modifiers())) {
-            return true;
-        }
-        return super.charTyped((char)event.codepoint(), event.modifiers());
-    }
-
+    @Override
     public boolean charTyped(char c, int mod) {
-        if (this.handleCharTyped(c, mod)) {
+        if (keyInput.charTyped(c, mod)) {
+            error = null;
             return true;
         }
         return super.charTyped(c, mod);
     }
 
-    private boolean handleCharTyped(char c, int mod) {
-        this.ensureKeyBox();
-        if (this.keyBox.charTyped(c, mod)) {
-            this.error = null;
-            return true;
-        }
-        return false;
-    }
-
     private void confirm() {
-        if (this.targetNode.isList()) {
-            Tag tag = NbtHelper.createDefault(TYPE_IDS[this.selectedType]);
-            this.parent.addTagToNode(this.targetNode, "", tag);
-            this.goBack();
-            return;
+        if (targetNode.isList()) {
+            Tag tag = NbtHelper.createDefault(TYPE_IDS[selectedType]);
+            parent.addTagToNode(targetNode, "", tag);
+            goBack(); return;
         }
-        String keyInput = this.keyBoxValue();
-        if (keyInput.isEmpty()) {
-            this.error = Component.translatable((String)"ankinbt.add.error.empty").getString();
-            return;
+        String keyValue = keyInput.getValue();
+        if (keyValue.isEmpty()) { error = Component.translatable("ankinbt.add.error.empty").getString(); return; }
+        for (var child : targetNode.getChildren()) {
+            if (child.getKey().equals(keyValue)) {
+                error = Component.translatable("ankinbt.add.error.exists").getString(); return;
+            }
         }
-        for (NbtTreeNode child : this.targetNode.getChildren()) {
-            if (!child.getKey().equals(keyInput)) continue;
-            this.error = Component.translatable((String)"ankinbt.add.error.exists").getString();
-            return;
-        }
-        Tag tag = NbtHelper.createDefault(TYPE_IDS[this.selectedType]);
-        this.parent.addTagToNode(this.targetNode, keyInput, tag);
-        this.goBack();
+        Tag tag = NbtHelper.createDefault(TYPE_IDS[selectedType]);
+        parent.addTagToNode(targetNode, keyValue, tag);
+        goBack();
     }
 
-    private void ensureKeyBox() {
-        if (this.keyBox != null) {
-            return;
-        }
-        this.keyBox = new FlatEditBox(this.font, this.px + 12, this.py + 48, 276, 20, Component.empty());
-        this.keyBox.setMaxLength(2048);
-        this.keyBox.setHint(Component.translatable((String)"ankinbt.add.key.hint"));
-        this.keyBox.setResponder(value -> this.error = null);
-        this.keyBox.setFocused(true);
-    }
-
-    private void layoutKeyBox(int x, int y, int w, int h) {
-        this.ensureKeyBox();
-        this.keyBox.setX(x);
-        this.keyBox.setY(y);
-        this.keyBox.setWidth(w);
-        this.keyBox.setHeight(h);
-        this.keyBox.setFocused(true);
-    }
-
-    private String keyBoxValue() {
-        this.ensureKeyBox();
-        String value = this.keyBox.getValue();
-        return value == null ? "" : value.trim();
-    }
-
-    private void goBack() {
-        Minecraft.getInstance().setScreen((Screen)this.parent);
-    }
-
-    public boolean isPauseScreen() {
-        return false;
-    }
+    private void goBack() { parent.returnFromChildScreen(); }
+    @Override public boolean isPauseScreen() { return false; }
 }

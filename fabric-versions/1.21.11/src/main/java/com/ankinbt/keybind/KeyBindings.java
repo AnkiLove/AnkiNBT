@@ -4,6 +4,8 @@ import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.SpawnEggEditorHelper;
 import com.ankinbt.gui.AnkiConfigScreen;
 import com.ankinbt.gui.EntityEditorScreen;
+import com.ankinbt.gui.ImeSupport;
+import com.ankinbt.gui.InventoryEditorOverlay;
 import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.SimpleEditorScreen;
 import com.ankinbt.gui.VillagerTradeEditorScreen;
@@ -12,6 +14,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -80,16 +83,23 @@ public class KeyBindings {
                 client.setScreen(new AnkiConfigScreen(client.screen));
             }
 
-            if (client.player == null || client.screen != null) return;
+            if (client.player == null) return;
+            if (client.screen != null) {
+                // Container overlays receive the physical key event themselves.
+                // Drain the key-mapping click here so it cannot reopen the held
+                // item after the container closes.
+                drainScreenEditorClicks();
+                return;
+            }
 
             while (openItemEditorKey.consumeClick()) {
-                ItemStack held = getHeldOrOffhand(client);
-                if (held.isEmpty()) {
+                HeldItem held = getHeldItem(client);
+                if (held.stack().isEmpty()) {
                     client.player.displayClientMessage(
                             net.minecraft.network.chat.Component.translatable("ankinbt.message.no_item"), true);
                     continue;
                 }
-                openItemEditor(held, getHeldInventorySlot(client));
+                openItemEditor(held.stack(), held.slot());
             }
 
             while (openEntityEditorKey.consumeClick()) {
@@ -99,9 +109,9 @@ public class KeyBindings {
                     continue;
                 }
 
-                ItemStack held = getHeldOrOffhand(client);
-                if (SpawnEggEditorHelper.isSpawnEgg(held)) {
-                    openSmartEntityEditor(client, null, held, getHeldInventorySlot(client), client.screen);
+                HeldItem held = getHeldItem(client);
+                if (SpawnEggEditorHelper.isSpawnEgg(held.stack())) {
+                    openSmartEntityEditor(client, null, held.stack(), held.slot(), client.screen);
                     continue;
                 }
 
@@ -111,22 +121,31 @@ public class KeyBindings {
         });
 
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            if (ImeSupport.isAnkiScreen(screen)) {
+                ImeSupport.screenOpened(screen);
+                ScreenEvents.remove(screen).register(ImeSupport::screenRemoved);
+                ScreenMouseEvents.afterMouseClick(screen).register((scr, event, doubled) -> {
+                    ImeSupport.updateCursorArea(event.x(), event.y());
+                    return true;
+                });
+            }
             if (screen instanceof AbstractContainerScreen<?> containerScreen) {
+                InventoryEditorOverlay.attach(containerScreen, openItemEditorKey);
                 ScreenKeyboardEvents.beforeKeyPress(screen).register((scr, keyEvent) -> {
                     if (openConfigMenuKey.matches(keyEvent)) {
-                        client.setScreen(new AnkiConfigScreen(screen));
+                        InventoryEditorOverlay.openModal(containerScreen, new AnkiConfigScreen(screen));
                         return;
                     }
 
                     Slot hoveredSlot = getHoveredSlot(containerScreen);
-                    if (hoveredSlot == null || !hoveredSlot.hasItem()) return;
+                    if (hoveredSlot == null
+                            || !hoveredSlot.hasItem()
+                            || client.player == null
+                            || hoveredSlot.container != client.player.getInventory()
+                            || hoveredSlot.getContainerSlot() < 0
+                            || (hoveredSlot.getContainerSlot() >= 36 && hoveredSlot.getContainerSlot() != 40)) return;
                     ItemStack stack = hoveredSlot.getItem();
                     int slotIndex = KeyBindings.getMenuSlotIndex(containerScreen, hoveredSlot);
-
-                    if (openItemEditorKey.matches(keyEvent)) {
-                        openItemEditor(stack, slotIndex);
-                        return;
-                    }
 
                     if (openEntityEditorKey.matches(keyEvent) && SpawnEggEditorHelper.isSpawnEgg(stack)) {
                         openSmartEntityEditor(client, null, stack, slotIndex, screen);
@@ -276,10 +295,13 @@ public class KeyBindings {
         return type.contains("villager") || type.contains("wandering_trader");
     }
 
-    private static ItemStack getHeldOrOffhand(Minecraft client) {
+    private static HeldItem getHeldItem(Minecraft client) {
         ItemStack held = client.player.getMainHandItem();
-        if (held.isEmpty()) held = client.player.getOffhandItem();
-        return held;
+        if (!held.isEmpty()) {
+            return new HeldItem(held, getHeldInventorySlot(client));
+        }
+        ItemStack offhand = client.player.getOffhandItem();
+        return new HeldItem(offhand, offhand.isEmpty() ? -1 : 40);
     }
 
     private static int getHeldInventorySlot(Minecraft client) {
@@ -336,6 +358,18 @@ public class KeyBindings {
         return keyCode;
     }
 
+    private static void drainScreenEditorClicks() {
+        while (openItemEditorKey != null && openItemEditorKey.consumeClick()) {
+            // The current container's overlay has already handled this key press.
+        }
+        while (openEntityEditorKey != null && openEntityEditorKey.consumeClick()) {
+            // Entity/spawn-egg container handling is performed by screen events.
+        }
+    }
+
+    private record HeldItem(ItemStack stack, int slot) {
+    }
+
     public static boolean syncConfigFromKeyMappings() {
         boolean changed = false;
         int itemCode = keyCode(openItemEditorKey, AnkiConfig.getOpenItemEditorKeyCode());
@@ -362,6 +396,25 @@ public class KeyBindings {
         return changed;
     }
 
+    public static void resetToDefaults() {
+        setKey(openItemEditorKey, InputConstants.KEY_N);
+        setKey(openEntityEditorKey, InputConstants.KEY_COMMA);
+        setKey(openConfigMenuKey, InputConstants.KEY_O);
+        KeyMapping.resetMapping();
+
+        AnkiConfig.setOpenItemEditorKeyCode(InputConstants.KEY_N);
+        AnkiConfig.setOpenEntityEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenVillagerEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenConfigMenuKeyCode(InputConstants.KEY_O);
+
+        Minecraft client = Minecraft.getInstance();
+        if (client != null && client.options != null) client.options.save();
+    }
+
+    private static void setKey(KeyMapping mapping, int keyCode) {
+        if (mapping != null) mapping.setKey(InputConstants.Type.KEYSYM.getOrCreate(keyCode));
+    }
+
     private static int keyCode(KeyMapping mapping, int fallback) {
         if (mapping == null) return fallback;
         try {
@@ -371,8 +424,9 @@ public class KeyBindings {
                     Object value = key.getClass().getMethod("getValue").invoke(key);
                     if (value instanceof Number n) return n.intValue();
                 }
-            } catch (Throwable ignored) {}
-            java.lang.reflect.Field keyField = KeyMapping.class.getDeclaredField("key");
+            } catch (Throwable ignored) {
+            }
+            Field keyField = KeyMapping.class.getDeclaredField("key");
             keyField.setAccessible(true);
             Object key = keyField.get(mapping);
             if (key != null) {

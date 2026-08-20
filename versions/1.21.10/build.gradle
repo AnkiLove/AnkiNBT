@@ -68,6 +68,11 @@ repositories {
 dependencies {
 }
 
+tasks.named('jar').configure {
+    exclude 'net/minecraft/**'
+    from('../../LICENSE') { rename { 'LICENSE_AnkiNBT' } }
+}
+
 tasks.withType(ProcessResources).configureEach {
     var replaceProperties = [
             minecraft_version      : minecraft_version,

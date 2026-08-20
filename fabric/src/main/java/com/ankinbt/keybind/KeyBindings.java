@@ -4,6 +4,7 @@ import com.ankinbt.config.AnkiConfig;
 import com.ankinbt.editor.SpawnEggEditorHelper;
 import com.ankinbt.gui.AnkiConfigScreen;
 import com.ankinbt.gui.EntityEditorScreen;
+import com.ankinbt.gui.InventoryEditorOverlay;
 import com.ankinbt.gui.NbtEditorScreen;
 import com.ankinbt.gui.SimpleEditorScreen;
 import com.ankinbt.gui.VillagerTradeEditorScreen;
@@ -76,11 +77,15 @@ public class KeyBindings {
         }
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.player == null) return;
+            if (client.screen != null) {
+                drainScreenClicks();
+                return;
+            }
+
             while (openConfigMenuKey.consumeClick()) {
                 client.setScreen(new AnkiConfigScreen(client.screen));
             }
-
-            if (client.player == null || client.screen != null) return;
 
             while (openItemEditorKey.consumeClick()) {
                 ItemStack held = getHeldOrOffhand(client);
@@ -112,9 +117,10 @@ public class KeyBindings {
 
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (screen instanceof AbstractContainerScreen<?> containerScreen) {
+                InventoryEditorOverlay.attach(containerScreen, openItemEditorKey);
                 ScreenKeyboardEvents.beforeKeyPress(screen).register((scr, key, scancode, modifiers) -> {
                     if (openConfigMenuKey.matches(key, scancode)) {
-                        client.setScreen(new AnkiConfigScreen(screen));
+                        InventoryEditorOverlay.openModal(containerScreen, new AnkiConfigScreen(screen));
                         return;
                     }
 
@@ -122,11 +128,6 @@ public class KeyBindings {
                     if (hoveredSlot == null || !hoveredSlot.hasItem()) return;
                     ItemStack stack = hoveredSlot.getItem();
                     int slotIndex = KeyBindings.getMenuSlotIndex(containerScreen, hoveredSlot);
-
-                    if (openItemEditorKey.matches(key, scancode)) {
-                        openItemEditor(stack, slotIndex);
-                        return;
-                    }
 
                     if (openEntityEditorKey.matches(key, scancode) && SpawnEggEditorHelper.isSpawnEgg(stack)) {
                         openSmartEntityEditor(client, null, stack, slotIndex, screen);
@@ -336,6 +337,18 @@ public class KeyBindings {
         return keyCode;
     }
 
+    private static void drainScreenClicks() {
+        while (openItemEditorKey != null && openItemEditorKey.consumeClick()) {
+            // The active container overlay handled the physical key event.
+        }
+        while (openEntityEditorKey != null && openEntityEditorKey.consumeClick()) {
+            // Spawn-egg handling is performed by the active screen event.
+        }
+        while (openConfigMenuKey != null && openConfigMenuKey.consumeClick()) {
+            // Prevent a container shortcut from opening the same modal twice.
+        }
+    }
+
     public static boolean syncConfigFromKeyMappings() {
         boolean changed = false;
         int itemCode = keyCode(openItemEditorKey, AnkiConfig.getOpenItemEditorKeyCode());
@@ -360,6 +373,17 @@ public class KeyBindings {
             changed = true;
         }
         return changed;
+    }
+
+    public static void resetToDefaults() {
+        AnkiConfig.setOpenItemEditorKeyCode(InputConstants.KEY_N);
+        AnkiConfig.setOpenEntityEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenVillagerEditorKeyCode(InputConstants.KEY_COMMA);
+        AnkiConfig.setOpenConfigMenuKeyCode(InputConstants.KEY_O);
+        if (openItemEditorKey != null) openItemEditorKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(InputConstants.KEY_N));
+        if (openEntityEditorKey != null) openEntityEditorKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(InputConstants.KEY_COMMA));
+        if (openConfigMenuKey != null) openConfigMenuKey.setKey(InputConstants.Type.KEYSYM.getOrCreate(InputConstants.KEY_O));
+        KeyMapping.resetMapping();
     }
 
     private static int keyCode(KeyMapping mapping, int fallback) {
