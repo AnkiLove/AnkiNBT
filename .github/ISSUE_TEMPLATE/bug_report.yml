@@ -1,0 +1,45 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am using the latest version of AnkiNBT.
+          required: true
+        - label: I have searched the existing issues and could not find a duplicate.
+          required: true
+        - label: My Minecraft version is supported.
+          required: true
+        - label: I checked all of these boxes without reading them.
+          required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: Please describe what happened in detail.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please provide any relevant logs or error stack traces.
+      render: shell
